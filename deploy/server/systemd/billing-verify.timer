@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly test restore
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=60
+Unit=billing-job@verify.service
+
+[Install]
+WantedBy=timers.target

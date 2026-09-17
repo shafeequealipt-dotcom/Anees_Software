@@ -1,0 +1,136 @@
+# Production stack for the Oracle Cloud VM.
+# Lives at /opt/billing/app/deploy on the server; secrets come from /opt/billing/.env.
+name: billing
+
+x-app-env: &app-env
+  NODE_ENV: production
+  TZ: Asia/Kolkata
+  APP_URL: https://${APP_DOMAIN}
+  DATABASE_URL: postgres://billing:${POSTGRES_PASSWORD}@db:5432/billing
+  APP_SECRET: ${APP_SECRET}
+  UPLOAD_DIR: /data/uploads
+  BACKUP_DIR: /backups/local
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/app.Dockerfile
+    image: billing-app:latest
+    restart: unless-stopped
+    environment: *app-env
+    volumes:
+      - uploads:/data/uploads
+      - backups:/backups:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  db:
+    build: ./postgres
+    image: billing-db:17
+    restart: unless-stopped
+    shm_size: 256mb
+    environment:
+      TZ: Asia/Kolkata
+      POSTGRES_DB: billing
+      POSTGRES_USER: billing
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Point-in-time recovery repository (pgBackRest → OCI Object Storage, S3-compatible API)
+      PGBACKREST_REPO1_S3_ENDPOINT: ${OCI_S3_HOST}
+      PGBACKREST_REPO1_S3_REGION: ${OCI_REGION}
+      PGBACKREST_REPO1_S3_BUCKET: ${OCI_BUCKET_PITR}
+      PGBACKREST_REPO1_S3_KEY: ${OCI_ACCESS_KEY}
+      PGBACKREST_REPO1_S3_KEY_SECRET: ${OCI_SECRET_KEY}
+      PGBACKREST_REPO1_CIPHER_PASS: ${PITR_CIPHER_PASS}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgbackrest_log:/var/log/pgbackrest
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=/usr/local/bin/archive-push.sh %p
+      - -c
+      - archive_timeout=60
+      - -c
+      - max_wal_senders=3
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - log_timezone=Asia/Kolkata
+      - -c
+      - timezone=Asia/Kolkata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billing -d billing"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Runs only on demand / from systemd timers:  docker compose run --rm backup <job>
+  backup:
+    build: ./backup
+    image: billing-backup:latest
+    profiles: ["tools"]
+    environment:
+      TZ: Asia/Kolkata
+      DATABASE_URL: postgres://billing:${POSTGRES_PASSWORD}@db:5432/billing
+      ADMIN_DATABASE_URL: postgres://billing:${POSTGRES_PASSWORD}@db:5432/postgres
+      OCI_S3_HOST: ${OCI_S3_HOST}
+      OCI_REGION: ${OCI_REGION}
+      OCI_ACCESS_KEY: ${OCI_ACCESS_KEY}
+      OCI_SECRET_KEY: ${OCI_SECRET_KEY}
+      OCI_BUCKET_SNAPSHOTS: ${OCI_BUCKET_SNAPSHOTS}
+      OCI_BUCKET_ARCHIVE: ${OCI_BUCKET_ARCHIVE}
+      GDRIVE_ENABLED: ${GDRIVE_ENABLED:-false}
+      GDRIVE_FOLDER: ${GDRIVE_FOLDER:-BillingBackups}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
+      SMTP_URL: ${SMTP_URL}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      HEALTHCHECK_URL: ${HEALTHCHECK_URL}
+      APP_DOMAIN: ${APP_DOMAIN}
+    volumes:
+      - uploads:/data/uploads
+      - backups:/backups
+      - /opt/billing/secrets:/secrets:ro
+      - /opt/billing/restore:/restore
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  pgbackrest_log:
+  uploads:
+  backups:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily differential point-in-time backup
+
+[Timer]
+OnCalendar=Mon..Sat *-*-* 01:00:00
+Persistent=true
+RandomizedDelaySec=60
+Unit=billing-job@pitr-diff.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly encrypted snapshot
+
+[Timer]
+OnCalendar=*-*-* 01:30:00
+Persistent=true
+RandomizedDelaySec=60
+Unit=billing-job@snapshot.service
+
+[Install]
+WantedBy=timers.target

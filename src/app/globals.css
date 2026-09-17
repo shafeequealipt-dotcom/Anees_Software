@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-ink: #16202b;
+  --color-muted: #5d6b79;
+  --color-faint: #8a96a3;
+  --color-line: #dde3e9;
+  --color-ground: #f4f6f8;
+  --color-panel: #ffffff;
+
+  --color-brand-50: #eef5fb;
+  --color-brand-100: #d7e8f5;
+  --color-brand-200: #aed0ea;
+  --color-brand-500: #2872b5;
+  --color-brand-600: #1f5f99;
+  --color-brand-700: #184c7b;
+  --color-brand-900: #0e2c47;
+
+  --color-good: #1d7a4d;
+  --color-good-bg: #e3f4ea;
+  --color-warn: #93600a;
+  --color-warn-bg: #fdf1d8;
+  --color-bad: #b42333;
+  --color-bad-bg: #fbe5e8;
+}
+
+html,
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+}
+
+body {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 1px;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}

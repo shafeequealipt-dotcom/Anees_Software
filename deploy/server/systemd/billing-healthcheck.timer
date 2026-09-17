@@ -1,0 +1,11 @@
+[Unit]
+Description=Health check every 10 minutes
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=false
+RandomizedDelaySec=60
+Unit=billing-job@healthcheck.service
+
+[Install]
+WantedBy=timers.target

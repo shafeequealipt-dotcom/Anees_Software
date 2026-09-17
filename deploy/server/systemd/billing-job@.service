@@ -1,0 +1,10 @@
+[Unit]
+Description=Billing scheduled job: %i
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/billing/app/deploy/server/job.sh %i
+TimeoutStartSec=4h
+Nice=10

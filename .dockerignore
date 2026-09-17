@@ -1,0 +1,10 @@
+node_modules
+.next
+.data
+.git
+coverage
+*.log
+.env
+.env.*
+deploy/server
+docs
