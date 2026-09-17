@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DB } from "@/db";
 import { accounts, items, taxRates, units } from "@/db/schema";
+import { financialYear, todayIST } from "@/lib/dates";
 import { accountSchema } from "@/server/masters";
 import { saveAccount, saveItem, saveParty } from "@/server/masters";
 import { accountStatement, dashboard, dayBook, itemSales, listVouchers, partyBalances, partyStatement, profitAndLoss, stockSummary } from "@/server/reports";
@@ -211,6 +212,16 @@ describe("books end to end", () => {
     expect(bySale.find((r) => r.item_id === pen)!.qty_milli).toBe(20_000 - 5_000);
     const inv = await listVouchers(db, { types: ["sale_invoice"], status: "open" });
     expect(inv.every((r) => r.balance_paise > 0)).toBe(true);
+  });
+
+  it("counts opening stock dated on the financial-year start as opening, not as a same-day purchase", async () => {
+    // Items were seeded with no explicit opening date, so they default to 1 April of the
+    // current financial year — the same day profitAndLoss(fy.from, ...) treats as "from".
+    // Regression test for a bug where that same-day collision made opening stock read as
+    // zero and silently pushed its value into cost of goods sold instead.
+    const fy = financialYear(todayIST());
+    const pl = await profitAndLoss(db, fy.from, "2026-09-30");
+    expect(pl.openingStock).toBe(60_000); // pen: 100 pcs opening qty × ₹6.00 purchase price
   });
 
   it("keeps items with history instead of deleting them", async () => {

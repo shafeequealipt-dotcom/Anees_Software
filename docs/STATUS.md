@@ -45,7 +45,7 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 ## Last updated
 
-2026-09-18 · commit `PENDING` (this commit) · session: items/stock + cash/bank screens
+2026-09-18 · commit `86f477c` (previous push) · session: reports + opening-stock fix
 
 ---
 
@@ -53,7 +53,7 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 Verified = automated test passes, or manually clicked through in the dev server.
 
-### Core logic (37 automated tests passing, `npm test`)
+### Core logic (38 automated tests passing, `npm test`)
 - [x] Money/quantity/percent helpers, Indian-format currency display — `src/lib/money.ts`
 - [x] GST tax engine: CGST/SGST split, IGST, cess, line + bill discounts, tax-inclusive
   pricing, round-off — `src/lib/gst/engine.ts` (verified against hand-checked cases)
@@ -117,6 +117,11 @@ Verified = automated test passes, or manually clicked through in the dev server.
   account statement page (linked vouchers, running balance, print) —
   `src/app/(app)/cash-bank/`, `src/components/account-form.tsx`
 
+- [x] Reports: landing page, day book, profit & loss (trading + P&L account,
+  expense/income by category), stock summary, low stock, item-wise sales/
+  purchases, tax report (by GST rate, output vs input) —
+  `src/app/(app)/reports/`, `taxReport()` added to `src/server/reports.ts`
+
 ### Deployment (written, not yet run against a real server)
 - [x] `docker-compose.yml`, Caddy (HTTPS), app + db Dockerfiles — `deploy/`
 - [x] PostgreSQL image with pgBackRest continuous backup to Oracle Object Storage
@@ -148,18 +153,6 @@ Verified = automated test passes, or manually clicked through in the dev server.
 
 Ordered roughly by what go-live needs first. Check the plan doc for the full
 feature list each of these maps to.
-
-*(Item/party Excel import intentionally deferred to the Excel phase below — the "Import from Excel" links on the items/parties list pages currently 404, that's expected.)*
-
-### Reports (pick UI pattern from `partyStatement` page as reference)
-- [ ] Day book
-- [ ] Sale / purchase reports (can mostly reuse the voucher list page)
-- [ ] Party-wise and item-wise sale/purchase reports
-- [ ] Stock summary + low stock report
-- [ ] Profit & loss
-- [ ] Tax report / tax rate report (needed before GSTR-1, which is a later
-  phase — see plan doc P2)
-- [ ] Reports landing page (`/reports`) linking to all of the above
 
 ### Invoice PDF & sharing
 - [ ] PDF generation (`@react-pdf/renderer` is already a dependency) — at least
@@ -222,6 +215,23 @@ don't get reintroduced or "found" again.
    in the invoice line combobox, so fast typists could type into the wrong box.
    Fixed in `pickItem()` in `voucher-form.tsx` — focus + select happens
    synchronously now, not in a `setTimeout`.
+
+4. **Opening stock read as ₹0 in the Profit & Loss report** whenever an item's
+   opening-stock date fell on the same calendar day as the report's `from` date
+   — which is the common case, since items default their opening date to the
+   financial year's start, the same date most P&L reports start from. The old
+   `stockValueAt(addDays(from, -1))` excluded anything dated `from` itself,
+   including the opening-balance entry, so its value silently fell into cost of
+   goods sold instead, understating opening stock and overstating COGS by the
+   same amount for the whole year. Found by clicking through the new P&L report
+   against seeded demo data (opening stock showed ₹0 despite items clearly
+   having opening quantities) before this was ever pushed. Fixed: added
+   `stockValueAtStartOf()` in `src/server/reports.ts`, which treats an
+   opening-balance ledger row (`source = 'opening'`) dated on `from` as
+   belonging to the start of that day, while still excluding same-day vouchers
+   (sales/purchases/adjustments) that happen only once the period is under way.
+   Regression test: `tests/books.test.ts` → "counts opening stock dated on the
+   financial-year start as opening, not as a same-day purchase".
 
 Nothing currently open/unfixed.
 

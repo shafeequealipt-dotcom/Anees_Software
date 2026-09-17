@@ -364,9 +364,41 @@ export async function dayBook(db: DB, from: string, to: string) {
 
 // ─── Profit & loss ───────────────────────────────────────────────────────────
 
+/** Stock value at the end of `date` (all movements on that day included) — used for "closing stock". */
 async function stockValueAt(db: DB, date: string): Promise<number> {
   const list = await stockSummary(db, { asOf: date, includeInactive: true });
   return list.reduce((s, r) => s + r.stock_value_paise, 0);
+}
+
+/**
+ * Stock value at the very start of `date` — used for "opening stock" of a trading-account
+ * period. Movements dated before `date` count in full; an "opening balance" entry (the
+ * quantity a business already held when it started using this app) is dated on the same day
+ * as the financial year's start and represents the position *before* that day's business, so
+ * it counts too, but a normal voucher (sale/purchase/adjustment) dated on `date` itself hasn't
+ * happened yet at the start of the day and is excluded. Without this distinction, a financial
+ * year's opening stock would wrongly read as zero whenever items were onboarded with opening
+ * quantities dated to the FY start (the common case), understating opening stock and
+ * overstating cost of goods sold for the year by the same amount.
+ */
+async function stockValueAtStartOf(db: DB, date: string): Promise<number> {
+  const [row] = nums(
+    await rows<{ value: number }>(
+      db,
+      sql`select coalesce(sum(coalesce(bal.qty_milli, 0) * ${costPerUnit} / 1000), 0) as value
+          from items i
+          left join units u on u.id = i.unit_id
+          left join tax_rates t on t.id = i.tax_rate_id
+          left join lateral (
+            select sum(s.qty_milli) as qty_milli
+            from stock_ledger s
+            where s.item_id = i.id and (s.date < ${date} or (s.date = ${date} and s.source = 'opening'))
+          ) bal on true
+          where i.kind = 'goods' and coalesce(bal.qty_milli, 0) > 0`,
+    ),
+    ["value"],
+  );
+  return row.value;
 }
 
 export async function profitAndLoss(db: DB, from: string, to: string) {
@@ -405,7 +437,7 @@ export async function profitAndLoss(db: DB, from: string, to: string) {
     ),
     ["amount"],
   );
-  const openingStock = await stockValueAt(db, addDays(from, -1));
+  const openingStock = await stockValueAtStartOf(db, from);
   const closingStock = await stockValueAt(db, to);
   const netSales = t.sales - t.sale_returns;
   const netPurchases = t.purchases - t.purchase_returns;
@@ -449,6 +481,40 @@ export async function itemSales(db: DB, from: string, to: string, side: "sale" |
     ),
     ["qty_milli", "taxable_paise", "total_paise"],
   );
+}
+
+// ─── Tax report ──────────────────────────────────────────────────────────────
+
+export interface TaxRow {
+  gst_bp: number;
+  cess_bp: number;
+  taxable_paise: number;
+  cgst_paise: number;
+  sgst_paise: number;
+  igst_paise: number;
+  cess_paise: number;
+}
+
+/** GST collected (sales, less sale returns) or paid (purchases, less purchase returns), by rate. */
+export async function taxReport(db: DB, from: string, to: string, side: "outward" | "inward" = "outward") {
+  const [fwd, ret] = side === "outward" ? ["sale_invoice", "credit_note"] : ["purchase_bill", "debit_note"];
+  const rows_ = nums(
+    await rows<TaxRow>(
+      db,
+      sql`select l.gst_bp, l.cess_bp,
+            sum(case when v.type = ${fwd} then l.taxable_paise else -l.taxable_paise end) as taxable_paise,
+            sum(case when v.type = ${fwd} then l.cgst_paise else -l.cgst_paise end) as cgst_paise,
+            sum(case when v.type = ${fwd} then l.sgst_paise else -l.sgst_paise end) as sgst_paise,
+            sum(case when v.type = ${fwd} then l.igst_paise else -l.igst_paise end) as igst_paise,
+            sum(case when v.type = ${fwd} then l.cess_paise else -l.cess_paise end) as cess_paise
+          from voucher_lines l join vouchers v on v.id = l.voucher_id
+          where v.status = 'active' and v.type in (${fwd}, ${ret}) and v.date between ${from} and ${to} and l.gst_bp > 0
+          group by l.gst_bp, l.cess_bp
+          order by l.gst_bp, l.cess_bp`,
+    ),
+    ["taxable_paise", "cgst_paise", "sgst_paise", "igst_paise", "cess_paise"],
+  );
+  return rows_;
 }
 
 // ─── Global search ───────────────────────────────────────────────────────────
