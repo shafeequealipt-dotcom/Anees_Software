@@ -69,3 +69,28 @@ export function DateRange({ from, to }: { from: string; to: string }) {
     </div>
   );
 }
+
+export function LinkSelect({ param, current, options, ariaLabel }: { param: string; current: string; options: { value: string; label: string }[]; ariaLabel: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  return (
+    <select
+      aria-label={ariaLabel}
+      className={cx(inputClass, "w-auto")}
+      value={current}
+      onChange={(e) => {
+        const next = new URLSearchParams(params.toString());
+        if (e.target.value) next.set(param, e.target.value);
+        else next.delete(param);
+        router.push(`${pathname}${next.size ? `?${next}` : ""}`);
+      }}
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}

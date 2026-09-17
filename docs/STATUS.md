@@ -45,7 +45,7 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 ## Last updated
 
-2026-09-18 · commit `dd2caff` (initial push) · session: foundations + parties
+2026-09-18 · commit `PENDING` (this commit) · session: items/stock + cash/bank screens
 
 ---
 
@@ -109,6 +109,13 @@ Verified = automated test passes, or manually clicked through in the dev server.
     `src/app/(app)/[section]/[id]/page.tsx`, `src/components/voucher-actions.tsx`
 - [x] Parties: list (with filters), add/edit form, detail page with statement —
   `src/app/(app)/parties/`
+- [x] Items & stock: list (search, category filter, low/inactive tabs), add/edit
+  form (pricing, tax, units incl. alternate unit, batch/serial toggles, opening
+  stock), detail page with stock movement history and low-stock indicator —
+  `src/app/(app)/items/`, `src/components/item-form.tsx`
+- [x] Cash & bank: account list with live balances, add/edit bank account form,
+  account statement page (linked vouchers, running balance, print) —
+  `src/app/(app)/cash-bank/`, `src/components/account-form.tsx`
 
 ### Deployment (written, not yet run against a real server)
 - [x] `docker-compose.yml`, Caddy (HTTPS), app + db Dockerfiles — `deploy/`
@@ -142,21 +149,7 @@ Verified = automated test passes, or manually clicked through in the dev server.
 Ordered roughly by what go-live needs first. Check the plan doc for the full
 feature list each of these maps to.
 
-### Items & stock screens
-- [ ] Item list (search, category filter, low-stock filter, active/inactive)
-- [ ] Item add/edit form (pricing, tax, units incl. alternate unit, batch/serial
-  toggles, opening stock)
-- [ ] Item detail page: stock movement history (`itemMovements` in reports.ts
-  already exists — just needs a page), reorder/low-stock indicator
-- [ ] Delete/deactivate button (same pattern as parties — see
-  `DeleteMasterButton` in `src/components/party-actions.tsx`, it's already
-  generic for "item" too)
-
-### Cash & bank screens
-- [ ] Account list (cash + bank accounts, balances)
-- [ ] Add/edit bank account form (`saveAccountAction` already exists in
-  `src/app/actions/masters.ts`)
-- [ ] Account statement page (`accountStatement` in reports.ts already exists)
+*(Item/party Excel import intentionally deferred to the Excel phase below — the "Import from Excel" links on the items/parties list pages currently 404, that's expected.)*
 
 ### Reports (pick UI pattern from `partyStatement` page as reference)
 - [ ] Day book
