@@ -1,5 +1,4 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { DB } from "@/db";
 import { accounts, ledgerCategories, taxRates, units } from "@/db/schema";
@@ -8,7 +7,17 @@ import { accountSchema, saveAccount, saveItem, saveParty } from "./masters";
 import { needsSetup, runFirstSetup } from "./setup";
 import { saveVoucher } from "./vouchers";
 
-/** Sample business for development and demos. Never runs in production. */
+/**
+ * Sample business for development and demos. Never runs in production — gated by
+ * the environment checks in the /api/dev route that calls this.
+ *
+ * The login below is a known, fixed password (not a real secret) so it can be typed
+ * into the actual sign-in screen during local testing. This only ever exists on a
+ * developer's own machine, in the local embedded database — never on a deployed server.
+ */
+export const DEMO_EMAIL = "owner@demo.local";
+export const DEMO_PASSWORD = "Sharma-Temp-2026";
+
 export async function seedDemo(db: DB) {
   if (!(await needsSetup(db))) return false;
   await runFirstSetup(db, {
@@ -19,8 +28,8 @@ export async function seedDemo(db: DB) {
     address: "Shop 12, Laxmi Road\nPune 411030",
     phone: "020 2445 1122",
     ownerName: "Demo Owner",
-    email: "owner@demo.local",
-    password: randomBytes(24).toString("base64url"),
+    email: DEMO_EMAIL,
+    password: DEMO_PASSWORD,
   });
   const rates = await db.select().from(taxRates);
   const r = (bp: number) => rates.find((x) => x.gstBp === bp && x.nature === "taxable")!.id;
