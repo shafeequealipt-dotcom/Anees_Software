@@ -65,7 +65,10 @@ export const firms = pgTable("firms", {
   gstin: varchar("gstin", { length: 15 }),
   pan: varchar("pan", { length: 10 }),
   gstScheme: gstScheme("gst_scheme").notNull().default("regular"),
-  stateCode: varchar("state_code", { length: 2 }).notNull(),
+  /** "IN" (India, GST) or "SA" (Saudi Arabia, VAT). Chosen at setup. */
+  country: varchar("country", { length: 2 }).notNull().default("IN"),
+  /** Only used in India (CGST/SGST vs IGST). Optional. */
+  stateCode: varchar("state_code", { length: 2 }),
   address: text("address"),
   city: varchar("city", { length: 100 }),
   pincode: varchar("pincode", { length: 10 }),

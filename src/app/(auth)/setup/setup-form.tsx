@@ -2,12 +2,15 @@
 
 import { useActionState, useState } from "react";
 import { Alert, Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { REGIONS, type Country } from "@/lib/region";
 import { setupAction } from "../../actions/auth";
 
 export function SetupForm({ token, states }: { token: string; states: { code: string; name: string }[] }) {
   const [state, action, pending] = useActionState(setupAction, null);
   const [gstin, setGstin] = useState("");
   const [stateCode, setStateCode] = useState("");
+  const [country, setCountry] = useState<Country>("IN");
+  const R = REGIONS[country];
   const err = (f: string) => (state?.field === f ? state.error : null);
 
   return (
@@ -20,20 +23,27 @@ export function SetupForm({ token, states }: { token: string; states: { code: st
         <Field label="Business name" error={err("businessName")}>
           <Input name="businessName" required autoFocus />
         </Field>
-        <Field label="GSTIN" hint="Leave empty if you're not registered for GST." error={err("gstin")}>
+        <Field label="Country">
+          <Select name="country" value={country} onChange={(e) => { setCountry(e.target.value as Country); setGstin(""); setStateCode(""); }}>
+            <option value="IN">India (GST, ₹ rupees)</option>
+            <option value="SA">Saudi Arabia (VAT 15%, SAR riyals)</option>
+          </Select>
+        </Field>
+        <Field label={`${R.taxIdLabel} (optional)`} hint={R.taxIdHint} error={err("gstin")}>
           <Input
             name="gstin"
             value={gstin}
             maxLength={15}
+            inputMode={country === "SA" ? "numeric" : undefined}
             onChange={(e) => {
-              const v = e.target.value.toUpperCase();
+              const v = country === "SA" ? e.target.value.replace(/\D/g, "") : e.target.value.toUpperCase();
               setGstin(v);
-              if (/^\d{2}/.test(v) && states.some((s) => s.code === v.slice(0, 2))) setStateCode(v.slice(0, 2));
+              if (country === "IN" && /^\d{2}/.test(v) && states.some((s) => s.code === v.slice(0, 2))) setStateCode(v.slice(0, 2));
             }}
             className="font-mono uppercase"
           />
         </Field>
-        {gstin && (
+        {gstin && country === "IN" && (
           <Field label="GST type">
             <Select name="gstScheme" defaultValue="regular">
               <option value="regular">Regular</option>
@@ -41,9 +51,10 @@ export function SetupForm({ token, states }: { token: string; states: { code: st
             </Select>
           </Field>
         )}
-        <Field label="State" error={err("stateCode")}>
-          <Select name="stateCode" required value={stateCode} onChange={(e) => setStateCode(e.target.value)}>
-            <option value="">Choose state…</option>
+        {country === "IN" && (
+        <Field label="State (optional)" hint="Only needed to split GST into CGST + SGST or IGST." error={err("stateCode")}>
+          <Select name="stateCode" value={stateCode} onChange={(e) => setStateCode(e.target.value)}>
+            <option value="">Not set</option>
             {states.map((s) => (
               <option key={s.code} value={s.code}>
                 {s.code} – {s.name}
@@ -51,6 +62,7 @@ export function SetupForm({ token, states }: { token: string; states: { code: st
             ))}
           </Select>
         </Field>
+        )}
         <Field label="Address">
           <Textarea name="address" rows={2} />
         </Field>

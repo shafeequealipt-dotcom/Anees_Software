@@ -6,6 +6,8 @@
  * ("milli") so 1.5 kg is 1500. Percentages are basis points: 18% is 1800.
  */
 
+import { region } from "./region";
+
 export type Paise = number;
 export type Milli = number;
 export type BasisPoints = number;
@@ -50,20 +52,33 @@ export function bpToPercent(bp: BasisPoints): number {
   return bp / 100;
 }
 
-/** Indian digit grouping: 12,34,567.89 */
-export function formatINR(p: Paise, opts: { symbol?: boolean; decimals?: boolean } = {}): string {
+/**
+ * Money for display in the business's currency: "₹12,34,567.89" (India, lakh grouping) or
+ * "SAR 1,234,567.89" (Saudi Arabia). Amounts are always whole minor units (paise / halalas).
+ */
+export function formatMoney(p: Paise, opts: { symbol?: boolean; decimals?: boolean } = {}): string {
   const { symbol = true, decimals = true } = opts;
+  const r = region();
   const negative = p < 0;
   const abs = Math.abs(p);
-  const rupees = Math.floor(abs / 100);
-  const paise = abs % 100;
-  const s = rupees.toString();
-  const last3 = s.slice(-3);
-  const rest = s.slice(0, -3);
-  const grouped = rest ? rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + last3 : last3;
-  const body = decimals ? `${grouped}.${paise.toString().padStart(2, "0")}` : grouped;
-  return `${negative ? "-" : ""}${symbol ? "₹" : ""}${body}`;
+  const whole = Math.floor(abs / 100);
+  const minor = abs % 100;
+  const s = whole.toString();
+  let grouped: string;
+  if (r.indianGrouping) {
+    const last3 = s.slice(-3);
+    const rest = s.slice(0, -3);
+    grouped = rest ? rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + last3 : last3;
+  } else {
+    grouped = s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+  const body = decimals ? `${grouped}.${minor.toString().padStart(2, "0")}` : grouped;
+  const sym = r.currencySymbol.length > 1 ? `${r.currencySymbol} ` : r.currencySymbol;
+  return `${negative ? "-" : ""}${symbol ? sym : ""}${body}`;
 }
+
+/** Kept for existing imports; same as formatMoney. */
+export const formatINR = formatMoney;
 
 export function formatQty(m: Milli): string {
   const q = m / 1000;

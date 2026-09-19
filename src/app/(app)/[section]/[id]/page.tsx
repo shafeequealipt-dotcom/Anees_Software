@@ -8,7 +8,10 @@ import { eq } from "drizzle-orm";
 import { amountInWords } from "@/lib/amount-in-words";
 import { requireUser } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/dates";
+import QRCode from "qrcode";
 import { stateName } from "@/lib/gst/states";
+import { region, taxColumnLabels } from "@/lib/region";
+import { zatcaQrBase64 } from "@/lib/zatca";
 import { formatINR, formatPercent, formatQty } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { typeFromPath, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
@@ -39,6 +42,22 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   const [creator] = v.createdBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.createdBy)) : [];
   const [editor] = v.updatedBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.updatedBy)) : [];
 
+  const R = region();
+  const TL = taxColumnLabels(R);
+  // Saudi Arabia: tax invoices and credit notes carry a ZATCA (Phase 1) QR code.
+  const qrSource = R.country === "SA" && firm?.gstin && ["sale_invoice", "credit_note"].includes(v.type) && v.status === "active";
+  const zatcaQr = qrSource
+    ? await QRCode.toDataURL(
+        zatcaQrBase64({
+          sellerName: firm!.name,
+          vatNumber: firm!.gstin!,
+          timestamp: v.createdAt.toISOString().replace(/\.\d+Z$/, "Z"),
+          totalPaise: v.totalPaise,
+          vatPaise: v.cgstPaise + v.sgstPaise + v.igstPaise + v.cessPaise,
+        }),
+        { margin: 1, width: 180 },
+      )
+    : null;
   const number = voucherNumber(v);
   const status = info.takesPayment && v.partyId ? paymentStatus(v, data.balancePaise) : v.status === "cancelled" ? "cancelled" : null;
   const hasTax = v.cgstPaise + v.sgstPaise + v.igstPaise + v.cessPaise > 0;
@@ -113,11 +132,11 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                     <div className="font-medium">{v.partyName || (info.partySide === "none" ? "" : "Cash")}</div>
                   )}
                   {v.billingAddress && <div className="whitespace-pre-line text-sm text-muted">{v.billingAddress}</div>}
-                  {v.partyGstin && <div className="font-mono text-xs text-muted">GSTIN {v.partyGstin}</div>}
+                  {v.partyGstin && <div className="font-mono text-xs text-muted">{R.taxIdLabel} {v.partyGstin}</div>}
                   {v.partyPhone && <div className="text-xs text-muted">{v.partyPhone}</div>}
                 </div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-                  {v.placeOfSupply && info.partySide !== "none" && <Pair k="Place of supply" v={`${v.placeOfSupply}-${stateName(v.placeOfSupply)}`} />}
+                  {R.usesStates && v.placeOfSupply && info.partySide !== "none" && <Pair k="Place of supply" v={`${v.placeOfSupply}-${stateName(v.placeOfSupply)}`} />}
                   {v.dueDate && <Pair k={v.type === "quotation" ? "Valid until" : "Due date"} v={formatDate(v.dueDate)} />}
                   {v.supplierInvoiceNo && <Pair k="Supplier bill no." v={v.supplierInvoiceNo} />}
                   {v.originalInvoiceNo && <Pair k="Against bill" v={`${v.originalInvoiceNo}${v.originalInvoiceDate ? `, ${formatDate(v.originalInvoiceDate)}` : ""}`} />}
@@ -126,7 +145,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   {v.vehicleNo && <Pair k="Vehicle" v={v.vehicleNo} />}
                   {category && <Pair k="Category" v={category.name} />}
                   {v.type === "stock_adjustment" && <Pair k="Adjustment" v={v.direction === -1 ? "Stock reduced" : "Stock added"} />}
-                  {v.withoutTax && info.outward && <Pair k="Type" v="Bill of supply" />}
+                  {v.withoutTax && info.outward && <Pair k="Type" v={R.usesStates ? "Bill of supply" : "No VAT charged"} />}
                   {v.reverseCharge && <Pair k="Reverse charge" v="Yes" />}
                 </dl>
               </div>
@@ -155,7 +174,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                           l.description
                         )}
                         <div className="text-xs text-faint">
-                          {[l.hsn && `HSN ${l.hsn}`, l.batchNo && `Batch ${l.batchNo}`, l.expiryDate && `Exp ${formatDate(l.expiryDate)}`].filter(Boolean).join(" · ")}
+                          {[R.usesHsn && l.hsn && `HSN ${l.hsn}`, l.batchNo && `Batch ${l.batchNo}`, l.expiryDate && `Exp ${formatDate(l.expiryDate)}`].filter(Boolean).join(" · ")}
                         </div>
                       </td>
                       <td className={td + " num text-right"}>
@@ -191,9 +210,9 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                 <dl className="flex w-full max-w-xs flex-col gap-1 text-sm">
                   {v.discountPaise > 0 && <Sum k="Discount" v={-v.discountPaise} />}
                   {hasTax && <Sum k="Taxable value" v={v.taxablePaise} />}
-                  {intra && v.cgstPaise > 0 && <Sum k="CGST" v={v.cgstPaise} />}
-                  {intra && v.sgstPaise > 0 && <Sum k="SGST" v={v.sgstPaise} />}
-                  {v.igstPaise > 0 && <Sum k="IGST" v={v.igstPaise} />}
+                  {intra && v.cgstPaise > 0 && <Sum k={TL.cgst} v={v.cgstPaise} />}
+                  {intra && v.sgstPaise > 0 && <Sum k={TL.sgst} v={v.sgstPaise} />}
+                  {v.igstPaise > 0 && <Sum k={TL.igst} v={v.igstPaise} />}
                   {v.cessPaise > 0 && <Sum k="Cess" v={v.cessPaise} />}
                   {v.roundOffPaise !== 0 && <Sum k="Round off" v={v.roundOffPaise} />}
                   <div className="mt-1 flex justify-between border-t border-line pt-2 text-base font-semibold">
@@ -308,6 +327,15 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   </li>
                 ))}
               </ul>
+            </Panel>
+          )}
+          {zatcaQr && (
+            <Panel title="ZATCA QR code">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={zatcaQr} alt="ZATCA QR code for this invoice" width={180} height={180} className="mx-auto" />
+              <p className="mt-2 text-xs text-muted">
+                Seller {firm!.name} · VAT no. {firm!.gstin}. Scan with the ZATCA/Fatoora app to check the details.
+              </p>
             </Panel>
           )}
           <Panel title="Record">

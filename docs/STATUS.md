@@ -163,6 +163,20 @@ Verified = automated test passes, or manually clicked through in the dev server.
 
 ---
 
+## Region support (India + Saudi Arabia) — added 2026-09-19
+- Country is chosen at first-run setup and stored on the firm (`firms.country`: `IN` | `SA`). `src/lib/region.ts`
+  holds everything that differs (currency, tax name, tax-ID label, states, HSN, digit grouping, time zone,
+  financial-year start). Server loads it per request (`src/server/region.ts`), a tiny client component
+  (`RegionInit`) sets it in the browser.
+- **GST/VAT number and state are optional.** No number ⇒ business is "unregistered" ⇒ no tax charged.
+- Saudi Arabia: VAT 15% / zero-rated / exempt / out-of-scope; single VAT shown (stored in the `igst` column);
+  SAR with 1,234,567.89 grouping; 15-digit VAT-number check (starts and ends with 3); amount in words in
+  riyals/halalas; calendar financial year; Asia/Riyadh time; no HSN, no state/place-of-supply; **ZATCA Phase 1 QR**
+  on sale invoices and credit notes (`src/lib/zatca.ts`).
+- **Not done for Saudi Arabia:** ZATCA Phase 2 (Fatoora integration: signed UBL XML, cryptographic stamp,
+  clearance/reporting — needs onboarding certificates); Arabic/bilingual invoices and RTL screens (invoice PDF is
+  not built yet — build it bilingual); Hijri dates; zakat reports. Update migration: `drizzle/0001_country_and_optional_state.sql`.
+
 ## Not started
 
 Ordered roughly by what go-live needs first. Check the plan doc for the full

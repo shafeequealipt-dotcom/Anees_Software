@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { addDays, formatDate, todayIST } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { can } from "@/lib/permissions";
+import { region } from "@/lib/region";
 import { dashboard } from "@/server/reports";
 
 export const metadata = { title: "Home" };
@@ -132,7 +133,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 }
 
 function greeting() {
-  const h = Number(new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }).format(new Date()));
+  const h = Number(new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: false, timeZone: region().timezone }).format(new Date()));
   return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
 }
 

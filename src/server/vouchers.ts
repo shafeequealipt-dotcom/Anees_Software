@@ -19,7 +19,7 @@ import {
 } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { isIsoDate, todayIST } from "@/lib/dates";
-import { calculateVoucher, supplyKind } from "@/lib/gst/engine";
+import { calculateVoucher, supplyFor } from "@/lib/gst/engine";
 import { buildPostings, PostingError } from "@/lib/posting";
 import { getSettings } from "@/lib/settings";
 import { SETTLES, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
@@ -165,7 +165,7 @@ export async function saveVoucher(
     const taxRows = taxIds.length ? await tx.select().from(taxRates).where(inArray(taxRates.id, taxIds)) : [];
     const taxMap = new Map(taxRows.map((t) => [t.id, t]));
 
-    const placeOfSupply = input.placeOfSupply || party?.stateCode || firm.stateCode;
+    const placeOfSupply = firm.country === "SA" ? null : input.placeOfSupply || party?.stateCode || firm.stateCode;
     const composition = firm.gstScheme !== "regular" && info.outward;
     const withoutTax =
       input.type === "stock_adjustment" || input.type === "delivery_challan" ? true : input.withoutTax || composition;
@@ -181,7 +181,7 @@ export async function saveVoucher(
     });
 
     const calc = calculateVoucher({
-      supply: supplyKind(firm.stateCode, placeOfSupply),
+      supply: supplyFor(firm.country, firm.stateCode, placeOfSupply),
       roundOff: info.hasLines && input.type !== "stock_adjustment" ? input.roundOff : false,
       withoutTax,
       billDiscountBp: input.billDiscountBp || undefined,

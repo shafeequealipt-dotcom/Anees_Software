@@ -1,9 +1,10 @@
 import { formatINR } from "@/lib/money";
+import { region } from "@/lib/region";
 
 /** Grouped monthly bars, two series. Values in paise. */
 export function MonthBars({ data }: { data: { month: string; a: number; b: number }[]; }) {
   const W = 640, H = 200, padL = 56, padB = 24, padT = 8;
-  const max = Math.max(1, ...data.flatMap((d) => [d.a, d.b]));
+  const max = Math.max(100_000, ...data.flatMap((d) => [d.a, d.b]));
   const step = niceStep(max / 4);
   const top = Math.ceil(max / step) * step;
   const y = (v: number) => padT + (H - padT - padB) * (1 - v / top);
@@ -53,8 +54,13 @@ function niceStep(raw: number) {
 
 function compact(paise: number) {
   const r = paise / 100;
-  if (r >= 1e7) return `₹${(r / 1e7).toFixed(r % 1e7 ? 1 : 0)}Cr`;
-  if (r >= 1e5) return `₹${(r / 1e5).toFixed(r % 1e5 ? 1 : 0)}L`;
-  if (r >= 1e3) return `₹${(r / 1e3).toFixed(r % 1e3 ? 1 : 0)}K`;
-  return `₹${r}`;
+  const R = region();
+  const sym = R.currencySymbol.length > 1 ? "" : R.currencySymbol;
+  const fmt = (v: number, unit: number) => (v / unit).toFixed(v % unit ? 1 : 0);
+  if (R.indianGrouping) {
+    if (r >= 1e7) return `${sym}${fmt(r, 1e7)}Cr`;
+    if (r >= 1e5) return `${sym}${fmt(r, 1e5)}L`;
+  } else if (r >= 1e6) return `${sym}${fmt(r, 1e6)}M`;
+  if (r >= 1e3) return `${sym}${fmt(r, 1e3)}K`;
+  return `${sym}${r}`;
 }

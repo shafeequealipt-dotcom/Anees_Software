@@ -1,5 +1,6 @@
 "use server";
 
+import { region } from "@/lib/region";
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -31,7 +32,7 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
     const db = await getDb();
     if (input.id && !can(user.role, "vouchers.editOld")) {
       const [v] = await db.select({ createdAt: vouchers.createdAt }).from(vouchers).where(eq(vouchers.id, input.id));
-      const created = v ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(v.createdAt) : null;
+      const created = v ? new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(v.createdAt) : null;
       if (created && created !== todayIST()) throw new AuthError("Only the owner or accountant can edit entries from earlier days.");
     }
     const res = await saveVoucher(db, input, user.id, await clientIp());

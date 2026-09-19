@@ -9,6 +9,7 @@ import { firms, parties, partyGroups } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { financialYear, formatDate, todayIST } from "@/lib/dates";
 import { stateName } from "@/lib/gst/states";
+import { region } from "@/lib/region";
 import { formatINR } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
@@ -72,8 +73,8 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
               <Detail k="Type" v={p.kind === "both" ? "Customer & supplier" : p.kind === "customer" ? "Customer" : "Supplier"} />
               {p.phone && <Detail k="Phone" v={<a className="text-brand-600" href={`tel:${p.phone}`}>{p.phone}</a>} />}
               {p.email && <Detail k="Email" v={p.email} />}
-              {p.gstin && <Detail k="GSTIN" v={<span className="font-mono">{p.gstin}</span>} />}
-              {p.stateCode && <Detail k="State" v={`${p.stateCode} – ${stateName(p.stateCode)}`} />}
+              {p.gstin && <Detail k={region().taxIdLabel} v={<span className="font-mono">{p.gstin}</span>} />}
+              {region().usesStates && p.stateCode && <Detail k="State" v={`${p.stateCode} – ${stateName(p.stateCode)}`} />}
               {group && <Detail k="Group" v={group.name} />}
               {p.creditDays != null && <Detail k="Credit period" v={`${p.creditDays} days`} />}
               {p.creditLimitPaise != null && <Detail k="Credit limit" v={<Money paise={p.creditLimitPaise} />} />}

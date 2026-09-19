@@ -4,6 +4,7 @@ import { SearchBox, Tabs } from "@/components/simple-filters";
 import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { formatDate } from "@/lib/dates";
+import { region } from "@/lib/region";
 import { partyBalances } from "@/server/reports";
 
 export const metadata = { title: "Parties" };
@@ -43,7 +44,7 @@ export default async function PartiesPage({ searchParams }: { searchParams: Prom
           ]}
         />
         <Tabs param="kind" current={sp.kind ?? "all"} options={[{ value: "all", label: "Everyone" }, { value: "customer", label: "Customers" }, { value: "supplier", label: "Suppliers" }]} />
-        <SearchBox q={sp.q} placeholder="Name, phone or GSTIN" />
+        <SearchBox q={sp.q} placeholder={`Name, phone or ${region().taxIdLabel}`} />
       </div>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:max-w-md">
         <div className="rounded-lg border border-line bg-panel px-3 py-2">
@@ -66,7 +67,7 @@ export default async function PartiesPage({ searchParams }: { searchParams: Prom
               <tr>
                 <th className={th}>Name</th>
                 <th className={th}>Phone</th>
-                <th className={th}>GSTIN</th>
+                <th className={th}>{region().taxIdLabel}</th>
                 <th className={th}>Group</th>
                 <th className={th}>Last entry</th>
                 <th className={th + " text-right"}>Balance</th>

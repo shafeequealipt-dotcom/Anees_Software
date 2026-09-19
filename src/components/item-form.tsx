@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { saveCategoryAction, saveItemAction, saveUnitAction } from "@/app/actions/masters";
 import { toBasisPoints, toMilli, toPaise } from "@/lib/money";
+import { region } from "@/lib/region";
 import { Alert, Button, Checkbox, Field, Input, Select, Textarea } from "./ui";
 
 export interface ItemFormValue {
@@ -149,9 +150,9 @@ export function ItemForm({
         <Field label="Item code" error={err("code")} hint="Optional. Must be unique.">
           <Input value={v.code} onChange={(e) => set("code", e.target.value)} />
         </Field>
-        <Field label="HSN / SAC code" error={err("hsn")} hint="4–8 digits, for GST returns.">
+        {region().usesHsn && <Field label="HSN / SAC code" error={err("hsn")} hint="4–8 digits, for GST returns.">
           <Input value={v.hsn} onChange={(e) => set("hsn", e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
-        </Field>
+        </Field>}
         <Field label="Category">
           <div className="flex gap-2">
             <Select value={v.categoryId} onChange={(e) => set("categoryId", e.target.value)}>
@@ -187,7 +188,7 @@ export function ItemForm({
             ))}
           </Select>
         </Field>
-        <Field label="Sale price (₹)" error={err("salePricePaise")}>
+        <Field label={`Sale price (${region().currencyCode})`} error={err("salePricePaise")}>
           <div className="flex items-center gap-2">
             <Input value={v.salePrice} onChange={(e) => set("salePrice", e.target.value)} inputMode="decimal" className="num" />
             <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
@@ -195,7 +196,7 @@ export function ItemForm({
             </label>
           </div>
         </Field>
-        <Field label="Purchase price (₹)" error={err("purchasePricePaise")}>
+        <Field label={`Purchase price (${region().currencyCode})`} error={err("purchasePricePaise")}>
           <div className="flex items-center gap-2">
             <Input value={v.purchasePrice} onChange={(e) => set("purchasePrice", e.target.value)} inputMode="decimal" className="num" />
             <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
@@ -203,7 +204,7 @@ export function ItemForm({
             </label>
           </div>
         </Field>
-        <Field label="MRP (₹)" hint="Optional, shown on some print layouts.">
+        <Field label={`MRP (${region().currencyCode})`} hint="Optional, shown on some print layouts.">
           <Input value={v.mrp} onChange={(e) => set("mrp", e.target.value)} inputMode="decimal" className="num" />
         </Field>
         <Field label="Unit">
@@ -243,7 +244,7 @@ export function ItemForm({
             <Field label="Opening stock" hint="Quantity you had before starting to use this app.">
               <Input value={v.openingQty} onChange={(e) => set("openingQty", e.target.value)} inputMode="decimal" className="num" />
             </Field>
-            <Field label="Opening stock cost/unit (₹)">
+            <Field label={`Opening stock cost/unit (${region().currencyCode})`}>
               <Input value={v.openingRate} onChange={(e) => set("openingRate", e.target.value)} inputMode="decimal" className="num" />
             </Field>
             <Field label="As of date" hint="Leave empty for 1 April of this financial year.">

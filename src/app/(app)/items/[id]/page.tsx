@@ -10,6 +10,7 @@ import { requireUser } from "@/lib/auth";
 import { financialYear, formatDate, todayIST } from "@/lib/dates";
 import { formatINR, formatPercent, formatQty } from "@/lib/money";
 import { can } from "@/lib/permissions";
+import { region } from "@/lib/region";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { itemMovements } from "@/server/reports";
 
@@ -56,7 +57,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
         <div className="no-print flex flex-col gap-4">
           <Panel title="Details">
             <dl className="flex flex-col gap-2 text-sm">
-              {item.hsn && <Detail k="HSN / SAC" v={item.hsn} />}
+              {region().usesHsn && item.hsn && <Detail k="HSN / SAC" v={item.hsn} />}
               <Detail k="Sale price" v={<Money paise={item.salePricePaise} />} hint={item.salePriceIncludesTax ? "incl. tax" : "excl. tax"} />
               {can(user.role, "prices.seePurchase") && <Detail k="Purchase price" v={<Money paise={item.purchasePricePaise} />} hint={item.purchasePriceIncludesTax ? "incl. tax" : "excl. tax"} />}
               {item.mrpPaise ? <Detail k="MRP" v={<Money paise={item.mrpPaise} />} /> : null}

@@ -8,6 +8,7 @@ import * as OTPAuth from "otpauth";
 import { getDb } from "@/db";
 import { loginAttempts, sessions, users } from "@/db/schema";
 import { can, type Permission, type Role } from "./permissions";
+import { ensureRegion } from "@/server/region";
 
 const COOKIE = "sid";
 const SESSION_HOURS = 12;
@@ -194,6 +195,7 @@ export async function requireUser(permission?: Permission): Promise<CurrentUser>
     redirect("/login");
   }
   if (permission && !can(user.role, permission)) redirect("/?denied=1");
+  await ensureRegion();
   return user;
 }
 
@@ -202,6 +204,7 @@ export async function assertUser(permission?: Permission): Promise<CurrentUser> 
   const user = await currentUser();
   if (!user) throw new AuthError("Your session has ended. Sign in again.");
   if (permission && !can(user.role, permission)) throw new AuthError("You don't have permission to do that.");
+  await ensureRegion();
   return user;
 }
 

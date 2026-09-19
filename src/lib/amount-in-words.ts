@@ -1,3 +1,5 @@
+import { region } from "./region";
+
 const ONES = [
   "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
   "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen",
@@ -33,12 +35,29 @@ export function numberToIndianWords(n: number): string {
   return parts.join(" ");
 }
 
-/** 123456 paise -> "One Thousand Two Hundred Thirty Four Rupees and Fifty Six Paise Only" */
-export function amountInWords(paise: number): string {
-  const abs = Math.abs(Math.round(paise));
-  const rupees = Math.floor(abs / 100);
-  const p = abs % 100;
-  let out = `${numberToIndianWords(rupees)} Rupees`;
-  if (p) out += ` and ${belowHundred(p)} Paise`;
-  return (paise < 0 ? "Minus " : "") + out + " Only";
+/** Whole number in the international system: thousand, million, billion. */
+export function numberToWesternWords(n: number): string {
+  n = Math.floor(Math.abs(n));
+  if (n === 0) return "Zero";
+  const scales: [number, string][] = [[1_000_000_000, "Billion"], [1_000_000, "Million"], [1_000, "Thousand"]];
+  const parts: string[] = [];
+  for (const [size, name] of scales) {
+    const q = Math.floor(n / size);
+    if (q) parts.push(numberToWesternWords(q) + " " + name);
+    n %= size;
+  }
+  if (n) parts.push(belowThousand(n));
+  return parts.join(" ");
+}
+
+/** 123456 minor units -> "One Thousand Two Hundred Thirty Four Rupees and Fifty Six Paise Only" (or Riyals/Halalas). */
+export function amountInWords(minorUnits: number): string {
+  const r = region();
+  const abs = Math.abs(Math.round(minorUnits));
+  const major = Math.floor(abs / 100);
+  const minor = abs % 100;
+  const words = r.indianGrouping ? numberToIndianWords(major) : numberToWesternWords(major);
+  let out = `${r.country === "SA" ? "Saudi " : ""}${words} ${r.currencyMajor}`;
+  if (minor) out += ` and ${belowHundred(minor)} ${r.currencyMinor}`;
+  return (minorUnits < 0 ? "Minus " : "") + out + " Only";
 }

@@ -91,7 +91,7 @@ export async function loadVoucherFormData(db: DB, type: VoucherType, opts: { id?
 
   return {
     type,
-    firm: firm ? { stateCode: firm.stateCode, gstScheme: firm.gstScheme, terms: firm.invoiceTerms } : null,
+    firm: firm ? { country: firm.country, stateCode: firm.stateCode, gstScheme: firm.gstScheme, terms: firm.invoiceTerms } : null,
     settings: {
       roundOff: settings.roundOff,
       lineDiscount: settings.lineDiscount,

@@ -8,6 +8,7 @@ import { formatINR, toPaise } from "@/lib/money";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import type { VoucherFormData } from "@/server/form-data";
 import { Combobox } from "./combobox";
+import { region } from "@/lib/region";
 import { Alert, Button, Field, Input, Money, PartyBalance, Select, Textarea } from "./ui";
 
 const MODES = ["Cash", "UPI", "Bank transfer", "Card", "Cheque"];
@@ -20,7 +21,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
   const info = VOUCHER_INFO[data.type];
   const ex = data.existing?.voucher;
   const incoming = data.type === "payment_in";
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(new Date());
 
   const [partyId, setPartyId] = useState<number | null>(ex?.partyId ?? data.presetPartyId ?? null);
   const [date, setDate] = useState(ex?.date ?? today);
@@ -138,7 +139,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
             </p>
           )}
         </Field>
-        <Field label="Amount (₹)">
+        <Field label={`Amount (${region().currencyCode})`}>
           <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" className="num text-lg font-semibold" placeholder="0" />
         </Field>
         <Field label="Date">
@@ -256,7 +257,7 @@ export function MoneyForm({ data }: { data: VoucherFormData }) {
   const router = useRouter();
   const ex = data.existing?.voucher;
   const transfer = data.type === "money_transfer";
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(new Date());
   const [date, setDate] = useState(ex?.date ?? today);
   const [amount, setAmount] = useState(ex ? rupees(ex.totalPaise) : "");
   const [accountId, setAccountId] = useState<number | null>(ex?.accountId ?? data.accounts[0]?.id ?? null);
@@ -322,7 +323,7 @@ export function MoneyForm({ data }: { data: VoucherFormData }) {
             </Select>
           </Field>
         )}
-        <Field label="Amount (₹)">
+        <Field label={`Amount (${region().currencyCode})`}>
           <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" className="num" autoFocus />
         </Field>
         <Field label="Date">

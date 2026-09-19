@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { financialYear, formatDate, todayIST } from "@/lib/dates";
 import { formatPercent } from "@/lib/money";
+import { region, taxColumnLabels } from "@/lib/region";
 import { taxReport } from "@/server/reports";
 
 export const metadata = { title: "Tax report" };
@@ -22,7 +23,7 @@ export default async function TaxReportPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <PageHeader title="Tax report" subtitle="GST by rate, from your sales and purchases." back={{ href: "/reports", label: "Reports" }} actions={<PrintButton />} />
+      <PageHeader title="Tax report" subtitle={`${region().taxName} by rate, from your sales and purchases.`} back={{ href: "/reports", label: "Reports" }} actions={<PrintButton />} />
       <div className="no-print mb-4 flex flex-wrap items-center gap-3">
         <Tabs param="side" current={side === "outward" ? "all" : "inward"} options={[{ value: "all", label: "Output (sales)" }, { value: "inward", label: "Input (purchases)" }]} />
         <DateRange from={from} to={to} />
@@ -36,9 +37,9 @@ export default async function TaxReportPage({ searchParams }: { searchParams: Pr
               <tr>
                 <th className={th}>Rate</th>
                 <th className={th + " text-right"}>Taxable value</th>
-                <th className={th + " text-right"}>CGST</th>
-                <th className={th + " text-right"}>SGST</th>
-                <th className={th + " text-right"}>IGST</th>
+                {region().usesStates && <th className={th + " text-right"}>CGST</th>}
+                {region().usesStates && <th className={th + " text-right"}>SGST</th>}
+                <th className={th + " text-right"}>{taxColumnLabels().igst}</th>
                 <th className={th + " text-right"}>Cess</th>
                 <th className={th + " text-right"}>Total tax</th>
               </tr>
@@ -53,12 +54,16 @@ export default async function TaxReportPage({ searchParams }: { searchParams: Pr
                   <td className={td + " text-right"}>
                     <Money paise={r.taxable_paise} />
                   </td>
-                  <td className={td + " text-right"}>
-                    <Money paise={r.cgst_paise} blankZero />
-                  </td>
-                  <td className={td + " text-right"}>
-                    <Money paise={r.sgst_paise} blankZero />
-                  </td>
+                  {region().usesStates && (
+                    <td className={td + " text-right"}>
+                      <Money paise={r.cgst_paise} blankZero />
+                    </td>
+                  )}
+                  {region().usesStates && (
+                    <td className={td + " text-right"}>
+                      <Money paise={r.sgst_paise} blankZero />
+                    </td>
+                  )}
                   <td className={td + " text-right"}>
                     <Money paise={r.igst_paise} blankZero />
                   </td>
@@ -75,12 +80,16 @@ export default async function TaxReportPage({ searchParams }: { searchParams: Pr
                 <td className={td + " text-right"}>
                   <Money paise={sum((r) => r.taxable_paise)} />
                 </td>
-                <td className={td + " text-right"}>
-                  <Money paise={sum((r) => r.cgst_paise)} />
-                </td>
-                <td className={td + " text-right"}>
-                  <Money paise={sum((r) => r.sgst_paise)} />
-                </td>
+                {region().usesStates && (
+                  <td className={td + " text-right"}>
+                    <Money paise={sum((r) => r.cgst_paise)} />
+                  </td>
+                )}
+                {region().usesStates && (
+                  <td className={td + " text-right"}>
+                    <Money paise={sum((r) => r.sgst_paise)} />
+                  </td>
+                )}
                 <td className={td + " text-right"}>
                   <Money paise={sum((r) => r.igst_paise)} />
                 </td>
@@ -96,7 +105,7 @@ export default async function TaxReportPage({ searchParams }: { searchParams: Pr
         )}
       </Panel>
       <p className="mt-3 text-xs text-faint">
-        This is a working summary for filing, not a GSTR-1 or GSTR-3B form. Those come in a later phase — see the plan document.
+        {region().country === "SA" ? "This is a working summary to help prepare your VAT return, not a ZATCA filing." : "This is a working summary for filing, not a GSTR-1 or GSTR-3B form. Those come in a later phase — see the plan document."}
       </p>
     </>
   );

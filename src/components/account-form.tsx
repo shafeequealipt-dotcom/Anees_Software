@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { saveAccountAction } from "@/app/actions/masters";
 import { toPaise } from "@/lib/money";
+import { region } from "@/lib/region";
 import { Alert, Button, Checkbox, Field, Input } from "./ui";
 
 export interface AccountFormValue {
@@ -101,7 +102,7 @@ export function AccountForm({ initial }: { initial?: AccountFormValue }) {
             </Field>
           </>
         )}
-        <Field label="Opening balance (₹)">
+        <Field label={`Opening balance (${region().currencyCode})`}>
           <div className="flex gap-2">
             <Input value={v.opening} onChange={(e) => set("opening", e.target.value)} inputMode="decimal" className="num" placeholder="0" />
             <select className="h-9 rounded-md border border-line bg-panel px-2 text-sm" value={v.openingSide} onChange={(e) => set("openingSide", e.target.value)}>

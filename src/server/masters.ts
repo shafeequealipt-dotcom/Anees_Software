@@ -20,6 +20,8 @@ import {
 import { audit } from "@/lib/audit";
 import { financialYear, isIsoDate, todayIST } from "@/lib/dates";
 import { checkGstin } from "@/lib/gst/gstin";
+import { checkTrn } from "@/lib/gst/trn";
+import { region } from "@/lib/region";
 import { isValidStateCode } from "@/lib/gst/states";
 
 /** Opening balances default to the first day of the current financial year. */
@@ -70,14 +72,22 @@ export async function saveParty(db: DB, raw: z.input<typeof partySchema>, userId
   const p = partySchema.safeParse(raw);
   if (!p.success) throw firstIssue(p.error);
   const input = p.data;
-  if (input.gstin) {
-    input.gstin = input.gstin.toUpperCase();
-    const check = checkGstin(input.gstin);
-    if (!check.ok) throw new MasterError(check.reason, "gstin");
-    input.stateCode = input.stateCode || check.stateCode;
-    input.pan = input.pan || check.pan;
+  if (region().country === "SA") {
+    input.stateCode = null;
+    if (input.gstin) {
+      const t = checkTrn(input.gstin);
+      if (!t.ok) throw new MasterError(t.reason, "gstin");
+    }
+  } else {
+    if (input.gstin) {
+      input.gstin = input.gstin.toUpperCase();
+      const check = checkGstin(input.gstin);
+      if (!check.ok) throw new MasterError(check.reason, "gstin");
+      input.stateCode = input.stateCode || check.stateCode;
+      input.pan = input.pan || check.pan;
+    }
+    if (input.stateCode && !isValidStateCode(input.stateCode)) throw new MasterError("Choose a valid state.", "stateCode");
   }
-  if (input.stateCode && !isValidStateCode(input.stateCode)) throw new MasterError("Choose a valid state.", "stateCode");
 
   return db.transaction(async (tx) => {
     const dupe = await tx

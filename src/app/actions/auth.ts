@@ -81,6 +81,7 @@ export async function setupAction(_prev: FormState, form: FormData): Promise<For
       businessName: String(form.get("businessName") ?? ""),
       gstin: String(form.get("gstin") ?? "") || undefined,
       gstScheme: (String(form.get("gstScheme") ?? "regular") as "regular" | "composition" | "unregistered"),
+      country: (String(form.get("country") ?? "IN") === "SA" ? "SA" : "IN"),
       stateCode: String(form.get("stateCode") ?? ""),
       address: String(form.get("address") ?? ""),
       phone: String(form.get("phone") ?? ""),

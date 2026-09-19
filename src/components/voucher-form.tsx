@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { quickPartyAction, saveVoucherAction } from "@/app/actions/vouchers";
-import { calculateVoucher, supplyKind } from "@/lib/gst/engine";
+import { calculateVoucher, supplyFor } from "@/lib/gst/engine";
+import { region, taxColumnLabels } from "@/lib/region";
 import { GST_STATES, stateName } from "@/lib/gst/states";
 import { formatINR, formatQty, toBasisPoints, toMilli, toPaise } from "@/lib/money";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
@@ -45,7 +46,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const ex = data.existing?.voucher;
   const src = data.source;
   const base = ex ?? src?.voucher ?? null;
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(new Date());
 
   const [parties, setParties] = useState<PartyOpt[]>(data.parties);
   const [partyId, setPartyId] = useState<number | null>(base?.partyId ?? data.presetPartyId ?? null);
@@ -117,7 +118,9 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
 
   const party = partyId ? parties.find((p) => p.id === partyId) ?? null : null;
   const pos = placeOfSupply || party?.stateCode || data.firm?.stateCode || "";
-  const supply = supplyKind(data.firm?.stateCode, pos);
+  const supply = supplyFor(data.firm?.country, data.firm?.stateCode, pos);
+  const R = region();
+  const TL = taxColumnLabels(R);
   const composition = data.firm?.gstScheme !== "regular" && info.outward;
   const noTax = data.type === "stock_adjustment" || data.type === "delivery_challan" || withoutTax || composition;
 
@@ -384,8 +387,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               {party ? (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
                   {party.phone && <span>{party.phone}</span>}
-                  {party.gstin && <span className="font-mono">GSTIN {party.gstin}</span>}
-                  {party.stateCode && <span>{stateName(party.stateCode)}</span>}
+                  {party.gstin && <span className="font-mono">{R.taxIdLabel} {party.gstin}</span>}
+                  {R.usesStates && party.stateCode && <span>{stateName(party.stateCode)}</span>}
                   <span>
                     Balance: <PartyBalance paise={party.balancePaise} />
                   </span>
@@ -463,7 +466,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               </Field>
             </>
           )}
-          {info.hasLines && data.type !== "stock_adjustment" && data.type !== "expense" && (
+          {R.usesStates && info.hasLines && data.type !== "stock_adjustment" && data.type !== "expense" && (
             <Field label="Place of supply" className="col-span-2">
               <Select value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)}>
                 <option value="">
@@ -517,7 +520,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                           placeholder="Search item or type a description"
                         />
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-faint">
-                          {(item?.hsn || l.hsn) && <span>HSN {l.hsn || item?.hsn}</span>}
+                          {R.usesHsn && (item?.hsn || l.hsn) && <span>HSN {l.hsn || item?.hsn}</span>}
                           {item?.kind === "goods" && (
                             <span className={item.stockMilli <= 0 ? "text-bad" : ""}>
                               In stock: {formatQty(item.stockMilli)} {item.unitCode}
@@ -653,7 +656,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
             </div>
           )}
           {info.hasLines && !composition && data.type !== "stock_adjustment" && data.type !== "delivery_challan" && (
-            <Checkbox label={info.outward ? "Bill of supply (no GST on this bill)" : "No GST on this bill"} checked={withoutTax} onChange={(e) => setWithoutTax(e.target.checked)} />
+            <Checkbox label={R.usesStates ? (info.outward ? "Bill of supply (no GST on this bill)" : "No GST on this bill") : `No ${R.taxName} on this bill (out of scope / exempt)`} checked={withoutTax} onChange={(e) => setWithoutTax(e.target.checked)} />
           )}
           <Field label="Notes (printed on the bill)">
             <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -673,7 +676,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               <span className="text-muted">Bill discount</span>
               <div className="flex items-center gap-1">
                 <Input value={billDiscPct} onChange={(e) => { setBillDiscPct(e.target.value); if (e.target.value) setBillDiscAmt(""); }} placeholder="%" className="num h-8 w-16 text-right" inputMode="decimal" />
-                <span className="text-faint">or ₹</span>
+                <span className="text-faint">or {region().currencyCode}</span>
                 <Input value={billDiscAmt} onChange={(e) => { setBillDiscAmt(e.target.value); if (e.target.value) setBillDiscPct(""); }} placeholder="0" className="num h-8 w-24 text-right" inputMode="decimal" />
               </div>
             </div>
@@ -681,9 +684,9 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
           {!noTax && (
             <>
               <Line label="Taxable value" value={calc.taxablePaise} muted />
-              {calc.cgstPaise > 0 && <Line label="CGST" value={calc.cgstPaise} muted />}
-              {calc.sgstPaise > 0 && <Line label="SGST" value={calc.sgstPaise} muted />}
-              {calc.igstPaise > 0 && <Line label="IGST" value={calc.igstPaise} muted />}
+              {calc.cgstPaise > 0 && <Line label={TL.cgst} value={calc.cgstPaise} muted />}
+              {calc.sgstPaise > 0 && <Line label={TL.sgst} value={calc.sgstPaise} muted />}
+              {calc.igstPaise > 0 && <Line label={TL.igst} value={calc.igstPaise} muted />}
               {calc.cessPaise > 0 && <Line label="Cess" value={calc.cessPaise} muted />}
             </>
           )}
@@ -824,21 +827,22 @@ export function QuickParty({
           <Field label="Phone">
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" />
           </Field>
-          <Field label="GSTIN (optional)">
+          <Field label={`${region().taxIdLabel} (optional)`}>
             <Input
               value={gstin}
               maxLength={15}
               className="font-mono uppercase"
               onChange={(e) => {
-                const v = e.target.value.toUpperCase();
+                const v = region().usesStates ? e.target.value.toUpperCase() : e.target.value.replace(/\D/g, "");
                 setGstin(v);
-                if (/^\d{2}/.test(v) && GST_STATES.some((s) => s.code === v.slice(0, 2))) setStateCode(v.slice(0, 2));
+                if (region().usesStates && /^\d{2}/.test(v) && GST_STATES.some((s) => s.code === v.slice(0, 2))) setStateCode(v.slice(0, 2));
               }}
             />
           </Field>
-          <Field label="State" className="sm:col-span-2">
+          {region().usesStates && (
+          <Field label="State (optional)" className="sm:col-span-2">
             <Select value={stateCode} onChange={(e) => setStateCode(e.target.value)}>
-              <option value="">Choose state…</option>
+              <option value="">Not set</option>
               {GST_STATES.map((s) => (
                 <option key={s.code} value={s.code}>
                   {s.code} – {s.name}
@@ -846,6 +850,7 @@ export function QuickParty({
               ))}
             </Select>
           </Field>
+          )}
           <Field label="Address" className="sm:col-span-2">
             <Textarea rows={2} value={address} onChange={(e) => setAddress(e.target.value)} />
           </Field>

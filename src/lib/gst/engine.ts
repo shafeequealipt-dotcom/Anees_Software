@@ -185,6 +185,15 @@ export function calculateVoucher(input: VoucherInput): VoucherResult {
   };
 }
 
+/**
+ * Which tax split applies. Saudi Arabia (and any country without states) has a single VAT rate,
+ * which we store in the "IGST" column, so it is always treated as "inter".
+ */
+export function supplyFor(country: string | null | undefined, sellerStateCode: string | null | undefined, placeOfSupply: string | null | undefined): SupplyKind {
+  if (country === "SA") return "inter";
+  return supplyKind(sellerStateCode, placeOfSupply);
+}
+
 /** Within-state supply when the place of supply is the seller's own state. */
 export function supplyKind(sellerStateCode: string | null | undefined, placeOfSupply: string | null | undefined): SupplyKind {
   if (!sellerStateCode || !placeOfSupply) return "intra";

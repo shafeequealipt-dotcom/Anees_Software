@@ -162,7 +162,7 @@ export function Money({ paise, className, sign = false, blankZero = false }: { p
 
 /** Party balance: positive = they owe us ("To receive"), negative = we owe them ("To pay"). */
 export function PartyBalance({ paise, className }: { paise: number; className?: string }) {
-  if (paise === 0) return <span className={cx("num text-faint", className)}>₹0.00</span>;
+  if (paise === 0) return <span className={cx("num text-faint", className)}>{formatINR(0)}</span>;
   return (
     <span className={cx("num whitespace-nowrap", paise > 0 ? "text-good" : "text-bad", className)}>
       {formatINR(Math.abs(paise))} <span className="text-xs font-normal">{paise > 0 ? "to receive" : "to pay"}</span>

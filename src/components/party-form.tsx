@@ -5,6 +5,7 @@ import { useState } from "react";
 import { savePartyAction, savePartyGroupAction } from "@/app/actions/masters";
 import { GST_STATES } from "@/lib/gst/states";
 import { toPaise } from "@/lib/money";
+import { region } from "@/lib/region";
 import { Alert, Button, Checkbox, Field, Input, Select, Textarea } from "./ui";
 
 export interface PartyFormValue {
@@ -130,21 +131,22 @@ export function PartyForm({ initial, groups: initialGroups }: { initial?: PartyF
         <Field label="Email" error={err("email")}>
           <Input type="email" value={v.email} onChange={(e) => set("email", e.target.value)} />
         </Field>
-        <Field label="GSTIN" error={err("gstin")} hint="State fills in from the GSTIN.">
+        <Field label={`${region().taxIdLabel} (optional)`} error={err("gstin")} hint={region().usesStates ? "State fills in from the GSTIN." : "15 digits, starts and ends with 3."}>
           <Input
             value={v.gstin}
             maxLength={15}
             className="font-mono uppercase"
             onChange={(e) => {
-              const g = e.target.value.toUpperCase();
+              const g = region().usesStates ? e.target.value.toUpperCase() : e.target.value.replace(/\D/g, "");
               set("gstin", g);
-              if (/^\d{2}/.test(g) && GST_STATES.some((s) => s.code === g.slice(0, 2))) set("stateCode", g.slice(0, 2));
+              if (region().usesStates && /^\d{2}/.test(g) && GST_STATES.some((s) => s.code === g.slice(0, 2))) set("stateCode", g.slice(0, 2));
             }}
           />
         </Field>
-        <Field label="State" error={err("stateCode")}>
+        {region().usesStates && (
+        <Field label="State (optional)" error={err("stateCode")}>
           <Select value={v.stateCode} onChange={(e) => set("stateCode", e.target.value)}>
-            <option value="">Choose state…</option>
+            <option value="">Not set</option>
             {GST_STATES.map((s) => (
               <option key={s.code} value={s.code}>
                 {s.code} – {s.name}
@@ -152,6 +154,7 @@ export function PartyForm({ initial, groups: initialGroups }: { initial?: PartyF
             ))}
           </Select>
         </Field>
+        )}
         <Field label="Billing address" className="sm:col-span-2">
           <Textarea rows={2} value={v.billingAddress} onChange={(e) => set("billingAddress", e.target.value)} />
         </Field>
@@ -163,7 +166,7 @@ export function PartyForm({ initial, groups: initialGroups }: { initial?: PartyF
 
       <div className="grid gap-4 rounded-lg border border-line bg-panel p-4 sm:grid-cols-2">
         <h2 className="text-sm font-semibold sm:col-span-2">Balance & credit</h2>
-        <Field label="Opening balance (₹)" hint="What was pending before you started using this app.">
+        <Field label={`Opening balance (${region().currencyCode})`} hint="What was pending before you started using this app.">
           <div className="flex gap-2">
             <Input value={v.opening} onChange={(e) => set("opening", e.target.value)} inputMode="decimal" className="num" placeholder="0" />
             <Select value={v.openingSide} onChange={(e) => set("openingSide", e.target.value)} className="w-40">
@@ -178,7 +181,7 @@ export function PartyForm({ initial, groups: initialGroups }: { initial?: PartyF
         <Field label="Credit period (days)" hint="Sets the due date on new bills.">
           <Input value={v.creditDays} onChange={(e) => set("creditDays", e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
         </Field>
-        <Field label="Credit limit (₹)">
+        <Field label={`Credit limit (${region().currencyCode})`}>
           <Input value={v.creditLimit} onChange={(e) => set("creditLimit", e.target.value)} inputMode="decimal" className="num" />
         </Field>
         <Field label="Notes" className="sm:col-span-2">

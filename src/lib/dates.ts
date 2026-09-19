@@ -1,9 +1,12 @@
-/** Dates are handled as 'YYYY-MM-DD' strings in India Standard Time. */
+/** Dates are handled as 'YYYY-MM-DD' strings in the business's own time zone (see region.ts). */
 
-const IST = "Asia/Kolkata";
+import { region } from "./region";
+
+/** Time zone of the business (India Standard Time or Arabia Standard Time). Name kept for existing imports. */
+const tz = () => region().timezone;
 
 export function todayIST(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: IST, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz(), year: "numeric", month: "2-digit", day: "2-digit" }).format(
     new Date(),
   );
 }
@@ -40,13 +43,14 @@ export function formatDateNumeric(iso: string | null | undefined): string {
   return `${d}/${m}/${y}`;
 }
 
-/** Indian financial year (April–March) containing the date, e.g. "2026-27". */
-export function financialYear(iso: string, startMonth = 4): { label: string; from: string; to: string } {
+/** Financial year containing the date: April–March in India ("2026-27"), calendar year in Saudi Arabia ("2026"). */
+export function financialYear(iso: string, startMonth = region().financialYearStartMonth): { label: string; from: string; to: string } {
   const [y, m] = iso.split("-").map(Number);
   const startYear = m >= startMonth ? y : y - 1;
   const from = `${startYear}-${String(startMonth).padStart(2, "0")}-01`;
   const to = addDays(`${startYear + 1}-${String(startMonth).padStart(2, "0")}-01`, -1);
-  return { label: `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`, from, to };
+  const label = startMonth === 1 ? String(startYear) : `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+  return { label, from, to };
 }
 
 export function monthRange(iso: string): { from: string; to: string } {
@@ -59,7 +63,7 @@ export function monthRange(iso: string): { from: string; to: string } {
 export function formatDateTime(d: Date | string | null | undefined): string {
   if (!d) return "";
   return new Intl.DateTimeFormat("en-IN", {
-    timeZone: IST,
+    timeZone: tz(),
     day: "numeric",
     month: "short",
     year: "numeric",
