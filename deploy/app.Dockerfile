@@ -6,7 +6,9 @@ RUN npm ci --no-audit --no-fund
 
 FROM node:24-bookworm-slim AS build
 WORKDIR /src
-ENV NEXT_TELEMETRY_DISABLED=1
+# Capped so the build stays inside a small VM's RAM+swap instead of getting OOM-killed;
+# raise or drop this on a build machine with more memory to spare.
+ENV NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=768
 COPY --from=deps /src/node_modules ./node_modules
 COPY . .
 RUN npm run build

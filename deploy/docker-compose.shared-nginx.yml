@@ -1,0 +1,45 @@
+# Override for hosting alongside other sites on a shared server (existing nginx + Certbot
+# already own ports 80/443, and RAM is limited). Used with:
+#   docker compose -f docker-compose.yml -f docker-compose.shared-nginx.yml <command>
+#
+# What this changes vs. the standalone setup:
+#   - Caddy is not started (the base file still defines it; this override is simply never
+#     told to bring it up, so it never binds the host's 80/443).
+#   - The app publishes to 127.0.0.1 only, on APP_LOCAL_PORT, for the host's nginx to
+#     reverse-proxy to. Never publish this to 0.0.0.0 — nginx is the only front door.
+#   - Postgres settings are cut down for a small VM. Tune LOW_MEM_* in .env to the box's
+#     actual free memory; defaults here assume roughly 1 GB total, shared with other
+#     services already running on the host.
+services:
+  app:
+    ports:
+      - "127.0.0.1:${APP_LOCAL_PORT:-8091}:3000"
+
+  db:
+    shm_size: 64mb
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=/usr/local/bin/archive-push.sh %p
+      - -c
+      - archive_timeout=60
+      - -c
+      - max_wal_senders=3
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-96MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-256MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-4MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-32MB}
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-40}
+      - -c
+      - log_timezone=Asia/Kolkata
+      - -c
+      - timezone=Asia/Kolkata

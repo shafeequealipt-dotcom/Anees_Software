@@ -45,7 +45,7 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 ## Last updated
 
-2026-09-18 · commit `86f477c` (previous push) · session: reports + opening-stock fix
+2026-09-19 · session: first production deploy to the Oracle server (live at https://billing.dnhcare.co.in)
 
 ---
 
@@ -122,7 +122,21 @@ Verified = automated test passes, or manually clicked through in the dev server.
   purchases, tax report (by GST rate, output vs input) —
   `src/app/(app)/reports/`, `taxReport()` added to `src/server/reports.ts`
 
-### Deployment (written, not yet run against a real server)
+### Production (live)
+- [x] **Deployed 2026-09-19** to the shared Oracle VM (Ubuntu 22.04, 2 vCPU, ~1 GB RAM) at
+  `https://billing.dnhcare.co.in`. Valid Let's Encrypt certificate (webroot method,
+  auto-renews), HTTP→HTTPS redirect, `/api/health` OK, first-run `/setup` page reachable.
+- [x] **This server is shared** with the owner's other sites (nginx + Certbot own 80/443)
+  and a live trading bot. So this host uses the *shared-nginx* topology, not Caddy:
+  `deploy/docker-compose.shared-nginx.yml` (app on 127.0.0.1:8091 only, small Postgres
+  settings) and `deploy/server/billing-shared-nginx.sh` (installed as `/usr/local/bin/billing`).
+  **Never run `setup-server.sh` or `billing.sh deploy` on this host.**
+- [x] nginx site: `/etc/nginx/sites-available/billing.dnhcare.co.in` (ACME webroot
+  `/var/www/letsencrypt`, same as the owner's other sites). DNS: A record `billing` → 68.233.109.57 (GoDaddy).
+- [x] systemd timers installed (nightly snapshot, health check every 10 min, weekly PITR/verify;
+  PITR jobs no-op until OCI keys exist). `sudo billing setup-link` prints the one-time owner-setup link.
+
+### Deployment (written; standalone-VM path never run)
 - [x] `docker-compose.yml`, Caddy (HTTPS), app + db Dockerfiles — `deploy/`
 - [x] PostgreSQL image with pgBackRest continuous backup to Oracle Object Storage
   — `deploy/postgres/`
@@ -189,10 +203,13 @@ feature list each of these maps to.
 ### Production readiness
 - [ ] Full production build test (`npm run build`) — not yet run, disk space was
   the blocker during the build session
-- [ ] Deploy to the actual Oracle VM and confirm HTTPS, backups, restore all work
-  for real (currently only written, never executed against a live server)
-- [ ] Server-side `setup-link` command (referenced in setup page's error message,
-  doesn't exist in `billing.sh` yet)
+- [ ] **Owner creates their login** at the setup link (`sudo billing setup-link`) — not done yet
+- [ ] **Backups not proven yet.** Needs: owner's `age` public key at `/opt/billing/secrets/backup-recipients.txt`
+  (owner keeps the private key), Oracle Object Storage keys + buckets, optional Google Drive. A first
+  `sudo billing snapshot` attempt on 2026-09-19 stalled while building the backup image on the
+  low-RAM host; re-try it when the server is quiet, and confirm a test restore.
+- [ ] Decide long-term home: ~1 GB shared RAM is tight (image builds take 30–60 min and made SSH
+  time out once). A larger dedicated VM is the safer option.
 - [ ] Owner-facing backup & restore guide (plain language, for `docs/`)
 
 ---
@@ -232,6 +249,14 @@ don't get reintroduced or "found" again.
    (sales/purchases/adjustments) that happen only once the period is under way.
    Regression test: `tests/books.test.ts` → "counts opening stock dated on the
    financial-year start as opening, not as a same-day purchase".
+
+5. **BuildKit killed the app image build near the end on the low-RAM server** (session
+   healthcheck "only one connection allowed"). Workaround: build with `DOCKER_BUILDKIT=0`
+   (built into `billing-shared-nginx.sh deploy`). Build takes ~1 hour there.
+6. **Certbot `--nginx` got a 404 from the app** for the ACME challenge because `/` is proxied.
+   Fix: explicit `/.well-known/acme-challenge/` location with the shared webroot, then
+   `certbot certonly --webroot`.
+7. Don't `pkill -f <pattern>` over SSH when the pattern is in the command itself — it kills the session.
 
 Nothing currently open/unfixed.
 

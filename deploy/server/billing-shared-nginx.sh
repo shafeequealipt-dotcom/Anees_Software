@@ -1,10 +1,20 @@
 #!/bin/bash
-# Day-to-day control of the billing server. Run with sudo:
+# Day-to-day control of the billing app on a SHARED server — one that already runs other
+# sites behind its own nginx + Certbot, with limited RAM. Unlike billing.sh (which assumes a
+# dedicated VM where Caddy owns ports 80/443), this variant:
+#   - always includes docker-compose.shared-nginx.yml, so the app only ever publishes to
+#     127.0.0.1:$APP_LOCAL_PORT — never touches ports 80/443 or starts the caddy service
+#   - checks health over that local port instead of the public HTTPS domain, so it still
+#     works before DNS/Certbot are set up
+#   - never runs setup-server.sh style OS/firewall/SSH changes — this host's OS and nginx
+#     are managed independently of this app
+#
+# Run with sudo:
 #   sudo billing status                      health, disk, last backups
-#   sudo billing deploy                      build and (re)start after new code is uploaded
+#   sudo billing deploy                      rebuild and (re)start after new code is uploaded
 #   sudo billing snapshot [label]            take an encrypted snapshot now
 #   sudo billing backups                     list all backup copies
-#   sudo billing pitr setup|full|diff|info   point-in-time backups
+#   sudo billing pitr setup|full|diff|info   point-in-time backups (needs OCI_* in .env)
 #   sudo billing verify                      weekly test restore of the latest point-in-time backup
 #   sudo billing restore-time "2026-09-20 14:05"            put the live books back to that minute
 #   sudo billing recovery-copy "2026-09-20 14:05"           open a SEPARATE copy as of that minute
@@ -17,7 +27,7 @@ set -euo pipefail
 
 ROOT=/opt/billing
 APP="$ROOT/app"
-COMPOSE=(docker compose --project-directory "$APP/deploy" --env-file "$ROOT/.env" -f "$APP/deploy/docker-compose.yml")
+COMPOSE=(docker compose --project-directory "$APP/deploy" --env-file "$ROOT/.env" -f "$APP/deploy/docker-compose.yml" -f "$APP/deploy/docker-compose.shared-nginx.yml")
 STATE="$ROOT/state"
 mkdir -p "$STATE" "$ROOT/restore"
 
@@ -27,6 +37,8 @@ env_get() { grep -E "^$1=" "$ROOT/.env" | tail -n1 | cut -d= -f2- ; }
 psql_db() { dc exec -T db psql -U billing -d billing -Atc "$1"; }
 backup_job() { dc run --rm -T backup "$@"; }
 record() { backup_job record "$1" "$2" "$3" >/dev/null 2>&1 || true; }
+local_port() { env_get APP_LOCAL_PORT; }
+health_url() { echo "http://127.0.0.1:$(local_port)/api/health"; }
 
 cmd="${1:-status}"
 shift || true
@@ -34,8 +46,11 @@ shift || true
 case "$cmd" in
   status)
     say "Containers"; dc ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
-    say "Website";  curl -fsS -o /dev/null -w 'https://%{url.host} → HTTP %{http_code} in %{time_total}s\n' "https://$(env_get APP_DOMAIN)/api/health" || echo "NOT reachable"
+    say "App (local)"; curl -fsS -o /dev/null -w '%{url} → HTTP %{http_code} in %{time_total}s\n' "$(health_url)" || echo "NOT reachable on 127.0.0.1:$(local_port)"
+    domain=$(env_get APP_DOMAIN)
+    say "Public site"; curl -fsS -o /dev/null -w "https://$domain → HTTP %{http_code}\n" "https://$domain/api/health" 2>/dev/null || echo "https://$domain not reachable yet (DNS/Certbot may still be pending)"
     say "Disk";     df -h / | tail -n1
+    say "Memory";   free -h | head -2
     say "Last backups"
     psql_db "select kind, to_char(started_at at time zone 'Asia/Kolkata','DD Mon HH24:MI'), case when ok then 'OK' else 'PROBLEM' end, coalesce(file_name,''), left(message,120)
              from (select distinct on (kind) * from backup_runs order by kind, started_at desc) t order by started_at desc" \
@@ -47,17 +62,18 @@ case "$cmd" in
   deploy)
     say "Snapshot before deploy"
     if dc ps --status running db | grep -q db; then backup_job snapshot pre-deploy || say "(snapshot failed — continuing because this may be the first deploy)"; fi
-    say "Building"
-    dc build --pull
+    say "Building (legacy builder — this host's BuildKit session healthcheck is unreliable under memory pressure)"
+    DOCKER_BUILDKIT=0 dc build db app
     say "Starting"
-    dc up -d --remove-orphans db app caddy
+    dc up -d --remove-orphans db app
     for _ in $(seq 1 60); do
-      if dc exec -T app node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then say "App is healthy"; break; fi
+      if curl -fsS -o /dev/null "$(health_url)" 2>/dev/null; then say "App is healthy"; break; fi
       sleep 3
     done
-    dc exec -T app node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null || { say "App did not become healthy — see: sudo billing logs app"; exit 1; }
+    curl -fsS -o /dev/null "$(health_url)" || { say "App did not become healthy — see: sudo billing logs app"; exit 1; }
     touch "$STATE/deployed"
     docker image prune -f >/dev/null
+    say "Reminder: this deploy never touches nginx or Certbot. If you changed the local port or domain, update /etc/nginx/sites-available/$(env_get APP_DOMAIN) yourself and reload nginx."
     ;;
 
   snapshot)      backup_job snapshot "${1:-manual}" ;;
@@ -152,8 +168,7 @@ case "$cmd" in
 
   healthcheck)
     problems=()
-    domain=$(env_get APP_DOMAIN)
-    curl -fsS --max-time 20 -o /dev/null "https://$domain/api/health" || problems+=("Website https://$domain is not responding.")
+    curl -fsS --max-time 20 -o /dev/null "$(health_url)" || problems+=("The app on 127.0.0.1:$(local_port) is not responding.")
     used=$(df --output=pcent / | tail -n1 | tr -dc '0-9')
     [ "$used" -lt 85 ] || problems+=("Server disk is ${used}% full.")
     last_ok=$(psql_db "select coalesce(extract(epoch from now()-max(finished_at))::int, 999999) from backup_runs where kind='snapshot' and ok" 2>/dev/null || echo 999999)
@@ -176,5 +191,5 @@ case "$cmd" in
     ;;
 
   *)
-    sed -n '2,18p' "$0"; exit 2 ;;
+    sed -n '2,28p' "$0"; exit 2 ;;
 esac
