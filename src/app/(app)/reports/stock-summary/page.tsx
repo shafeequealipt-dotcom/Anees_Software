@@ -13,7 +13,7 @@ export default async function StockSummaryPage() {
   const user = await requireUser("reports.all");
   const seeValue = can(user, "see.stockValue");
   const db = await getDb();
-  const list = await stockSummary(db);
+  const list = await stockSummary(db, user.firmId);
   const totalValue = list.reduce((s, i) => s + i.stock_value_paise, 0);
   const totalQty = list.reduce((s, i) => s + Math.max(0, i.qty_milli), 0);
 

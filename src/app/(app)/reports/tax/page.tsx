@@ -11,14 +11,14 @@ import { taxReport } from "@/server/reports";
 export const metadata = { title: "Tax report" };
 
 export default async function TaxReportPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; side?: string }> }) {
-  await requireUser("reports.all");
+  const user = await requireUser("reports.all");
   const sp = await searchParams;
   const side = sp.side === "inward" ? "inward" : "outward";
   const fy = financialYear(todayIST());
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();
   const db = await getDb();
-  const list = await taxReport(db, from, to, side);
+  const list = await taxReport(db, user.firmId, from, to, side);
   const sum = (f: (r: (typeof list)[number]) => number) => list.reduce((s, r) => s + f(r), 0);
 
   return (

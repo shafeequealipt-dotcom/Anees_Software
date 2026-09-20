@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { PartyForm } from "@/components/party-form";
 import { PageHeader } from "@/components/ui";
@@ -15,9 +15,9 @@ export default async function EditPartyPage({ params }: { params: Promise<{ id: 
   const hideBalance = !can(user, "see.partyBalance");
   const { id } = await params;
   const db = await getDb();
-  const [p] = await db.select().from(parties).where(eq(parties.id, Number(id) || 0));
+  const [p] = await db.select().from(parties).where(and(eq(parties.id, Number(id) || 0), eq(parties.firmId, user.firmId)));
   if (!p) notFound();
-  const groups = await db.select().from(partyGroups).orderBy(asc(partyGroups.name));
+  const groups = await db.select().from(partyGroups).where(eq(partyGroups.firmId, user.firmId)).orderBy(asc(partyGroups.name));
   return (
     <>
       <PageHeader title={`Edit ${p.name}`} back={{ href: `/parties/${p.id}`, label: p.name }} />

@@ -9,7 +9,7 @@ import { globalSearch } from "@/server/reports";
 export async function searchAction(q: string) {
   const user = await assertUser();
   const db = await getDb();
-  const r = await globalSearch(db, q.slice(0, 100), { partyContact: can(user, "see.partyContact") });
+  const r = await globalSearch(db, user.firmId, q.slice(0, 100), { partyContact: can(user, "see.partyContact") });
   return {
     parties: r.parties,
     items: r.items,

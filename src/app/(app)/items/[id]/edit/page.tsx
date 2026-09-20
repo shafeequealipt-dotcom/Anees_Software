@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { ItemForm } from "@/components/item-form";
 import { PageHeader } from "@/components/ui";
@@ -14,12 +14,12 @@ export default async function EditItemPage({ params }: { params: Promise<{ id: s
   const hidePurchase = !can(user, "see.purchasePrice");
   const { id } = await params;
   const db = await getDb();
-  const [item] = await db.select().from(items).where(eq(items.id, Number(id) || 0));
+  const [item] = await db.select().from(items).where(and(eq(items.id, Number(id) || 0), eq(items.firmId, user.firmId)));
   if (!item) notFound();
   const [categories, unitList, taxList] = await Promise.all([
-    db.select().from(itemCategories).orderBy(asc(itemCategories.name)),
-    db.select().from(units).where(eq(units.active, true)).orderBy(asc(units.name)),
-    db.select().from(taxRates).where(eq(taxRates.active, true)).orderBy(asc(taxRates.sort)),
+    db.select().from(itemCategories).where(eq(itemCategories.firmId, user.firmId)).orderBy(asc(itemCategories.name)),
+    db.select().from(units).where(and(eq(units.firmId, user.firmId), eq(units.active, true))).orderBy(asc(units.name)),
+    db.select().from(taxRates).where(and(eq(taxRates.firmId, user.firmId), eq(taxRates.active, true))).orderBy(asc(taxRates.sort)),
   ]);
   return (
     <>

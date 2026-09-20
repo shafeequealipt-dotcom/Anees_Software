@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DeleteMasterButton, PrintButton } from "@/components/party-actions";
@@ -21,7 +21,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
   const { id } = await params;
   const sp = await searchParams;
   const db = await getDb();
-  const [item] = await db.select().from(items).where(eq(items.id, Number(id) || 0));
+  const [item] = await db.select().from(items).where(and(eq(items.id, Number(id) || 0), eq(items.firmId, user.firmId)));
   if (!item) notFound();
   const [category] = item.categoryId ? await db.select().from(itemCategories).where(eq(itemCategories.id, item.categoryId)) : [];
   const [unit] = item.unitId ? await db.select().from(units).where(eq(units.id, item.unitId)) : [];

@@ -1,14 +1,14 @@
 import "server-only";
 import { createHash, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
 import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import * as OTPAuth from "otpauth";
 import { getDb } from "@/db";
-import { loginAttempts, roles, sessions, users } from "@/db/schema";
+import { firms, loginAttempts, roles, sessions, userFirms, users } from "@/db/schema";
 import { can, type Permission } from "./permissions";
-import { ensureRegion } from "@/server/region";
+import { setRegion, type Country } from "./region";
 
 const COOKIE = "sid";
 const SESSION_HOURS = 12;
@@ -16,6 +16,12 @@ const IDLE_MINUTES = 120;
 const MAX_FAILS_PER_ACCOUNT = 5;
 const MAX_FAILS_PER_IP = 30;
 const LOCK_MINUTES = 15;
+
+export interface CompanyRef {
+  id: number;
+  name: string;
+  country: Country;
+}
 
 export interface CurrentUser {
   id: number;
@@ -25,6 +31,11 @@ export interface CurrentUser {
   roleName: string;
   isOwner: boolean;
   permissions: string[];
+  /** The company being worked in right now (id 0 if the user has no company access). */
+  firmId: number;
+  firm: CompanyRef;
+  /** Every company this user may open. */
+  firms: CompanyRef[];
   totpEnabled: boolean;
   mustChangePassword: boolean;
   sessionId: string;
@@ -158,9 +169,25 @@ async function loadSession(): Promise<{ user: CurrentUser; mfaPassed: boolean } 
   if (now - row.s.lastSeenAt.getTime() > 60_000) {
     await db.update(sessions).set({ lastSeenAt: new Date() }).where(eq(sessions.id, id));
   }
+  const companyCols = { id: firms.id, name: firms.name, country: firms.country };
+  const accessible = (
+    row.r.isOwner
+      ? await db.select(companyCols).from(firms).where(eq(firms.active, true)).orderBy(asc(firms.id))
+      : await db
+          .select(companyCols)
+          .from(userFirms)
+          .innerJoin(firms, eq(firms.id, userFirms.firmId))
+          .where(and(eq(userFirms.userId, row.u.id), eq(firms.active, true)))
+          .orderBy(asc(firms.id))
+  ).map((f) => ({ ...f, country: (f.country === "SA" ? "SA" : "IN") as Country }));
+  const current = accessible.find((f) => f.id === row.s.firmId) ?? accessible[0] ?? { id: 0, name: "", country: "IN" as Country };
+  if (current.id && current.id !== row.s.firmId) await db.update(sessions).set({ firmId: current.id }).where(eq(sessions.id, id));
   return {
     mfaPassed: row.s.mfaPassed,
     user: {
+      firmId: current.id,
+      firm: current,
+      firms: accessible,
       id: row.u.id,
       name: row.u.name,
       email: row.u.email,
@@ -201,8 +228,9 @@ export async function requireUser(permission?: Permission): Promise<CurrentUser>
     if (await pendingMfaUser()) redirect("/login/code");
     redirect("/login");
   }
+  if (user.firmId === 0) redirect("/no-access");
   if (permission && !can(user, permission)) redirect("/?denied=1");
-  await ensureRegion();
+  setRegion(user.firm.country);
   return user;
 }
 
@@ -211,12 +239,22 @@ export async function assertUser(permission?: Permission): Promise<CurrentUser> 
   const user = await currentUser();
   if (!user) throw new AuthError("Your session has ended. Sign in again.");
   if (user.mustChangePassword) throw new AuthError("Change your temporary password first (open any page to do it).");
+  if (user.firmId === 0) throw new AuthError("You haven't been given access to any company. Ask the owner.");
   if (permission && !can(user, permission)) throw new AuthError("You don't have permission to do that.");
-  await ensureRegion();
+  setRegion(user.firm.country);
   return user;
 }
 
 export class AuthError extends Error {}
+
+/** Move this sign-in session to another company the user is allowed to open. */
+export async function switchCompany(firmId: number): Promise<void> {
+  const user = await currentUser();
+  if (!user) throw new AuthError("Your session has ended. Sign in again.");
+  if (!user.firms.some((f) => f.id === firmId)) throw new AuthError("You don't have access to that company.");
+  const db = await getDb();
+  await db.update(sessions).set({ firmId }).where(eq(sessions.id, user.sessionId));
+}
 
 // ─── Two-step login (authenticator app) ──────────────────────────────────────
 

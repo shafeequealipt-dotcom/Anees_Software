@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { items, parties } from "@/db/schema";
 import { AuthError, assertUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -41,7 +41,7 @@ export async function savePartyAction(input: z.input<typeof partySchema>): Promi
     const db = await getDb();
     let data = input;
     if (input.id) {
-      const [old] = await db.select().from(parties).where(eq(parties.id, input.id));
+      const [old] = await db.select().from(parties).where(and(eq(parties.id, input.id), eq(parties.firmId, user.firmId)));
       if (old) {
         if (!can(user, "see.partyContact")) {
           data = { ...data, phone: old.phone, email: old.email, gstin: old.gstin, pan: old.pan, stateCode: old.stateCode, billingAddress: old.billingAddress, shippingAddress: old.shippingAddress };
@@ -51,7 +51,7 @@ export async function savePartyAction(input: z.input<typeof partySchema>): Promi
         }
       }
     }
-    const id = await saveParty(db, data, user.id);
+    const id = await saveParty(db, user.firmId, data, user.id);
     revalidatePath("/parties");
     return { ok: true, id };
   } catch (e) {
@@ -62,7 +62,7 @@ export async function savePartyAction(input: z.input<typeof partySchema>): Promi
 export async function deletePartyAction(id: number): Promise<Result<{ outcome: "deleted" | "deactivated" | undefined }>> {
   try {
     const user = await assertUser("masters.delete");
-    const outcome = await deleteParty(await getDb(), id, user.id);
+    const outcome = await deleteParty(await getDb(), user.firmId, id, user.id);
     revalidatePath("/parties");
     return { ok: true, outcome };
   } catch (e) {
@@ -72,8 +72,8 @@ export async function deletePartyAction(id: number): Promise<Result<{ outcome: "
 
 export async function savePartyGroupAction(name: string): Promise<Result<{ id: number }>> {
   try {
-    await assertUser("masters.edit");
-    return { ok: true, id: await savePartyGroup(await getDb(), name) };
+    const user = await assertUser("masters.edit");
+    return { ok: true, id: await savePartyGroup(await getDb(), user.firmId, name) };
   } catch (e) {
     return fail(e);
   }
@@ -85,10 +85,10 @@ export async function saveItemAction(input: z.input<typeof itemSchema>): Promise
     const db = await getDb();
     let data = input;
     if (input.id && !can(user, "see.purchasePrice")) {
-      const [old] = await db.select().from(items).where(eq(items.id, input.id));
+      const [old] = await db.select().from(items).where(and(eq(items.id, input.id), eq(items.firmId, user.firmId)));
       if (old) data = { ...data, purchasePricePaise: old.purchasePricePaise, purchasePriceIncludesTax: old.purchasePriceIncludesTax, openingRatePaise: old.openingRatePaise };
     }
-    const id = await saveItem(db, data, user.id);
+    const id = await saveItem(db, user.firmId, data, user.id);
     revalidatePath("/items");
     return { ok: true, id };
   } catch (e) {
@@ -99,7 +99,7 @@ export async function saveItemAction(input: z.input<typeof itemSchema>): Promise
 export async function deleteItemAction(id: number): Promise<Result<{ outcome: "deleted" | "deactivated" | undefined }>> {
   try {
     const user = await assertUser("masters.delete");
-    const outcome = await deleteItem(await getDb(), id, user.id);
+    const outcome = await deleteItem(await getDb(), user.firmId, id, user.id);
     revalidatePath("/items");
     return { ok: true, outcome };
   } catch (e) {
@@ -109,8 +109,8 @@ export async function deleteItemAction(id: number): Promise<Result<{ outcome: "d
 
 export async function saveCategoryAction(name: string): Promise<Result<{ id: number }>> {
   try {
-    await assertUser("masters.edit");
-    return { ok: true, id: await saveCategory(await getDb(), name) };
+    const user = await assertUser("masters.edit");
+    return { ok: true, id: await saveCategory(await getDb(), user.firmId, name) };
   } catch (e) {
     return fail(e);
   }
@@ -118,8 +118,8 @@ export async function saveCategoryAction(name: string): Promise<Result<{ id: num
 
 export async function saveUnitAction(input: z.input<typeof unitSchema>): Promise<Result<{ id: number }>> {
   try {
-    await assertUser("masters.edit");
-    const id = await saveUnit(await getDb(), input);
+    const user = await assertUser("masters.edit");
+    const id = await saveUnit(await getDb(), user.firmId, input);
     revalidatePath("/settings/units");
     return { ok: true, id };
   } catch (e) {
@@ -129,8 +129,8 @@ export async function saveUnitAction(input: z.input<typeof unitSchema>): Promise
 
 export async function saveTaxRateAction(input: z.input<typeof taxRateSchema>): Promise<Result<{ id: number }>> {
   try {
-    await assertUser("settings.edit");
-    const id = await saveTaxRate(await getDb(), input);
+    const user = await assertUser("settings.edit");
+    const id = await saveTaxRate(await getDb(), user.firmId, input);
     revalidatePath("/settings/tax-rates");
     return { ok: true, id };
   } catch (e) {
@@ -141,7 +141,7 @@ export async function saveTaxRateAction(input: z.input<typeof taxRateSchema>): P
 export async function saveAccountAction(input: z.input<typeof accountSchema>): Promise<Result<{ id: number }>> {
   try {
     const user = await assertUser("money.edit");
-    const id = await saveAccount(await getDb(), input, user.id);
+    const id = await saveAccount(await getDb(), user.firmId, input, user.id);
     revalidatePath("/cash-bank");
     return { ok: true, id };
   } catch (e) {
@@ -151,8 +151,8 @@ export async function saveAccountAction(input: z.input<typeof accountSchema>): P
 
 export async function saveLedgerCategoryAction(kind: "expense" | "income", name: string): Promise<Result<{ id: number }>> {
   try {
-    await assertUser("masters.edit");
-    const id = await saveLedgerCategory(await getDb(), kind, name);
+    const user = await assertUser("masters.edit");
+    const id = await saveLedgerCategory(await getDb(), user.firmId, kind, name);
     revalidatePath("/settings/categories");
     return { ok: true, id };
   } catch (e) {

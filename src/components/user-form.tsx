@@ -16,15 +16,23 @@ interface RoleOpt {
   id: number;
   name: string;
   description: string | null;
+  isOwner: boolean;
+}
+
+interface CompanyOpt {
+  id: number;
+  name: string;
 }
 
 export function UserForm({
   roles,
+  companies,
   initial,
   isSelf,
 }: {
   roles: RoleOpt[];
-  initial?: { id: number; name: string; email: string; phone: string; roleId: number; active: boolean };
+  companies: CompanyOpt[];
+  initial?: { id: number; name: string; email: string; phone: string; roleId: number; active: boolean; firmIds: number[] };
   isSelf?: boolean;
 }) {
   const router = useRouter();
@@ -34,6 +42,7 @@ export function UserForm({
     phone: initial?.phone ?? "",
     roleId: initial?.roleId ?? roles.find((r) => /staff/i.test(r.name))?.id ?? roles[0]?.id ?? 0,
     active: initial?.active ?? true,
+    firmIds: initial?.firmIds ?? (companies.length === 1 ? [companies[0].id] : []),
     password: "",
   });
   const [error, setError] = useState<{ msg: string; field?: string } | null>(null);
@@ -45,13 +54,14 @@ export function UserForm({
   };
   const err = (f: string) => (error?.field === f ? error.msg : null);
   const role = roles.find((r) => r.id === v.roleId);
+  const toggleFirm = (id: number) => set("firmIds", v.firmIds.includes(id) ? v.firmIds.filter((x) => x !== id) : [...v.firmIds, id]);
 
   async function save() {
     setSaving(true);
     setError(null);
     const res = initial
-      ? await updateUserAction({ id: initial.id, name: v.name, phone: v.phone, roleId: v.roleId, active: v.active })
-      : await createUserAction({ name: v.name, email: v.email, phone: v.phone, roleId: v.roleId, password: v.password });
+      ? await updateUserAction({ id: initial.id, name: v.name, phone: v.phone, roleId: v.roleId, active: v.active, firmIds: v.firmIds })
+      : await createUserAction({ name: v.name, email: v.email, phone: v.phone, roleId: v.roleId, password: v.password, firmIds: v.firmIds });
     setSaving(false);
     if (!res.ok) return setError({ msg: res.error, field: res.field });
     if (initial) {
@@ -88,6 +98,20 @@ export function UserForm({
           <p className="text-xs text-faint">
             What each role can do and see is set under <a className="text-brand-600 underline" href="/settings/roles">Roles &amp; access</a>.
           </p>
+        </Field>
+        <Field label="Companies this person can open" error={err("firmIds")} className="sm:col-span-2">
+          {role?.isOwner ? (
+            <p className="text-sm text-muted">Owners can open every company.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {companies.map((c) => (
+                <label key={c.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input type="checkbox" className="size-4 accent-brand-600" checked={v.firmIds.includes(c.id)} onChange={() => toggleFirm(c.id)} />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          )}
         </Field>
         {!initial && (
           <Field label="Temporary password" error={err("password")} hint="At least 10 characters. Tell them this yourself; they must choose their own at first sign-in." className="sm:col-span-2">

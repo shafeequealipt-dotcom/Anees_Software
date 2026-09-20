@@ -43,6 +43,7 @@ export const PERMISSION_GROUPS = [
     items: [
       { key: "settings.edit", label: "Change business settings", hint: "Business details, tax rates, units." },
       { key: "users.manage", label: "Manage users and roles" },
+      { key: "companies.manage", label: "Add and hide companies", hint: "Each company has its own parties, items, bills and tax settings." },
       { key: "audit.view", label: "See the activity log (who changed what)" },
     ],
   },

@@ -60,13 +60,15 @@ describe("Saudi VAT", () => {
 
 describe("Saudi business end to end", () => {
   let db: DB;
+  let firmId: number;
   beforeAll(async () => {
     db = await testDb();
     await runFirstSetup(db, { businessName: "Al Amal Trading", country: "SA", gstin: "300000000000003", ownerName: "Owner", email: "owner@amal.example", password: "Tulsi-Garden-4471" });
+    [{ id: firmId }] = await db.select({ id: firms.id }).from(firms);
   });
 
   it("sets up with Saudi tax rates, no state needed", async () => {
-    const [f] = await db.select().from(firms).where(eq(firms.isDefault, true));
+    const [f] = await db.select().from(firms).where(eq(firms.id, firmId));
     expect(f).toMatchObject({ country: "SA", stateCode: null, gstin: "300000000000003", gstScheme: "regular" });
     const rates = await db.select().from(taxRates);
     expect(rates.map((r) => r.name)).toEqual(expect.arrayContaining(["VAT 15%", "Zero-rated (0%)", "Exempt"]));
@@ -76,17 +78,17 @@ describe("Saudi business end to end", () => {
   it("issues an invoice with VAT in a single column and no place of supply", async () => {
     setRegion("SA");
     const vat = (await db.select().from(taxRates)).find((r) => r.gstBp === 1500)!;
-    const cust = await saveParty(db, { name: "Riyadh Stores", gstin: "310000000000003", kind: "customer" }, 1);
-    const item = await saveItem(db, { name: "Dates 1kg", salePricePaise: 5000, taxRateId: vat.id, openingQtyMilli: 100000 }, 1);
-    const res = await saveVoucher(db, { type: "sale_invoice", date: "2026-09-19", partyId: cust, roundOff: false, lines: [{ itemId: item, description: "Dates 1kg", qtyMilli: 10000, ratePaise: 5000, taxRateId: vat.id }] }, 1);
-    const v = (await getVoucher(db, res.id))!.voucher;
+    const cust = await saveParty(db, firmId, { name: "Riyadh Stores", gstin: "310000000000003", kind: "customer" }, 1);
+    const item = await saveItem(db, firmId, { name: "Dates 1kg", salePricePaise: 5000, taxRateId: vat.id, openingQtyMilli: 100000 }, 1);
+    const res = await saveVoucher(db, firmId, { type: "sale_invoice", date: "2026-09-19", partyId: cust, roundOff: false, lines: [{ itemId: item, description: "Dates 1kg", qtyMilli: 10000, ratePaise: 5000, taxRateId: vat.id }] }, 1);
+    const v = (await getVoucher(db, firmId, res.id))!.voucher;
     expect(v).toMatchObject({ taxablePaise: 50000, igstPaise: 7500, cgstPaise: 0, sgstPaise: 0, totalPaise: 57500, placeOfSupply: null });
   });
 
   it("rejects a malformed VAT number for a customer, and accepts none", async () => {
     setRegion("SA");
-    await expect(saveParty(db, { name: "Bad Co", gstin: "12345" }, 1)).rejects.toThrow(/15 digits/);
-    await expect(saveParty(db, { name: "Walk-in Co" }, 1)).resolves.toBeTypeOf("number");
+    await expect(saveParty(db, firmId, { name: "Bad Co", gstin: "12345" }, 1)).rejects.toThrow(/15 digits/);
+    await expect(saveParty(db, firmId, { name: "Walk-in Co" }, 1)).resolves.toBeTypeOf("number");
   });
 
   it("India without GST number or state still sets up", async () => {

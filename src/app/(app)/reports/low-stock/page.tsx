@@ -8,9 +8,9 @@ import { stockSummary } from "@/server/reports";
 export const metadata = { title: "Low stock" };
 
 export default async function LowStockPage() {
-  await requireUser("reports.all");
+  const user = await requireUser("reports.all");
   const db = await getDb();
-  const list = await stockSummary(db, { lowOnly: true });
+  const list = await stockSummary(db, user.firmId, { lowOnly: true });
 
   return (
     <>

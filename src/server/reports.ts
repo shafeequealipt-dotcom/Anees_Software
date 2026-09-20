@@ -38,9 +38,10 @@ export interface VoucherRow {
 
 export async function listVouchers(
   db: DB,
+  firmId: number,
   f: { types: VoucherType[]; from?: string; to?: string; partyId?: number; q?: string; status?: "open" | "paid" | "overdue" | "cancelled" | "all"; limit?: number; accountId?: number; categoryId?: number },
 ): Promise<VoucherRow[]> {
-  const where: SQL[] = [sql`v.type in (${sql.join(f.types.map((t) => sql`${t}`), sql`, `)})`];
+  const where: SQL[] = [sql`v.firm_id = ${firmId}`, sql`v.type in (${sql.join(f.types.map((t) => sql`${t}`), sql`, `)})`];
   if (f.from) where.push(sql`v.date >= ${f.from}`);
   if (f.to) where.push(sql`v.date <= ${f.to}`);
   if (f.partyId) where.push(sql`v.party_id = ${f.partyId}`);
@@ -79,7 +80,7 @@ export async function listVouchers(
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
-export async function dashboard(db: DB) {
+export async function dashboard(db: DB, firmId: number) {
   const today = todayIST();
   const month = monthRange(today);
   const yearAgo = addDays(month.from, -335).slice(0, 8) + "01";
@@ -87,14 +88,14 @@ export async function dashboard(db: DB) {
   const [balances] = await rows<{ receivable: number; payable: number }>(
     db,
     sql`select coalesce(sum(case when b > 0 then b end), 0) as receivable, coalesce(-sum(case when b < 0 then b end), 0) as payable
-        from (select sum(amount_paise) as b from party_ledger group by party_id) t`,
+        from (select sum(l.amount_paise) as b from party_ledger l join parties p on p.id = l.party_id where p.firm_id = ${firmId} group by l.party_id) t`,
   );
   const money = nums(
     await rows<{ id: number; name: string; kind: string; balance: number }>(
       db,
       sql`select a.id, a.name, a.kind, coalesce(sum(m.amount_paise), 0) as balance
           from accounts a left join money_ledger m on m.account_id = a.id
-          where a.active group by a.id order by a.kind, a.name`,
+          where a.active and a.firm_id = ${firmId} group by a.id order by a.kind, a.name`,
     ),
     ["balance"],
   );
@@ -108,7 +109,7 @@ export async function dashboard(db: DB) {
             coalesce(sum(case when type = 'payment_in' then total_paise end), 0) as received,
             coalesce(sum(case when type = 'payment_out' then total_paise end), 0) as paid,
             count(*) filter (where type = 'sale_invoice') as invoices
-          from vouchers where status = 'active' and date between ${month.from} and ${month.to}`,
+          from vouchers where firm_id = ${firmId} and status = 'active' and date between ${month.from} and ${month.to}`,
     ),
     ["sales", "purchases", "expenses", "received", "paid", "invoices"],
   );
@@ -118,7 +119,7 @@ export async function dashboard(db: DB) {
       sql`select to_char(date_trunc('month', date), 'YYYY-MM') as month,
             coalesce(sum(case when type = 'sale_invoice' then taxable_paise when type = 'credit_note' then -taxable_paise end), 0) as sales,
             coalesce(sum(case when type = 'purchase_bill' then taxable_paise when type = 'debit_note' then -taxable_paise end), 0) as purchases
-          from vouchers where status = 'active' and date >= ${yearAgo}
+          from vouchers where firm_id = ${firmId} and status = 'active' and date >= ${yearAgo}
           group by 1 order by 1`,
     ),
     ["sales", "purchases"],
@@ -128,7 +129,7 @@ export async function dashboard(db: DB) {
       db,
       sql`select count(*) as n from (
             select i.id from items i left join stock_ledger s on s.item_id = i.id
-            where i.active and i.kind = 'goods' and i.min_stock_milli > 0
+            where i.firm_id = ${firmId} and i.active and i.kind = 'goods' and i.min_stock_milli > 0
             group by i.id having coalesce(sum(s.qty_milli), 0) <= i.min_stock_milli) t`,
     ),
     ["n"],
@@ -138,7 +139,7 @@ export async function dashboard(db: DB) {
       db,
       sql`select * from (
             select v.id, v.prefix, v.number, v.party_name, v.due_date::text, ${balanceExpr} as balance_paise
-            from vouchers v where v.type = 'sale_invoice' and v.status = 'active' and v.due_date < ${today}) t
+            from vouchers v where v.firm_id = ${firmId} and v.type = 'sale_invoice' and v.status = 'active' and v.due_date < ${today}) t
           where balance_paise > 0 order by due_date limit 8`,
     ),
     ["balance_paise"],
@@ -168,8 +169,8 @@ export interface PartyBalanceRow {
   last_date: string | null;
 }
 
-export async function partyBalances(db: DB, f: { q?: string; kind?: string; asOf?: string; includeInactive?: boolean } = {}) {
-  const where: SQL[] = [sql`true`];
+export async function partyBalances(db: DB, firmId: number, f: { q?: string; kind?: string; asOf?: string; includeInactive?: boolean } = {}) {
+  const where: SQL[] = [sql`p.firm_id = ${firmId}`];
   if (!f.includeInactive) where.push(sql`p.active`);
   if (f.kind === "customer") where.push(sql`p.kind in ('customer','both')`);
   if (f.kind === "supplier") where.push(sql`p.kind in ('supplier','both')`);
@@ -261,9 +262,9 @@ const costPerUnit = sql`case when i.purchase_price_includes_tax
     then round(i.purchase_price_paise * 10000.0 / (10000 + coalesce(t.gst_bp, 0) + coalesce(t.cess_bp, 0)))
     else i.purchase_price_paise end`;
 
-export async function stockSummary(db: DB, f: { asOf?: string; q?: string; categoryId?: number; lowOnly?: boolean; includeInactive?: boolean } = {}) {
+export async function stockSummary(db: DB, firmId: number, f: { asOf?: string; q?: string; categoryId?: number; lowOnly?: boolean; includeInactive?: boolean } = {}) {
   const asOf = f.asOf ?? "9999-12-31";
-  const where: SQL[] = [sql`i.kind = 'goods'`];
+  const where: SQL[] = [sql`i.firm_id = ${firmId}`, sql`i.kind = 'goods'`];
   if (!f.includeInactive) where.push(sql`i.active`);
   if (f.categoryId) where.push(sql`i.category_id = ${f.categoryId}`);
   if (f.q) {
@@ -346,7 +347,7 @@ export async function accountStatement(db: DB, accountId: number, from: string, 
 
 // ─── Day book ────────────────────────────────────────────────────────────────
 
-export async function dayBook(db: DB, from: string, to: string) {
+export async function dayBook(db: DB, firmId: number, from: string, to: string) {
   const list = nums(
     await rows<{ id: number; type: VoucherType; prefix: string; number: number; date: string; party_name: string | null; total_paise: number; money_in: number; money_out: number; status: string; created_by: string | null }>(
       db,
@@ -354,7 +355,7 @@ export async function dayBook(db: DB, from: string, to: string) {
             coalesce((select sum(amount_paise) from money_ledger m where m.voucher_id = v.id and m.amount_paise > 0), 0) as money_in,
             coalesce((select -sum(amount_paise) from money_ledger m where m.voucher_id = v.id and m.amount_paise < 0), 0) as money_out
           from vouchers v left join users u on u.id = v.created_by
-          where v.date between ${from} and ${to}
+          where v.firm_id = ${firmId} and v.date between ${from} and ${to}
           order by v.date, v.created_at`,
     ),
     ["total_paise", "money_in", "money_out"],
@@ -365,8 +366,8 @@ export async function dayBook(db: DB, from: string, to: string) {
 // ─── Profit & loss ───────────────────────────────────────────────────────────
 
 /** Stock value at the end of `date` (all movements on that day included) — used for "closing stock". */
-async function stockValueAt(db: DB, date: string): Promise<number> {
-  const list = await stockSummary(db, { asOf: date, includeInactive: true });
+async function stockValueAt(db: DB, firmId: number, date: string): Promise<number> {
+  const list = await stockSummary(db, firmId, { asOf: date, includeInactive: true });
   return list.reduce((s, r) => s + r.stock_value_paise, 0);
 }
 
@@ -381,7 +382,7 @@ async function stockValueAt(db: DB, date: string): Promise<number> {
  * quantities dated to the FY start (the common case), understating opening stock and
  * overstating cost of goods sold for the year by the same amount.
  */
-async function stockValueAtStartOf(db: DB, date: string): Promise<number> {
+async function stockValueAtStartOf(db: DB, firmId: number, date: string): Promise<number> {
   const [row] = nums(
     await rows<{ value: number }>(
       db,
@@ -394,14 +395,14 @@ async function stockValueAtStartOf(db: DB, date: string): Promise<number> {
             from stock_ledger s
             where s.item_id = i.id and (s.date < ${date} or (s.date = ${date} and s.source = 'opening'))
           ) bal on true
-          where i.kind = 'goods' and coalesce(bal.qty_milli, 0) > 0`,
+          where i.firm_id = ${firmId} and i.kind = 'goods' and coalesce(bal.qty_milli, 0) > 0`,
     ),
     ["value"],
   );
   return row.value;
 }
 
-export async function profitAndLoss(db: DB, from: string, to: string) {
+export async function profitAndLoss(db: DB, firmId: number, from: string, to: string) {
   const [t] = nums(
     await rows<{ sales: number; sale_returns: number; purchases: number; purchase_returns: number; other_income: number; expenses: number; discount_given: number }>(
       db,
@@ -413,7 +414,7 @@ export async function profitAndLoss(db: DB, from: string, to: string) {
             coalesce(sum(taxable_paise) filter (where type = 'other_income'), 0) as other_income,
             coalesce(sum(taxable_paise) filter (where type = 'expense'), 0) as expenses,
             coalesce(sum(discount_paise) filter (where type = 'sale_invoice'), 0) as discount_given
-          from vouchers where status = 'active' and date between ${from} and ${to}`,
+          from vouchers where firm_id = ${firmId} and status = 'active' and date between ${from} and ${to}`,
     ),
     ["sales", "sale_returns", "purchases", "purchase_returns", "other_income", "expenses", "discount_given"],
   );
@@ -422,7 +423,7 @@ export async function profitAndLoss(db: DB, from: string, to: string) {
       db,
       sql`select coalesce(c.name, 'Uncategorised') as name, sum(v.taxable_paise) as amount
           from vouchers v left join ledger_categories c on c.id = v.category_id
-          where v.type = 'expense' and v.status = 'active' and v.date between ${from} and ${to}
+          where v.firm_id = ${firmId} and v.type = 'expense' and v.status = 'active' and v.date between ${from} and ${to}
           group by 1 order by 2 desc`,
     ),
     ["amount"],
@@ -432,13 +433,13 @@ export async function profitAndLoss(db: DB, from: string, to: string) {
       db,
       sql`select coalesce(c.name, 'Uncategorised') as name, sum(v.taxable_paise) as amount
           from vouchers v left join ledger_categories c on c.id = v.category_id
-          where v.type = 'other_income' and v.status = 'active' and v.date between ${from} and ${to}
+          where v.firm_id = ${firmId} and v.type = 'other_income' and v.status = 'active' and v.date between ${from} and ${to}
           group by 1 order by 2 desc`,
     ),
     ["amount"],
   );
-  const openingStock = await stockValueAtStartOf(db, from);
-  const closingStock = await stockValueAt(db, to);
+  const openingStock = await stockValueAtStartOf(db, firmId, from);
+  const closingStock = await stockValueAt(db, firmId, to);
   const netSales = t.sales - t.sale_returns;
   const netPurchases = t.purchases - t.purchase_returns;
   const costOfGoodsSold = openingStock + netPurchases - closingStock;
@@ -465,7 +466,7 @@ export async function profitAndLoss(db: DB, from: string, to: string) {
 
 // ─── Item-wise sales ─────────────────────────────────────────────────────────
 
-export async function itemSales(db: DB, from: string, to: string, side: "sale" | "purchase" = "sale") {
+export async function itemSales(db: DB, firmId: number, from: string, to: string, side: "sale" | "purchase" = "sale") {
   const [fwd, ret] = side === "sale" ? ["sale_invoice", "credit_note"] : ["purchase_bill", "debit_note"];
   return nums(
     await rows<{ item_id: number | null; name: string; qty_milli: number; taxable_paise: number; total_paise: number; unit_code: string | null }>(
@@ -475,7 +476,7 @@ export async function itemSales(db: DB, from: string, to: string, side: "sale" |
             sum(case when v.type = ${fwd} then l.taxable_paise else -l.taxable_paise end) as taxable_paise,
             sum(case when v.type = ${fwd} then l.total_paise else -l.total_paise end) as total_paise
           from voucher_lines l join vouchers v on v.id = l.voucher_id left join items i on i.id = l.item_id
-          where v.status = 'active' and v.type in (${fwd}, ${ret}) and v.date between ${from} and ${to}
+          where v.firm_id = ${firmId} and v.status = 'active' and v.type in (${fwd}, ${ret}) and v.date between ${from} and ${to}
           group by l.item_id, coalesce(i.name, l.description)
           order by taxable_paise desc`,
     ),
@@ -496,7 +497,7 @@ export interface TaxRow {
 }
 
 /** GST collected (sales, less sale returns) or paid (purchases, less purchase returns), by rate. */
-export async function taxReport(db: DB, from: string, to: string, side: "outward" | "inward" = "outward") {
+export async function taxReport(db: DB, firmId: number, from: string, to: string, side: "outward" | "inward" = "outward") {
   const [fwd, ret] = side === "outward" ? ["sale_invoice", "credit_note"] : ["purchase_bill", "debit_note"];
   const rows_ = nums(
     await rows<TaxRow>(
@@ -508,7 +509,7 @@ export async function taxReport(db: DB, from: string, to: string, side: "outward
             sum(case when v.type = ${fwd} then l.igst_paise else -l.igst_paise end) as igst_paise,
             sum(case when v.type = ${fwd} then l.cess_paise else -l.cess_paise end) as cess_paise
           from voucher_lines l join vouchers v on v.id = l.voucher_id
-          where v.status = 'active' and v.type in (${fwd}, ${ret}) and v.date between ${from} and ${to} and l.gst_bp > 0
+          where v.firm_id = ${firmId} and v.status = 'active' and v.type in (${fwd}, ${ret}) and v.date between ${from} and ${to} and l.gst_bp > 0
           group by l.gst_bp, l.cess_bp
           order by l.gst_bp, l.cess_bp`,
     ),
@@ -519,7 +520,7 @@ export async function taxReport(db: DB, from: string, to: string, side: "outward
 
 // ─── Global search ───────────────────────────────────────────────────────────
 
-export async function globalSearch(db: DB, q: string, opts: { partyContact?: boolean } = {}) {
+export async function globalSearch(db: DB, firmId: number, q: string, opts: { partyContact?: boolean } = {}) {
   const contact = opts.partyContact ?? true;
   const term = q.trim().toLowerCase();
   if (term.length < 2) return { parties: [], items: [], vouchers: [] };
@@ -528,14 +529,14 @@ export async function globalSearch(db: DB, q: string, opts: { partyContact?: boo
     rows<{ id: number; name: string; phone: string | null }>(
       db,
       contact
-        ? sql`select id, name, phone from parties where lower(name) like ${like} or coalesce(phone,'') like ${like} or lower(coalesce(gstin,'')) like ${like} order by lower(name) limit 8`
-        : sql`select id, name, null::text as phone from parties where lower(name) like ${like} order by lower(name) limit 8`,
+        ? sql`select id, name, phone from parties where firm_id = ${firmId} and (lower(name) like ${like} or coalesce(phone,'') like ${like} or lower(coalesce(gstin,'')) like ${like}) order by lower(name) limit 8`
+        : sql`select id, name, null::text as phone from parties where firm_id = ${firmId} and lower(name) like ${like} order by lower(name) limit 8`,
     ),
-    rows<{ id: number; name: string; code: string | null }>(db, sql`select id, name, code from items where lower(name) like ${like} or lower(coalesce(code,'')) like ${like} order by lower(name) limit 8`),
+    rows<{ id: number; name: string; code: string | null }>(db, sql`select id, name, code from items where firm_id = ${firmId} and (lower(name) like ${like} or lower(coalesce(code,'')) like ${like}) order by lower(name) limit 8`),
     rows<{ id: number; type: VoucherType; prefix: string; number: number; date: string; party_name: string | null; total_paise: number }>(
       db,
       sql`select id, type, prefix, number, date::text, party_name, total_paise from vouchers
-          where lower(prefix || number::text) like ${like} or lower(coalesce(party_name,'')) like ${like} or lower(coalesce(supplier_invoice_no,'')) like ${like}
+          where firm_id = ${firmId} and (lower(prefix || number::text) like ${like} or lower(coalesce(party_name,'')) like ${like} or lower(coalesce(supplier_invoice_no,'')) like ${like})
           order by date desc limit 10`,
     ),
   ]);

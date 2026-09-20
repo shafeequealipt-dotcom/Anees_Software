@@ -6,6 +6,7 @@ import { buttonClass } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { ChangePasswordForm } from "@/components/change-password-form";
+import { CompanySwitcher } from "@/components/company-switcher";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     {
       items: [
         { href: "/reports", label: "Reports" },
-        ...(can(user, "settings.edit") || can(user, "users.manage") || can(user, "audit.view") ? [{ href: "/settings", label: "Settings" }] : []),
+        ...(can(user, "settings.edit") || can(user, "users.manage") || can(user, "audit.view") || can(user, "companies.manage") ? [{ href: "/settings", label: "Settings" }] : []),
       ],
     },
   ];
@@ -72,6 +73,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <header className="no-print flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4 pl-24 lg:pl-4">
           <GlobalSearch />
           <div className="ml-auto flex items-center gap-2">
+            <CompanySwitcher current={user.firm} companies={user.firms} canManage={can(user, "companies.manage")} />
             <Link href="/sales/new" className={buttonClass("primary", "sm")}>
               + Sale
             </Link>

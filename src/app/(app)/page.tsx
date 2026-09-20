@@ -15,7 +15,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const user = await requireUser();
   const sp = await searchParams;
   const db = await getDb();
-  const d = await dashboard(db);
+  const d = await dashboard(db, user.firmId);
   const seeMoney = can(user, "money.view");
   const today = todayIST();
 

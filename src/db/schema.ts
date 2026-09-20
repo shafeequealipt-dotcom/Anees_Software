@@ -11,6 +11,7 @@ import {
   serial,
   text,
   timestamp,
+  primaryKey,
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -82,7 +83,6 @@ export const firms = pgTable("firms", {
   bankBranch: varchar("bank_branch", { length: 120 }),
   upiId: varchar("upi_id", { length: 100 }),
   invoiceTerms: text("invoice_terms"),
-  isDefault: boolean("is_default").notNull().default(false),
   active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -122,12 +122,24 @@ export const users = pgTable(
   (t) => [uniqueIndex("users_email_key").on(sql`lower(${t.email})`)],
 );
 
+/** Which companies a non-owner user may open. Owners can open every company. */
+export const userFirms = pgTable(
+  "user_firms",
+  {
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    firmId: integer("firm_id").notNull().references(() => firms.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.firmId] })],
+);
+
 export const sessions = pgTable(
   "sessions",
   {
     id: varchar("id", { length: 64 }).primaryKey(), // sha256 of the cookie token
     userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     mfaPassed: boolean("mfa_passed").notNull().default(false),
+    /** The company this session is currently working in. */
+    firmId: integer("firm_id").references(() => firms.id, { onDelete: "set null" }),
     ip: varchar("ip", { length: 64 }),
     userAgent: text("user_agent"),
     createdAt: createdAt(),
@@ -149,16 +161,22 @@ export const loginAttempts = pgTable(
   (t) => [index("login_attempts_ip_at_idx").on(t.ip, t.at)],
 );
 
-export const settings = pgTable("settings", {
-  key: varchar("key", { length: 100 }).primaryKey(),
-  value: jsonb("value").notNull(),
-  updatedAt: updatedAt(),
-});
+export const settings = pgTable(
+  "settings",
+  {
+    firmId: integer("firm_id").notNull().references(() => firms.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 100 }).notNull(),
+    value: jsonb("value").notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.firmId, t.key] })],
+);
 
 // ─── Masters ──────────────────────────────────────────────────────────────────
 
 export const taxRates = pgTable("tax_rates", {
   id: serial("id").primaryKey(),
+  firmId: integer("firm_id").notNull().references(() => firms.id),
   name: varchar("name", { length: 60 }).notNull(),
   gstBp: integer("gst_bp").notNull().default(0),
   cessBp: integer("cess_bp").notNull().default(0),
@@ -170,21 +188,28 @@ export const taxRates = pgTable("tax_rates", {
 
 export const units = pgTable("units", {
   id: serial("id").primaryKey(),
+  firmId: integer("firm_id").notNull().references(() => firms.id),
   name: varchar("name", { length: 60 }).notNull(),
   /** Unique Quantity Code used in GST returns, e.g. NOS, KGS, BOX. */
   code: varchar("code", { length: 10 }).notNull(),
   active: boolean("active").notNull().default(true),
 });
 
-export const itemCategories = pgTable("item_categories", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 120 }).notNull().unique(),
-});
+export const itemCategories = pgTable(
+  "item_categories",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    name: varchar("name", { length: 120 }).notNull(),
+  },
+  (t) => [uniqueIndex("item_categories_firm_name_key").on(t.firmId, t.name)],
+);
 
 export const items = pgTable(
   "items",
   {
     id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
     kind: itemKind("kind").notNull().default("goods"),
     name: varchar("name", { length: 200 }).notNull(),
     code: varchar("code", { length: 60 }),
@@ -214,19 +239,25 @@ export const items = pgTable(
   },
   (t) => [
     index("items_name_idx").on(sql`lower(${t.name})`),
-    uniqueIndex("items_code_key").on(t.code).where(sql`${t.code} is not null`),
+    uniqueIndex("items_code_key").on(t.firmId, t.code).where(sql`${t.code} is not null`),
   ],
 );
 
-export const partyGroups = pgTable("party_groups", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 120 }).notNull().unique(),
-});
+export const partyGroups = pgTable(
+  "party_groups",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    name: varchar("name", { length: 120 }).notNull(),
+  },
+  (t) => [uniqueIndex("party_groups_firm_name_key").on(t.firmId, t.name)],
+);
 
 export const parties = pgTable(
   "parties",
   {
     id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
     kind: partyKind("kind").notNull().default("customer"),
     name: varchar("name", { length: 200 }).notNull(),
     gstin: varchar("gstin", { length: 15 }),
@@ -252,6 +283,7 @@ export const parties = pgTable(
 
 export const accounts = pgTable("accounts", {
   id: serial("id").primaryKey(),
+  firmId: integer("firm_id").notNull().references(() => firms.id),
   kind: accountKind("kind").notNull(),
   name: varchar("name", { length: 120 }).notNull(),
   bankName: varchar("bank_name", { length: 120 }),
@@ -267,6 +299,7 @@ export const accounts = pgTable("accounts", {
 
 export const ledgerCategories = pgTable("ledger_categories", {
   id: serial("id").primaryKey(),
+  firmId: integer("firm_id").notNull().references(() => firms.id),
   kind: categoryKind("kind").notNull(),
   name: varchar("name", { length: 120 }).notNull(),
 });
@@ -453,6 +486,7 @@ export const auditLog = pgTable(
   {
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    firmId: integer("firm_id").references(() => firms.id, { onDelete: "set null" }),
     userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
     action: varchar("action", { length: 30 }).notNull(),
     entity: varchar("entity", { length: 40 }).notNull(),

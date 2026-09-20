@@ -1,5 +1,5 @@
 import "server-only";
-import { inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DB, Tx } from "@/db";
 import { settings } from "@/db/schema";
 import type { VoucherType } from "@/db/schema";
@@ -70,8 +70,8 @@ export const DEFAULT_SETTINGS = {
 export type Settings = typeof DEFAULT_SETTINGS;
 export type SettingKey = keyof Settings;
 
-export async function getSettings(db: DB | Tx): Promise<Settings> {
-  const rows = await db.select().from(settings);
+export async function getSettings(db: DB | Tx, firmId: number): Promise<Settings> {
+  const rows = await db.select().from(settings).where(eq(settings.firmId, firmId));
   const out = structuredClone(DEFAULT_SETTINGS) as Record<string, unknown>;
   for (const r of rows) {
     if (!(r.key in out)) continue;
@@ -82,16 +82,16 @@ export async function getSettings(db: DB | Tx): Promise<Settings> {
   return out as Settings;
 }
 
-export async function saveSettings(db: DB | Tx, patch: Partial<Settings>) {
+export async function saveSettings(db: DB | Tx, firmId: number, patch: Partial<Settings>) {
   const entries = Object.entries(patch).filter(([k]) => k in DEFAULT_SETTINGS);
   for (const [key, value] of entries) {
     await db
       .insert(settings)
-      .values({ key, value: value as object })
-      .onConflictDoUpdate({ target: settings.key, set: { value: value as object, updatedAt: sql`now()` } });
+      .values({ firmId, key, value: value as object })
+      .onConflictDoUpdate({ target: [settings.firmId, settings.key], set: { value: value as object, updatedAt: sql`now()` } });
   }
 }
 
-export async function deleteSettings(db: DB | Tx, keys: SettingKey[]) {
-  if (keys.length) await db.delete(settings).where(inArray(settings.key, keys));
+export async function deleteSettings(db: DB | Tx, firmId: number, keys: SettingKey[]) {
+  if (keys.length) await db.delete(settings).where(and(eq(settings.firmId, firmId), inArray(settings.key, keys)));
 }

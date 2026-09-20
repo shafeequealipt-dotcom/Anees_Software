@@ -7,7 +7,8 @@ import { redirect } from "next/navigation";
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const tabs = [
-    can(user, "settings.edit") && { href: "/settings/business", label: "Business" },
+    can(user, "settings.edit") && { href: "/settings/business", label: "This company" },
+    can(user, "companies.manage") && { href: "/settings/companies", label: "Companies" },
     can(user, "users.manage") && { href: "/settings/users", label: "Users" },
     can(user, "users.manage") && { href: "/settings/roles", label: "Roles & access" },
     can(user, "settings.edit") && { href: "/settings/tax-rates", label: "Tax rates" },

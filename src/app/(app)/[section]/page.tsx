@@ -27,7 +27,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
   const { presets, from, to } = resolvePeriod(sp, info.takesPayment ? "month" : "fy");
   const status = (sp.status ?? "all") as "open" | "paid" | "overdue" | "cancelled" | "all";
   const db = await getDb();
-  const list = await listVouchers(db, { types: [type], from, to, q: sp.q, status });
+  const list = await listVouchers(db, user.firmId, { types: [type], from, to, q: sp.q, status });
   const active = list.filter((r) => r.status === "active");
   const sum = (f: (r: (typeof list)[number]) => number) => active.reduce((s, r) => s + f(r), 0);
   const today = todayIST();

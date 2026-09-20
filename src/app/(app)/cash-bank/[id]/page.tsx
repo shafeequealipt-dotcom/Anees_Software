@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/party-actions";
@@ -19,9 +19,9 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const { id } = await params;
   const sp = await searchParams;
   const db = await getDb();
-  const [a] = await db.select().from(accounts).where(eq(accounts.id, Number(id) || 0));
+  const [a] = await db.select().from(accounts).where(and(eq(accounts.id, Number(id) || 0), eq(accounts.firmId, user.firmId)));
   if (!a) notFound();
-  const [firm] = await db.select().from(firms).where(eq(firms.isDefault, true));
+  const [firm] = await db.select().from(firms).where(eq(firms.id, user.firmId));
   const fy = financialYear(todayIST());
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();

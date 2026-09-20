@@ -11,14 +11,14 @@ import { itemSales } from "@/server/reports";
 export const metadata = { title: "Item-wise sales" };
 
 export default async function ItemSalesPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; side?: string }> }) {
-  await requireUser("reports.all");
+  const user = await requireUser("reports.all");
   const sp = await searchParams;
   const side = sp.side === "purchase" ? "purchase" : "sale";
   const fy = financialYear(todayIST());
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();
   const db = await getDb();
-  const list = await itemSales(db, from, to, side);
+  const list = await itemSales(db, user.firmId, from, to, side);
   const totalQty = list.reduce((s, r) => s + r.qty_milli, 0);
   const totalTaxable = list.reduce((s, r) => s + r.taxable_paise, 0);
   const totalAmount = list.reduce((s, r) => s + r.total_paise, 0);

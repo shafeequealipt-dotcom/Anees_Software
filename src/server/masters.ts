@@ -1,5 +1,6 @@
 import "server-only";
 import { and, eq, sql } from "drizzle-orm";
+import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { DB, Tx } from "@/db";
 import {
@@ -68,7 +69,7 @@ export const partySchema = z.object({
   active: z.boolean().default(true),
 });
 
-export async function saveParty(db: DB, raw: z.input<typeof partySchema>, userId: number | null) {
+export async function saveParty(db: DB, firmId: number, raw: z.input<typeof partySchema>, userId: number | null) {
   const p = partySchema.safeParse(raw);
   if (!p.success) throw firstIssue(p.error);
   const input = p.data;
@@ -93,15 +94,19 @@ export async function saveParty(db: DB, raw: z.input<typeof partySchema>, userId
     const dupe = await tx
       .select({ id: parties.id })
       .from(parties)
-      .where(and(sql`lower(${parties.name}) = ${input.name.toLowerCase()}`, input.id ? sql`${parties.id} <> ${input.id}` : sql`true`));
+      .where(and(eq(parties.firmId, firmId), sql`lower(${parties.name}) = ${input.name.toLowerCase()}`, input.id ? sql`${parties.id} <> ${input.id}` : sql`true`));
     if (dupe.length) throw new MasterError(`A party named "${input.name}" already exists.`, "name");
 
-    const values = { ...input, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
+    if (input.groupId) {
+      const [g] = await tx.select({ id: partyGroups.id }).from(partyGroups).where(and(eq(partyGroups.id, input.groupId), eq(partyGroups.firmId, firmId)));
+      if (!g) throw new MasterError("Choose a group from this company.", "groupId");
+    }
+    const values = { ...input, firmId, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
     delete (values as { id?: number }).id;
     let id = input.id;
     let before;
     if (id) {
-      [before] = await tx.select().from(parties).where(eq(parties.id, id));
+      [before] = await tx.select().from(parties).where(and(eq(parties.id, id), eq(parties.firmId, firmId)));
       if (!before) throw new MasterError("This party no longer exists.");
       await tx.update(parties).set(values).where(eq(parties.id, id));
     } else {
@@ -118,6 +123,7 @@ export async function saveParty(db: DB, raw: z.input<typeof partySchema>, userId
       });
     }
     await audit(tx, {
+      firmId,
       userId,
       action: before ? "update" : "create",
       entity: "party",
@@ -130,29 +136,29 @@ export async function saveParty(db: DB, raw: z.input<typeof partySchema>, userId
   });
 }
 
-export async function deleteParty(db: DB, id: number, userId: number | null) {
+export async function deleteParty(db: DB, firmId: number, id: number, userId: number | null) {
   return db.transaction(async (tx) => {
     const [used] = await tx.select({ n: sql<number>`count(*)::int` }).from(vouchers).where(eq(vouchers.partyId, id));
-    const [p] = await tx.select().from(parties).where(eq(parties.id, id));
+    const [p] = await tx.select().from(parties).where(and(eq(parties.id, id), eq(parties.firmId, firmId)));
     if (!p) return;
     if (used.n > 0) {
       await tx.update(parties).set({ active: false, updatedAt: new Date() }).where(eq(parties.id, id));
-      await audit(tx, { userId, action: "update", entity: "party", entityId: id, summary: `Deactivated party ${p.name} (has ${used.n} entries)` });
+      await audit(tx, { firmId, userId, action: "update", entity: "party", entityId: id, summary: `Deactivated party ${p.name} (has ${used.n} entries)` });
       return "deactivated" as const;
     }
     await tx.delete(parties).where(eq(parties.id, id));
-    await audit(tx, { userId, action: "delete", entity: "party", entityId: id, summary: `Deleted party ${p.name}`, before: p });
+    await audit(tx, { firmId, userId, action: "delete", entity: "party", entityId: id, summary: `Deleted party ${p.name}`, before: p });
     return "deleted" as const;
   });
 }
 
-export async function savePartyGroup(db: DB | Tx, name: string) {
+export async function savePartyGroup(db: DB | Tx, firmId: number, name: string) {
   const clean = name.trim();
   if (!clean) throw new MasterError("Enter a group name.");
   const [row] = await db
     .insert(partyGroups)
-    .values({ name: clean })
-    .onConflictDoUpdate({ target: partyGroups.name, set: { name: clean } })
+    .values({ firmId, name: clean })
+    .onConflictDoUpdate({ target: [partyGroups.firmId, partyGroups.name], set: { name: clean } })
     .returning({ id: partyGroups.id });
   return row.id;
 }
@@ -190,7 +196,7 @@ export const itemSchema = z.object({
   active: z.boolean().default(true),
 });
 
-export async function saveItem(db: DB, raw: z.input<typeof itemSchema>, userId: number | null) {
+export async function saveItem(db: DB, firmId: number, raw: z.input<typeof itemSchema>, userId: number | null) {
   const p = itemSchema.safeParse(raw);
   if (!p.success) throw firstIssue(p.error);
   const input = p.data;
@@ -206,6 +212,7 @@ export async function saveItem(db: DB, raw: z.input<typeof itemSchema>, userId: 
       .from(items)
       .where(
         and(
+          eq(items.firmId, firmId),
           input.code ? sql`(lower(${items.name}) = ${input.name.toLowerCase()} or ${items.code} = ${input.code})` : sql`lower(${items.name}) = ${input.name.toLowerCase()}`,
           input.id ? sql`${items.id} <> ${input.id}` : sql`true`,
         ),
@@ -217,12 +224,23 @@ export async function saveItem(db: DB, raw: z.input<typeof itemSchema>, userId: 
         : new MasterError(`An item named "${input.name}" already exists.`, "name");
     }
 
-    const values = { ...input, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
+    const refs: [string, number | null | undefined, PgTable & { id: PgColumn; firmId: PgColumn }][] = [
+      ["category", input.categoryId, itemCategories],
+      ["unit", input.unitId, units],
+      ["alternate unit", input.altUnitId, units],
+      ["tax rate", input.taxRateId, taxRates],
+    ];
+    for (const [label, refId, table] of refs) {
+      if (!refId) continue;
+      const [ok] = await tx.select({ id: table.id }).from(table).where(and(eq(table.id, refId), eq(table.firmId, firmId)));
+      if (!ok) throw new MasterError(`Choose a ${label} from this company.`);
+    }
+    const values = { ...input, firmId, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
     delete (values as { id?: number }).id;
     let id = input.id;
     let before;
     if (id) {
-      [before] = await tx.select().from(items).where(eq(items.id, id));
+      [before] = await tx.select().from(items).where(and(eq(items.id, id), eq(items.firmId, firmId)));
       if (!before) throw new MasterError("This item no longer exists.");
       if (before.kind !== values.kind) {
         const [used] = await tx.select({ n: sql<number>`count(*)::int` }).from(voucherLines).where(eq(voucherLines.itemId, id));
@@ -243,6 +261,7 @@ export async function saveItem(db: DB, raw: z.input<typeof itemSchema>, userId: 
       });
     }
     await audit(tx, {
+      firmId,
       userId,
       action: before ? "update" : "create",
       entity: "item",
@@ -255,10 +274,10 @@ export async function saveItem(db: DB, raw: z.input<typeof itemSchema>, userId: 
   });
 }
 
-export async function deleteItem(db: DB, id: number, userId: number | null) {
+export async function deleteItem(db: DB, firmId: number, id: number, userId: number | null) {
   return db.transaction(async (tx) => {
     const [used] = await tx.select({ n: sql<number>`count(*)::int` }).from(voucherLines).where(eq(voucherLines.itemId, id));
-    const [it] = await tx.select().from(items).where(eq(items.id, id));
+    const [it] = await tx.select().from(items).where(and(eq(items.id, id), eq(items.firmId, firmId)));
     if (!it) return;
     if (used.n > 0) {
       await tx.update(items).set({ active: false, updatedAt: new Date() }).where(eq(items.id, id));
@@ -266,18 +285,18 @@ export async function deleteItem(db: DB, id: number, userId: number | null) {
       return "deactivated" as const;
     }
     await tx.delete(items).where(eq(items.id, id));
-    await audit(tx, { userId, action: "delete", entity: "item", entityId: id, summary: `Deleted item ${it.name}`, before: it });
+    await audit(tx, { firmId, userId, action: "delete", entity: "item", entityId: id, summary: `Deleted item ${it.name}`, before: it });
     return "deleted" as const;
   });
 }
 
-export async function saveCategory(db: DB | Tx, name: string) {
+export async function saveCategory(db: DB | Tx, firmId: number, name: string) {
   const clean = name.trim();
   if (!clean) throw new MasterError("Enter a category name.");
   const [row] = await db
     .insert(itemCategories)
-    .values({ name: clean })
-    .onConflictDoUpdate({ target: itemCategories.name, set: { name: clean } })
+    .values({ firmId, name: clean })
+    .onConflictDoUpdate({ target: [itemCategories.firmId, itemCategories.name], set: { name: clean } })
     .returning({ id: itemCategories.id });
   return row.id;
 }
@@ -289,15 +308,15 @@ export const unitSchema = z.object({
   active: z.boolean().default(true),
 });
 
-export async function saveUnit(db: DB | Tx, raw: z.input<typeof unitSchema>) {
+export async function saveUnit(db: DB | Tx, firmId: number, raw: z.input<typeof unitSchema>) {
   const p = unitSchema.safeParse(raw);
   if (!p.success) throw firstIssue(p.error);
   const { id, ...values } = p.data;
   if (id) {
-    await db.update(units).set(values).where(eq(units.id, id));
+    await db.update(units).set(values).where(and(eq(units.id, id), eq(units.firmId, firmId)));
     return id;
   }
-  const [row] = await db.insert(units).values(values).returning({ id: units.id });
+  const [row] = await db.insert(units).values({ ...values, firmId }).returning({ id: units.id });
   return row.id;
 }
 
@@ -311,15 +330,15 @@ export const taxRateSchema = z.object({
   active: z.boolean().default(true),
 });
 
-export async function saveTaxRate(db: DB | Tx, raw: z.input<typeof taxRateSchema>) {
+export async function saveTaxRate(db: DB | Tx, firmId: number, raw: z.input<typeof taxRateSchema>) {
   const p = taxRateSchema.safeParse(raw);
   if (!p.success) throw firstIssue(p.error);
   const { id, ...values } = p.data;
   if (id) {
-    await db.update(taxRates).set(values).where(eq(taxRates.id, id));
+    await db.update(taxRates).set(values).where(and(eq(taxRates.id, id), eq(taxRates.firmId, firmId)));
     return id;
   }
-  const [row] = await db.insert(taxRates).values(values).returning({ id: taxRates.id });
+  const [row] = await db.insert(taxRates).values({ ...values, firmId }).returning({ id: taxRates.id });
   return row.id;
 }
 
@@ -343,15 +362,19 @@ export const accountSchema = z.object({
   active: z.boolean().default(true),
 });
 
-export async function saveAccount(db: DB, raw: z.input<typeof accountSchema>, userId: number | null) {
+export async function saveAccount(db: DB, firmId: number, raw: z.input<typeof accountSchema>, userId: number | null) {
   const p = accountSchema.safeParse(raw);
   if (!p.success) throw firstIssue(p.error);
   const input = p.data;
   return db.transaction(async (tx) => {
-    const values = { ...input, openingDate: input.openingDate ?? defaultOpeningDate() };
+    const values = { ...input, firmId, openingDate: input.openingDate ?? defaultOpeningDate() };
     delete (values as { id?: number }).id;
     let id = input.id;
-    if (values.isDefault) await tx.update(accounts).set({ isDefault: false }).where(eq(accounts.kind, values.kind));
+    if (id) {
+      const [own] = await tx.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, id), eq(accounts.firmId, firmId)));
+      if (!own) throw new MasterError("This account no longer exists.");
+    }
+    if (values.isDefault) await tx.update(accounts).set({ isDefault: false }).where(and(eq(accounts.firmId, firmId), eq(accounts.kind, values.kind)));
     if (id) await tx.update(accounts).set(values).where(eq(accounts.id, id));
     else [{ id }] = await tx.insert(accounts).values(values).returning({ id: accounts.id });
     await tx.delete(moneyLedger).where(and(eq(moneyLedger.accountId, id!), eq(moneyLedger.source, "opening")));
@@ -364,19 +387,19 @@ export async function saveAccount(db: DB, raw: z.input<typeof accountSchema>, us
         memo: "Opening balance",
       });
     }
-    await audit(tx, { userId, action: input.id ? "update" : "create", entity: "account", entityId: id!, summary: `${input.id ? "Edited" : "Added"} ${values.kind} account ${values.name}`, after: values });
+    await audit(tx, { firmId, userId, action: input.id ? "update" : "create", entity: "account", entityId: id!, summary: `${input.id ? "Edited" : "Added"} ${values.kind} account ${values.name}`, after: values });
     return id!;
   });
 }
 
-export async function saveLedgerCategory(db: DB | Tx, kind: "expense" | "income", name: string) {
+export async function saveLedgerCategory(db: DB | Tx, firmId: number, kind: "expense" | "income", name: string) {
   const clean = name.trim();
   if (!clean) throw new MasterError("Enter a category name.");
   const [found] = await db
     .select({ id: ledgerCategories.id })
     .from(ledgerCategories)
-    .where(and(eq(ledgerCategories.kind, kind), sql`lower(${ledgerCategories.name}) = ${clean.toLowerCase()}`));
+    .where(and(eq(ledgerCategories.firmId, firmId), eq(ledgerCategories.kind, kind), sql`lower(${ledgerCategories.name}) = ${clean.toLowerCase()}`));
   if (found) return found.id;
-  const [row] = await db.insert(ledgerCategories).values({ kind, name: clean }).returning({ id: ledgerCategories.id });
+  const [row] = await db.insert(ledgerCategories).values({ firmId, kind, name: clean }).returning({ id: ledgerCategories.id });
   return row.id;
 }

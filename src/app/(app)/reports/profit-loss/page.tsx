@@ -9,13 +9,13 @@ import { profitAndLoss } from "@/server/reports";
 export const metadata = { title: "Profit & loss" };
 
 export default async function ProfitLossPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
-  await requireUser("reports.all");
+  const user = await requireUser("reports.all");
   const sp = await searchParams;
   const fy = financialYear(todayIST());
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();
   const db = await getDb();
-  const p = await profitAndLoss(db, from, to);
+  const p = await profitAndLoss(db, user.firmId, from, to);
 
   return (
     <>

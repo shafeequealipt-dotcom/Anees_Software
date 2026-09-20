@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
 import { firms, users } from "@/db/schema";
@@ -98,7 +98,9 @@ export async function setupAction(_prev: FormState, form: FormData): Promise<For
 }
 
 export async function businessName(): Promise<string> {
+  const user = await currentUser();
+  if (user?.firm.name) return user.firm.name;
   const db = await getDb();
-  const [f] = await db.select({ name: firms.name }).from(firms).where(eq(firms.isDefault, true));
+  const [f] = await db.select({ name: firms.name }).from(firms).orderBy(asc(firms.id)).limit(1);
   return f?.name ?? "Billing";
 }

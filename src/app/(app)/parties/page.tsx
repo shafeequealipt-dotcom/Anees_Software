@@ -16,7 +16,7 @@ export default async function PartiesPage({ searchParams }: { searchParams: Prom
   const seeContact = can(user, "see.partyContact");
   const sp = await searchParams;
   const db = await getDb();
-  let list = await partyBalances(db, { q: sp.q, kind: sp.kind, includeInactive: sp.show === "inactive" });
+  let list = await partyBalances(db, user.firmId, { q: sp.q, kind: sp.kind, includeInactive: sp.show === "inactive" });
   if (seeBalance && sp.show === "receivable") list = list.filter((p) => p.balance_paise > 0);
   if (seeBalance && sp.show === "payable") list = list.filter((p) => p.balance_paise < 0);
   if (sp.show === "inactive") list = list.filter((p) => !p.active);

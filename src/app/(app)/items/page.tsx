@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { LinkSelect, SearchBox, Tabs } from "@/components/simple-filters";
 import { Badge, Empty, LinkButton, Money, PageHeader, Panel, Table, td, th } from "@/components/ui";
 import { getDb } from "@/db";
@@ -16,8 +16,8 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
   const seeValue = can(user, "see.stockValue");
   const sp = await searchParams;
   const db = await getDb();
-  const categories = await db.select().from(itemCategories).orderBy(asc(itemCategories.name));
-  const list = await stockSummary(db, {
+  const categories = await db.select().from(itemCategories).where(eq(itemCategories.firmId, user.firmId)).orderBy(asc(itemCategories.name));
+  const list = await stockSummary(db, user.firmId, {
     q: sp.q,
     categoryId: sp.category ? Number(sp.category) : undefined,
     lowOnly: sp.show === "low",

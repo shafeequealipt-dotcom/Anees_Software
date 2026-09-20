@@ -1,8 +1,8 @@
 import "server-only";
-import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
-import { firms, roles, sessions, users } from "@/db/schema";
+import { firms, roles, sessions, userFirms, users } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { hashPassword, passwordProblem } from "@/lib/auth";
 import { checkGstin } from "@/lib/gst/gstin";
@@ -11,6 +11,7 @@ import { checkTrn } from "@/lib/gst/trn";
 import { isPermission } from "@/lib/permissions";
 import { region } from "@/lib/region";
 import { MasterError } from "./masters";
+import { companySchema, insertCompany } from "./setup";
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 
@@ -73,7 +74,8 @@ export async function deleteRole(db: DB, id: number, actorId: number) {
 // ─── Users ───────────────────────────────────────────────────────────────────
 
 export async function listUsers(db: DB) {
-  return db
+  const access = await db.select().from(userFirms);
+  const list = await db
     .select({
       id: users.id,
       name: users.name,
@@ -90,9 +92,23 @@ export async function listUsers(db: DB) {
     .from(users)
     .innerJoin(roles, eq(roles.id, users.roleId))
     .orderBy(sql`${roles.isOwner} desc`, sql`lower(${users.name})`);
+  return list.map((u) => ({ ...u, firmIds: access.filter((a) => a.userId === u.id).map((a) => a.firmId) }));
+}
+
+/** Replace the list of companies a user may open. Owners always see every company, so nothing is stored for them. */
+async function setUserFirms(db: DB, userId: number, roleIsOwner: boolean, firmIds: number[]) {
+  const ids = [...new Set(firmIds)];
+  if (!roleIsOwner) {
+    if (ids.length === 0) throw new MasterError("Choose at least one company this person can open.", "firmIds");
+    const found = await db.select({ id: firms.id }).from(firms).where(inArray(firms.id, ids));
+    if (found.length !== ids.length) throw new MasterError("One of the chosen companies no longer exists.", "firmIds");
+  }
+  await db.delete(userFirms).where(eq(userFirms.userId, userId));
+  if (!roleIsOwner) await db.insert(userFirms).values(ids.map((firmId) => ({ userId, firmId })));
 }
 
 const userFields = {
+  firmIds: z.array(z.number().int().positive()).default([]),
   name: z.string().trim().min(1, "Enter the person's name.").max(120),
   phone: z.string().trim().max(30).optional().transform((v) => v || null),
   roleId: z.number().int().positive("Choose a role."),
@@ -121,14 +137,16 @@ export async function createUser(db: DB, raw: z.input<typeof newUserSchema>, act
   const i = p.data;
   const weak = passwordProblem(i.password);
   if (weak) throw new MasterError(weak, "password");
-  const [role] = await db.select({ id: roles.id }).from(roles).where(eq(roles.id, i.roleId));
+  const [role] = await db.select({ id: roles.id, isOwner: roles.isOwner }).from(roles).where(eq(roles.id, i.roleId));
   if (!role) throw new MasterError("Choose a role.", "roleId");
+  if (!role.isOwner && i.firmIds.length === 0) throw new MasterError("Choose at least one company this person can open.", "firmIds");
   const [dup] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${i.email}`);
   if (dup) throw new MasterError("Someone with this email already exists.", "email");
   const [row] = await db
     .insert(users)
     .values({ name: i.name, email: i.email, phone: i.phone, roleId: i.roleId, passwordHash: await hashPassword(i.password), mustChangePassword: true })
     .returning({ id: users.id });
+  await setUserFirms(db, row.id, role.isOwner, i.firmIds);
   await audit(db, { userId: actorId, action: "create", entity: "user", entityId: row.id, summary: `Added user ${i.name} (${i.email})` });
   return row.id;
 }
@@ -149,6 +167,7 @@ export async function updateUser(db: DB, raw: z.input<typeof editUserSchema>, ac
   if (cur.isOwner && cur.u.active && !staysActiveOwner && (await activeOwnerCount(db, i.id)) === 0) {
     throw new MasterError("There must always be at least one active owner.");
   }
+  await setUserFirms(db, i.id, role.isOwner, i.firmIds);
   await db.update(users).set({ name: i.name, phone: i.phone, roleId: i.roleId, active: i.active, updatedAt: new Date() }).where(eq(users.id, i.id));
   if (!i.active) await db.delete(sessions).where(eq(sessions.userId, i.id));
   await audit(db, {
@@ -200,10 +219,12 @@ export const firmSchema = z.object({
   invoiceTerms: optText(2000),
 });
 
-export async function saveFirm(db: DB, raw: z.input<typeof firmSchema>, actorId: number) {
+export async function saveFirm(db: DB, firmId: number, raw: z.input<typeof firmSchema>, actorId: number) {
   const p = firmSchema.safeParse(raw);
   if (!p.success) throw new MasterError(p.error.issues[0].message, p.error.issues[0].path.join("."));
   const i = p.data;
+  const [current] = await db.select({ country: firms.country }).from(firms).where(eq(firms.id, firmId));
+  if (!current) throw new MasterError("This company no longer exists.");
   const r = region();
   let stateCode: string | null = r.usesStates ? i.stateCode : null;
   if (i.taxId) {
@@ -240,6 +261,34 @@ export async function saveFirm(db: DB, raw: z.input<typeof firmSchema>, actorId:
       invoiceTerms: i.invoiceTerms,
       updatedAt: new Date(),
     })
-    .where(eq(firms.isDefault, true));
-  await audit(db, { userId: actorId, action: "settings", entity: "firm", summary: "Changed business details" });
+    .where(eq(firms.id, firmId));
+  await audit(db, { firmId, userId: actorId, action: "settings", entity: "firm", summary: "Changed business details" });
+}
+
+// ─── Companies ───────────────────────────────────────────────────────────────
+
+export async function listCompanies(db: DB) {
+  return db
+    .select({ id: firms.id, name: firms.name, country: firms.country, taxId: firms.gstin, active: firms.active, createdAt: firms.createdAt })
+    .from(firms)
+    .orderBy(asc(firms.id));
+}
+
+export async function createCompany(db: DB, raw: z.input<typeof companySchema>, actorId: number) {
+  return db.transaction(async (tx) => {
+    const id = await insertCompany(tx as unknown as DB, raw);
+    await audit(tx, { firmId: id, userId: actorId, action: "create", entity: "firm", entityId: id, summary: `Added company "${String((raw as { name?: string }).name ?? "").trim()}"` });
+    return id;
+  });
+}
+
+export async function setCompanyActive(db: DB, firmId: number, active: boolean, actorId: number) {
+  const [f] = await db.select().from(firms).where(eq(firms.id, firmId));
+  if (!f) throw new MasterError("That company no longer exists.");
+  if (!active) {
+    const [others] = await db.select({ n: sql<number>`count(*)::int` }).from(firms).where(and(eq(firms.active, true), ne(firms.id, firmId)));
+    if (others.n === 0) throw new MasterError("At least one company must stay active.");
+  }
+  await db.update(firms).set({ active, updatedAt: new Date() }).where(eq(firms.id, firmId));
+  await audit(db, { firmId, userId: actorId, action: "settings", entity: "firm", entityId: firmId, summary: `${active ? "Re-activated" : "Hid"} company "${f.name}"` });
 }

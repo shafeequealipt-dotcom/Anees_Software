@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DeleteMasterButton, PrintButton, WhatsAppButton } from "@/components/party-actions";
@@ -25,17 +25,17 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
   const { id } = await params;
   const sp = await searchParams;
   const db = await getDb();
-  const [p] = await db.select().from(parties).where(eq(parties.id, Number(id) || 0));
+  const [p] = await db.select().from(parties).where(and(eq(parties.id, Number(id) || 0), eq(parties.firmId, user.firmId)));
   if (!p) notFound();
   const [group] = p.groupId ? await db.select().from(partyGroups).where(eq(partyGroups.id, p.groupId)) : [];
-  const [firm] = await db.select().from(firms).where(eq(firms.isDefault, true));
-  const settings = await getSettings(db);
+  const [firm] = await db.select().from(firms).where(eq(firms.id, user.firmId));
+  const settings = await getSettings(db, user.firmId);
   const fy = financialYear(todayIST());
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();
   const st = await partyStatement(db, p.id, from, to);
   const [{ balance }] = [{ balance: (await partyStatement(db, p.id, "1900-01-01", "9999-12-31")).closingPaise }];
-  const openBills = (await listVouchers(db, { types: ["sale_invoice", "purchase_bill"], partyId: p.id, status: "open" })).slice(0, 20);
+  const openBills = (await listVouchers(db, user.firmId, { types: ["sale_invoice", "purchase_bill"], partyId: p.id, status: "open" })).slice(0, 20);
   const isCustomer = p.kind !== "supplier";
   const reminder = settings.reminderMessage
     .replace("{party}", p.name)

@@ -5,6 +5,7 @@ import { auditLog } from "@/db/schema";
 export async function audit(
   db: DB | Tx,
   entry: {
+    firmId?: number | null;
     userId: number | null;
     action: "create" | "update" | "delete" | "cancel" | "restore" | "login" | "logout" | "settings" | "export";
     entity: string;
@@ -16,6 +17,7 @@ export async function audit(
   },
 ) {
   await db.insert(auditLog).values({
+    firmId: entry.firmId ?? null,
     userId: entry.userId,
     action: entry.action,
     entity: entry.entity,

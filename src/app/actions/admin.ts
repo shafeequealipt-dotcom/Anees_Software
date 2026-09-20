@@ -6,9 +6,10 @@ import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { sessions, users } from "@/db/schema";
 import { audit } from "@/lib/audit";
-import { AuthError, assertUser, clientIp, currentUser, hashPassword, passwordProblem, verifyPassword } from "@/lib/auth";
-import { createUser, deleteRole, editUserSchema, firmSchema, newUserSchema, resetUserPassword, roleSchema, saveFirm, saveRole, updateUser } from "@/server/admin";
+import { AuthError, assertUser, clientIp, currentUser, hashPassword, passwordProblem, switchCompany, verifyPassword } from "@/lib/auth";
+import { createCompany, createUser, deleteRole, editUserSchema, firmSchema, newUserSchema, resetUserPassword, roleSchema, saveFirm, saveRole, setCompanyActive, updateUser } from "@/server/admin";
 import { MasterError } from "@/server/masters";
+import type { companySchema } from "@/server/setup";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
 
@@ -22,7 +23,7 @@ function fail(e: unknown): { ok: false; error: string; field?: string } {
 export async function saveFirmAction(input: z.input<typeof firmSchema>): Promise<Result> {
   try {
     const user = await assertUser("settings.edit");
-    await saveFirm(await getDb(), input, user.id);
+    await saveFirm(await getDb(), user.firmId, input, user.id);
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
@@ -100,6 +101,38 @@ export async function changeOwnPasswordAction(current: string, next: string): Pr
     await db.update(users).set({ passwordHash: await hashPassword(next), mustChangePassword: false, updatedAt: new Date() }).where(eq(users.id, user.id));
     await db.delete(sessions).where(and(eq(sessions.userId, user.id), ne(sessions.id, user.sessionId)));
     await audit(db, { userId: user.id, action: "update", entity: "user", entityId: user.id, summary: `${user.name} changed their password`, ip: await clientIp() });
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function switchCompanyAction(firmId: number): Promise<Result> {
+  try {
+    await switchCompany(firmId);
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function createCompanyAction(input: z.input<typeof companySchema>): Promise<Result<{ id: number }>> {
+  try {
+    const user = await assertUser("companies.manage");
+    const id = await createCompany(await getDb(), input, user.id);
+    revalidatePath("/settings/companies");
+    return { ok: true, id };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function setCompanyActiveAction(firmId: number, active: boolean): Promise<Result> {
+  try {
+    const user = await assertUser("companies.manage");
+    await setCompanyActive(await getDb(), firmId, active, user.id);
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {

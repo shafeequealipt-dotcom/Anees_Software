@@ -30,7 +30,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   const user = await requireUser();
   const sp = await searchParams;
   const db = await getDb();
-  const data = await getVoucher(db, Number(id));
+  const data = await getVoucher(db, user.firmId, Number(id));
   if (!data) notFound();
   const v = data.voucher;
   if (v.type !== type) redirect(`${VOUCHER_INFO[v.type].path}/${v.id}`);

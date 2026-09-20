@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { AccountForm } from "@/components/account-form";
 import { PageHeader } from "@/components/ui";
@@ -9,10 +9,10 @@ import { requireUser } from "@/lib/auth";
 export const metadata = { title: "Edit account" };
 
 export default async function EditAccountPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser("money.edit");
+  const user = await requireUser("money.edit");
   const { id } = await params;
   const db = await getDb();
-  const [a] = await db.select().from(accounts).where(eq(accounts.id, Number(id) || 0));
+  const [a] = await db.select().from(accounts).where(and(eq(accounts.id, Number(id) || 0), eq(accounts.firmId, user.firmId)));
   if (!a) notFound();
   return (
     <>

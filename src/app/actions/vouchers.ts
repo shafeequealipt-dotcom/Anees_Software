@@ -31,11 +31,11 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
     }
     const db = await getDb();
     if (input.id && !can(user, "vouchers.editOld")) {
-      const [v] = await db.select({ createdAt: vouchers.createdAt }).from(vouchers).where(eq(vouchers.id, input.id));
+      const [v] = await db.select({ createdAt: vouchers.createdAt }).from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, user.firmId)));
       const created = v ? new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(v.createdAt) : null;
       if (created && created !== todayIST()) throw new AuthError("Only the owner or accountant can edit entries from earlier days.");
     }
-    const res = await saveVoucher(db, input, user.id, await clientIp());
+    const res = await saveVoucher(db, user.firmId, input, user.id, await clientIp());
     revalidatePath(info.path);
     revalidatePath("/");
     return { ok: true, ...res };
@@ -48,7 +48,7 @@ export async function cancelVoucherAction(id: number): Promise<ActionResult> {
   try {
     const user = await assertUser("vouchers.cancel");
     const db = await getDb();
-    await cancelVoucher(db, id, user.id, await clientIp());
+    await cancelVoucher(db, user.firmId, id, user.id, await clientIp());
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
@@ -60,7 +60,7 @@ export async function deleteVoucherAction(id: number): Promise<ActionResult> {
   try {
     const user = await assertUser("vouchers.delete");
     const db = await getDb();
-    await deleteVoucher(db, id, user.id, await clientIp());
+    await deleteVoucher(db, user.firmId, id, user.id, await clientIp());
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
@@ -73,6 +73,8 @@ export async function openBillsAction(partyId: number, type: VoucherInput["type"
   const types = SETTLES[type];
   if (!types) return { bills: [], balancePaise: 0 };
   const db = await getDb();
+  const [own] = await db.select({ id: parties.id }).from(parties).where(and(eq(parties.id, partyId), eq(parties.firmId, user.firmId)));
+  if (!own) return { bills: [], balancePaise: 0 };
   const bills = await openBills(db, partyId, types, excludeVoucherId);
   const [bal] = await db
     .select({ b: sql<number>`coalesce(sum(${partyLedger.amountPaise}), 0)::bigint` })
@@ -95,8 +97,8 @@ export async function quickPartyAction(input: {
   try {
     const user = await assertUser("masters.edit");
     const db = await getDb();
-    const id = await saveParty(db, { ...input, openingBalancePaise: 0 }, user.id);
-    const [p] = await db.select().from(parties).where(eq(parties.id, id));
+    const id = await saveParty(db, user.firmId, { ...input, openingBalancePaise: 0 }, user.id);
+    const [p] = await db.select().from(parties).where(and(eq(parties.id, id), eq(parties.firmId, user.firmId)));
     revalidatePath("/parties");
     return {
       ok: true,
@@ -110,8 +112,10 @@ export async function quickPartyAction(input: {
 /** Link anyone can open (no login) to view and download one invoice, valid for 90 days. */
 export async function shareLinkAction(voucherId: number): Promise<ActionResult<{ url: string }>> {
   try {
-    await assertUser();
+    const user = await assertUser();
     const db = await getDb();
+    const [own] = await db.select({ id: vouchers.id }).from(vouchers).where(and(eq(vouchers.id, voucherId), eq(vouchers.firmId, user.firmId)));
+    if (!own) return { ok: false, error: "This entry no longer exists." };
     const [existing] = await db
       .select()
       .from(shareLinks)

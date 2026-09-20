@@ -7,6 +7,7 @@ import {
   allocations,
   firms,
   items,
+  ledgerCategories,
   moneyLedger,
   parties,
   partyLedger,
@@ -117,6 +118,7 @@ function zodMessage(e: z.ZodError): string {
 
 export async function saveVoucher(
   db: DB,
+  firmId: number,
   raw: VoucherInput,
   userId: number | null,
   ip?: string | null,
@@ -127,13 +129,13 @@ export async function saveVoucher(
   const info = VOUCHER_INFO[input.type];
 
   return db.transaction(async (tx) => {
-    const cfg = await getSettings(tx);
-    const [firm] = await tx.select().from(firms).where(eq(firms.isDefault, true)).limit(1);
+    const cfg = await getSettings(tx, firmId);
+    const [firm] = await tx.select().from(firms).where(eq(firms.id, firmId)).limit(1);
     if (!firm) throw new VoucherError("Set up your business details first (Settings › Business).");
 
     let existing: typeof vouchers.$inferSelect | undefined;
     if (input.id) {
-      [existing] = await tx.select().from(vouchers).where(eq(vouchers.id, input.id)).for("update");
+      [existing] = await tx.select().from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, firmId))).for("update");
       if (!existing) throw new VoucherError("This entry no longer exists.");
       if (existing.type !== input.type) throw new VoucherError("An entry can't change its type.");
       if (existing.status === "cancelled") throw new VoucherError("Cancelled entries can't be edited.");
@@ -142,7 +144,7 @@ export async function saveVoucher(
     // ── Party
     let party: typeof parties.$inferSelect | undefined;
     if (input.partyId) {
-      [party] = await tx.select().from(parties).where(eq(parties.id, input.partyId));
+      [party] = await tx.select().from(parties).where(and(eq(parties.id, input.partyId), eq(parties.firmId, firmId)));
       if (!party) throw new VoucherError("The chosen party no longer exists.", "partyId");
     }
     if (["payment_in", "payment_out"].includes(input.type) && !party) {
@@ -157,12 +159,13 @@ export async function saveVoucher(
     }
 
     const itemIds = [...new Set(lineInputs.map((l) => l.itemId).filter((x): x is number => !!x))];
-    const itemRows = itemIds.length ? await tx.select().from(items).where(inArray(items.id, itemIds)) : [];
+    const itemRows = itemIds.length ? await tx.select().from(items).where(and(inArray(items.id, itemIds), eq(items.firmId, firmId))) : [];
     const itemMap = new Map(itemRows.map((i) => [i.id, i]));
     for (const id of itemIds) if (!itemMap.has(id)) throw new VoucherError("An item on this bill no longer exists.");
 
     const taxIds = [...new Set(lineInputs.map((l) => l.taxRateId).filter((x): x is number => !!x))];
-    const taxRows = taxIds.length ? await tx.select().from(taxRates).where(inArray(taxRates.id, taxIds)) : [];
+    const taxRows = taxIds.length ? await tx.select().from(taxRates).where(and(inArray(taxRates.id, taxIds), eq(taxRates.firmId, firmId))) : [];
+    for (const id of taxIds) if (!taxRows.some((t) => t.id === id)) throw new VoucherError("A tax rate on this bill no longer exists.");
     const taxMap = new Map(taxRows.map((t) => [t.id, t]));
 
     const placeOfSupply = firm.country === "SA" ? null : input.placeOfSupply || party?.stateCode || firm.stateCode;
@@ -213,8 +216,21 @@ export async function saveVoucher(
 
     let accountId = input.accountId ?? null;
     if ((paidPaise > 0 || ["payment_in", "payment_out", "money_adjustment", "money_transfer"].includes(input.type)) && !accountId) {
-      const [cash] = await tx.select().from(accounts).where(and(eq(accounts.kind, "cash"), eq(accounts.active, true))).orderBy(desc(accounts.isDefault), asc(accounts.id)).limit(1);
+      const [cash] = await tx.select().from(accounts).where(and(eq(accounts.firmId, firmId), eq(accounts.kind, "cash"), eq(accounts.active, true))).orderBy(desc(accounts.isDefault), asc(accounts.id)).limit(1);
       accountId = cash?.id ?? null;
+    }
+    const accountIds = [accountId, input.type === "money_transfer" ? input.toAccountId : null].filter((x): x is number => !!x);
+    if (accountIds.length) {
+      const own = await tx.select({ id: accounts.id }).from(accounts).where(and(inArray(accounts.id, accountIds), eq(accounts.firmId, firmId)));
+      if (own.length !== new Set(accountIds).size) throw new VoucherError("Choose an account from this company.", "accountId");
+    }
+    if (input.categoryId) {
+      const [cat] = await tx.select({ id: ledgerCategories.id }).from(ledgerCategories).where(and(eq(ledgerCategories.id, input.categoryId), eq(ledgerCategories.firmId, firmId)));
+      if (!cat) throw new VoucherError("Choose a category from this company.", "categoryId");
+    }
+    if (input.sourceVoucherId) {
+      const [src] = await tx.select({ id: vouchers.id }).from(vouchers).where(and(eq(vouchers.id, input.sourceVoucherId), eq(vouchers.firmId, firmId)));
+      if (!src) throw new VoucherError("The source document no longer exists.");
     }
     if (input.type === "money_transfer" && !input.toAccountId) throw new VoucherError("Choose the account to move money into.", "toAccountId");
 
@@ -436,6 +452,7 @@ export async function saveVoucher(
     }
 
     await audit(tx, {
+      firmId,
       userId,
       action: existing ? "update" : "create",
       entity: "voucher",
@@ -559,9 +576,9 @@ async function allocate(
   if (rows.length) await tx.insert(allocations).values(rows);
 }
 
-export async function cancelVoucher(db: DB, id: number, userId: number | null, ip?: string | null) {
+export async function cancelVoucher(db: DB, firmId: number, id: number, userId: number | null, ip?: string | null) {
   return db.transaction(async (tx) => {
-    const [v] = await tx.select().from(vouchers).where(eq(vouchers.id, id)).for("update");
+    const [v] = await tx.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId))).for("update");
     if (!v) throw new VoucherError("This entry no longer exists.");
     if (v.status === "cancelled") return;
     await tx.update(vouchers).set({ status: "cancelled", updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
@@ -569,6 +586,7 @@ export async function cancelVoucher(db: DB, id: number, userId: number | null, i
     await tx.delete(allocations).where(sql`${allocations.fromVoucherId} = ${id} or ${allocations.toVoucherId} = ${id}`);
     await audit(tx, {
       userId,
+      firmId,
       action: "cancel",
       entity: "voucher",
       entityId: id,
@@ -579,15 +597,16 @@ export async function cancelVoucher(db: DB, id: number, userId: number | null, i
   });
 }
 
-export async function deleteVoucher(db: DB, id: number, userId: number | null, ip?: string | null) {
+export async function deleteVoucher(db: DB, firmId: number, id: number, userId: number | null, ip?: string | null) {
   return db.transaction(async (tx) => {
-    const [v] = await tx.select().from(vouchers).where(eq(vouchers.id, id)).for("update");
+    const [v] = await tx.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId))).for("update");
     if (!v) return;
     const lines = await tx.select().from(voucherLines).where(eq(voucherLines.voucherId, id));
     await tx.update(vouchers).set({ sourceVoucherId: null }).where(eq(vouchers.sourceVoucherId, id));
     await tx.delete(vouchers).where(eq(vouchers.id, id));
     await audit(tx, {
       userId,
+      firmId,
       action: "delete",
       entity: "voucher",
       entityId: id,
@@ -598,8 +617,8 @@ export async function deleteVoucher(db: DB, id: number, userId: number | null, i
   });
 }
 
-export async function getVoucher(db: DB | Tx, id: number) {
-  const [v] = await db.select().from(vouchers).where(eq(vouchers.id, id));
+export async function getVoucher(db: DB | Tx, firmId: number, id: number) {
+  const [v] = await db.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId)));
   if (!v) return null;
   const lines = await db.select().from(voucherLines).where(eq(voucherLines.voucherId, id)).orderBy(asc(voucherLines.lineNo));
   const settledBy = await db

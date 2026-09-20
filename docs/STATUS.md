@@ -45,7 +45,7 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 ## Last updated
 
-2026-09-20 · session: GST-optional + Saudi build deployed live; Settings, users, roles & field visibility built (58 tests pass; deploy of this one is next)
+2026-09-20 · session: GST-optional + Saudi build deployed live; Settings, users, roles & field visibility built; **multiple companies built (64 tests pass) — Settings + multi-company build not yet deployed**
 
 ---
 
@@ -133,6 +133,24 @@ Verified = automated test passes, or manually clicked through in the dev server.
   expense/income by category), stock summary, low stock, item-wise sales/
   purchases, tax report (by GST rate, output vs input) —
   `src/app/(app)/reports/`, `taxReport()` added to `src/server/reports.ts`
+
+### Multiple companies (built 2026-09-20, migration `0003_multi_company.sql`)
+- [x] One database, many companies. Every master (parties, items, categories, party groups, cash/bank
+  accounts, tax rates, units, ledger categories, settings) and every bill belongs to a company (`firm_id`);
+  bill numbers restart per company; same party/item names allowed in two companies. Each company has its own
+  country, so one can be India (₹, GST) and another Saudi (SAR, VAT).
+- [x] Convention: every firm-scoped server function takes `firmId` as its **2nd argument** (`fn(db, firmId, ...)`);
+  pages/actions pass `user.firmId`. By-id pages/actions filter on `firm_id`, so another company's record 404s.
+  Reports/dashboard/search/form loaders all filter by company. Tests: `tests/admin.test.ts` › "multiple companies".
+- [x] Access: owners open every company; other roles only the companies ticked on the user (`user_firms`).
+  The chosen company is stored on the session (`sessions.firm_id`); header switcher (`company-switcher.tsx`),
+  `/no-access` page for users with none. Settings → Companies (`companies.manage` permission): add / hide.
+  Settings → "This company" edits the open company. Extra companies get their own seeded tax rates, units, cash account.
+- **Known limitation:** the display region (currency/tax wording) is a module-level value on the server, set per
+  request from the company's country. Two people working at the same instant in companies of *different*
+  countries could rarely see the other's currency symbol on one render. Fix before printing invoices: pass the
+  region explicitly (the PDF work should do this).
+- Not built: a combined view across companies; copying items/parties between companies.
 
 ### Production (live)
 - [x] **Deployed 2026-09-19** to the shared Oracle VM (Ubuntu 22.04, 2 vCPU, ~1 GB RAM) at

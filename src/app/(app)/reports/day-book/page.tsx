@@ -18,7 +18,7 @@ export default async function DayBookPage({ searchParams }: { searchParams: Prom
   const from = sp.from ?? today;
   const to = sp.to ?? today;
   const db = await getDb();
-  const list = await dayBook(db, from, to);
+  const list = await dayBook(db, user.firmId, from, to);
   const seeMoney = can(user, "money.view");
 
   const moneyIn = list.reduce((s, r) => s + r.money_in, 0);
