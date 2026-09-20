@@ -6,6 +6,7 @@ import { GST_STATES } from "@/lib/gst/states";
 import { toMilli, toPaise, formatPercent } from "@/lib/money";
 import { region } from "@/lib/region";
 import { type Column, pick, type Table, yes } from "./excel";
+import { listCustomFields } from "./custom-fields";
 import { MasterError, saveCategory, saveItem, saveParty, savePartyGroup, saveUnit } from "./masters";
 
 export interface ImportResult {
@@ -153,7 +154,7 @@ export async function importParties(db: DB, firmId: number, table: Table, userId
 
 // ─── Items (also used for bulk updates: export, edit in Excel, import again) ──
 
-export function itemColumns(opts: { purchase: boolean }): Column[] {
+export function itemColumns(opts: { purchase: boolean; custom?: { id: number; name: string }[] }): Column[] {
   const r = region();
   return [
     { header: "ID", key: "id", width: 8 },
@@ -178,11 +179,12 @@ export function itemColumns(opts: { purchase: boolean }): Column[] {
     { header: "Low-stock alert", key: "minStock", kind: "number" },
     { header: "Location", key: "location" },
     { header: "Description", key: "description", width: 30 },
+    ...(opts.custom ?? []).map((f) => ({ header: f.name, key: `cf:${f.id}`, width: 18 })),
     { header: "Active", key: "active", width: 8 },
   ];
 }
 
-export async function exportItems(db: DB, firmId: number) {
+export async function exportItems(db: DB, firmId: number, custom: { id: number }[] = []) {
   const list = await db.select().from(items).where(eq(items.firmId, firmId)).orderBy(asc(items.name));
   const cats = new Map((await db.select().from(itemCategories).where(eq(itemCategories.firmId, firmId))).map((c) => [c.id, c.name]));
   const us = new Map((await db.select().from(units).where(eq(units.firmId, firmId))).map((u) => [u.id, u.code]));
@@ -206,6 +208,7 @@ export async function exportItems(db: DB, firmId: number) {
     minStock: i.minStockMilli / 1000,
     location: i.location,
     description: i.description,
+    ...Object.fromEntries(custom.map((f) => [`cf:${f.id}`, i.customValues?.[String(f.id)] ?? ""])),
     active: i.active ? "Yes" : "No",
   }));
 }
@@ -221,6 +224,7 @@ export async function importItems(db: DB, firmId: number, table: Table, userId: 
     const byName = new Map(all.map((i) => [i.name.toLowerCase(), i]));
     const unitList = await d.select().from(units).where(eq(units.firmId, firmId));
     const rates = await d.select().from(taxRates).where(and(eq(taxRates.firmId, firmId), eq(taxRates.active, true)));
+    const fields = await listCustomFields(d, firmId, { activeOnly: true });
 
     for (const { line, cells } of table.rows) {
       try {
@@ -278,6 +282,12 @@ export async function importItems(db: DB, firmId: number, table: Table, userId: 
         if (oq) set("openingQtyMilli", num(oq, "Opening stock", toMilli));
         const ms = pick(cells, "Low-stock alert", "Minimum stock");
         if (ms) set("minStockMilli", num(ms, "Low-stock alert", toMilli));
+        const cvals: Record<string, string> = { ...((input.customValues as Record<string, string> | undefined) ?? {}) };
+        for (const f of fields) {
+          const t = pick(cells, f.name);
+          if (t) cvals[String(f.id)] = t;
+        }
+        if (fields.length) set("customValues", cvals);
         const active = pick(cells, "Active");
         if (active) set("active", yes(active));
         if (opts.purchase) {

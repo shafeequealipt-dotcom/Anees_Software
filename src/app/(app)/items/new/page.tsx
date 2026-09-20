@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui";
 import { getDb } from "@/db";
 import { itemCategories, taxRates, units } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { listCustomFields } from "@/server/custom-fields";
 
 export const metadata = { title: "Add item" };
 
@@ -18,7 +19,7 @@ export default async function NewItemPage() {
   return (
     <>
       <PageHeader title="Add item" back={{ href: "/items", label: "Items & stock" }} />
-      <ItemForm categories={categories} units={unitList} taxRates={taxList} />
+      <ItemForm customFields={(await listCustomFields(db, user.firmId, { activeOnly: true })).map((f) => ({ id: f.id, name: f.name, kind: f.kind }))} categories={categories} units={unitList} taxRates={taxList} />
     </>
   );
 }

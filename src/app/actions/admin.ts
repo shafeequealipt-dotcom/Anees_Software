@@ -10,6 +10,7 @@ import { AuthError, assertUser, clientIp, currentUser, hashPassword, passwordPro
 import { createCompany, createUser, deleteRole, editUserSchema, firmSchema, newUserSchema, resetUserPassword, roleSchema, saveFirm, saveRole, setCompanyActive, updateUser } from "@/server/admin";
 import { MasterError } from "@/server/masters";
 import type { companySchema } from "@/server/setup";
+import { type customFieldSchema, saveCustomField } from "@/server/custom-fields";
 import { type partyRatesSchema, type priceListSchema, savePriceList, setItemPrices, setPartyRates } from "@/server/pricing";
 import { type preferencesSchema, savePreferences } from "@/server/preferences";
 import { markMessage } from "@/server/notify/outbox";
@@ -205,6 +206,17 @@ export async function setPartyRatesAction(partyId: number, rates: z.input<typeof
     await setPartyRates(await getDb(), user.firmId, partyId, rates, user.id);
     revalidatePath(`/parties/${partyId}`);
     return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function saveCustomFieldAction(input: z.input<typeof customFieldSchema>): Promise<Result<{ id: number }>> {
+  try {
+    const user = await assertUser("settings.edit");
+    const id = await saveCustomField(await getDb(), user.firmId, input);
+    revalidatePath("/settings/custom-fields");
+    return { ok: true, id };
   } catch (e) {
     return fail(e);
   }

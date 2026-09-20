@@ -13,6 +13,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     can(user, "users.manage") && { href: "/settings/roles", label: "Roles & access" },
     can(user, "settings.edit") && { href: "/settings/preferences", label: "Billing" },
     can(user, "settings.edit") && { href: "/settings/price-lists", label: "Price lists" },
+    can(user, "settings.edit") && { href: "/settings/custom-fields", label: "Item fields" },
     can(user, "settings.edit") && { href: "/settings/tax-rates", label: "Tax rates" },
     can(user, "settings.edit") && { href: "/settings/units", label: "Units" },
     can(user, "settings.edit") && { href: "/settings/messaging", label: "Messages" },

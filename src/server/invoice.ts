@@ -1,8 +1,8 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import QRCode from "qrcode";
 import type { DB } from "@/db";
-import { accounts, firms, parties } from "@/db/schema";
+import { accounts, firms, items, parties } from "@/db/schema";
 import { amountInWords } from "@/lib/amount-in-words";
 import { formatDate } from "@/lib/dates";
 import { stateName } from "@/lib/gst/states";
@@ -11,6 +11,7 @@ import { setRegion, taxColumnLabels } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
 import { VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 import { zatcaQrBase64 } from "@/lib/zatca";
+import { listCustomFields } from "./custom-fields";
 import { getVoucher } from "./vouchers";
 
 /** Everything the printed invoice shows, already formatted as text so rendering can't pick up the wrong currency. */
@@ -49,6 +50,9 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
   if (!firm) return null;
   const settings = await getSettings(db, firmId);
   const [party] = v.partyId ? await db.select().from(parties).where(and(eq(parties.id, v.partyId), eq(parties.firmId, firmId))) : [];
+  const printFields = (await listCustomFields(db, firmId, { activeOnly: true })).filter((f) => f.showOnInvoice);
+  const itemIds = [...new Set(data.lines.map((l) => l.itemId).filter((x): x is number => !!x))];
+  const itemExtras = printFields.length && itemIds.length ? new Map((await db.select({ id: items.id, cv: items.customValues }).from(items).where(and(eq(items.firmId, firmId), inArray(items.id, itemIds)))).map((r) => [r.id, r.cv])) : new Map<number, Record<string, string>>();
   const [account] = v.accountId ? await db.select().from(accounts).where(eq(accounts.id, v.accountId)) : [];
 
   const hasQr = firm.country === "SA" && !!firm.gstin && ["sale_invoice", "credit_note"].includes(v.type) && v.status === "active";
@@ -115,7 +119,7 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
 
   const lines = data.lines.map((l, i) => ({
     no: String(i + 1),
-    desc: l.description,
+    desc: [l.description, ...printFields.map((f) => { const val = l.itemId ? itemExtras.get(l.itemId)?.[String(f.id)] : ""; return val ? `${f.name}: ${f.kind === "yesno" ? (val === "yes" ? "Yes" : "No") : val}` : ""; }).filter(Boolean)].join("\n"),
     hsn: l.hsn ?? "",
     qty: l.qtyMilli ? `${formatQty(l.qtyMilli)}${l.unitCode ? ` ${l.unitCode}` : ""}` : "",
     rate: money(l.ratePaise),

@@ -31,6 +31,7 @@ export interface ItemFormValue {
   location: string | null;
   trackBatches: boolean;
   trackSerials: boolean;
+  customValues?: Record<string, string>;
   active: boolean;
 }
 
@@ -43,14 +44,17 @@ export function ItemForm({
   units: initialUnits,
   taxRates,
   hidePurchase,
+  customFields = [],
 }: {
   initial?: ItemFormValue;
   hidePurchase?: boolean;
+  customFields?: { id: number; name: string; kind: string }[];
   categories: { id: number; name: string }[];
   units: { id: number; name: string; code: string }[];
   taxRates: { id: number; name: string; gstBp: number }[];
 }) {
   const router = useRouter();
+  const [custom, setCustom] = useState<Record<string, string>>(initial?.customValues ?? {});
   const [v, setV] = useState({
     kind: initial?.kind ?? "goods",
     name: initial?.name ?? "",
@@ -124,6 +128,7 @@ export function ItemForm({
       location: v.location || null,
       trackBatches: v.trackBatches,
       trackSerials: v.trackSerials,
+      customValues: custom,
       active: v.active,
     });
     setSaving(false);
@@ -267,6 +272,29 @@ export function ItemForm({
         <Field label="Description" className="sm:col-span-2">
           <Textarea rows={2} value={v.description} onChange={(e) => set("description", e.target.value)} />
         </Field>
+        {customFields.length > 0 && (
+          <>
+            <h2 className="text-sm font-semibold sm:col-span-2">Extra details</h2>
+            {customFields.map((f) => (
+              <Field key={f.id} label={f.name}>
+                {f.kind === "yesno" ? (
+                  <Select value={custom[String(f.id)] ?? ""} onChange={(e) => setCustom((c) => ({ ...c, [String(f.id)]: e.target.value }))}>
+                    <option value="">Not set</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </Select>
+                ) : (
+                  <Input
+                    type={f.kind === "date" ? "date" : "text"}
+                    inputMode={f.kind === "number" ? "decimal" : undefined}
+                    value={custom[String(f.id)] ?? ""}
+                    onChange={(e) => setCustom((c) => ({ ...c, [String(f.id)]: e.target.value }))}
+                  />
+                )}
+              </Field>
+            ))}
+          </>
+        )}
         {initial && <Checkbox label="Active (show in item lists)" checked={v.active} onChange={(e) => set("active", e.target.checked)} />}
       </div>
       <div className="flex justify-end gap-2">

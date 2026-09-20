@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui";
 import { getDb } from "@/db";
 import { itemCategories, items, taxRates, units } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { listCustomFields } from "@/server/custom-fields";
 import { can } from "@/lib/permissions";
 
 export const metadata = { title: "Edit item" };
@@ -24,7 +25,7 @@ export default async function EditItemPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <PageHeader title={`Edit ${item.name}`} back={{ href: `/items/${item.id}`, label: item.name }} />
-      <ItemForm initial={hidePurchase ? { ...item, purchasePricePaise: 0 } : item} hidePurchase={hidePurchase} categories={categories} units={unitList} taxRates={taxList} />
+      <ItemForm customFields={(await listCustomFields(db, user.firmId, { activeOnly: true })).map((f) => ({ id: f.id, name: f.name, kind: f.kind }))} initial={hidePurchase ? { ...item, purchasePricePaise: 0 } : item} hidePurchase={hidePurchase} categories={categories} units={unitList} taxRates={taxList} />
     </>
   );
 }

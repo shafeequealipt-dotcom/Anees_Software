@@ -8,6 +8,7 @@ import { getDb } from "@/db";
 import { itemCategories, items, taxRates, units } from "@/db/schema";
 import { ItemPricesPanel } from "@/components/pricing-panels";
 import { getItemPrices } from "@/server/pricing";
+import { listCustomFields } from "@/server/custom-fields";
 import { requireUser } from "@/lib/auth";
 import { financialYear, formatDate, todayIST } from "@/lib/dates";
 import { formatINR, formatPercent, formatQty } from "@/lib/money";
@@ -69,6 +70,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
               {item.location && <Detail k="Location" v={item.location} />}
               {item.trackBatches && <Detail k="Tracking" v="Batch & expiry" />}
               {item.trackSerials && <Detail k="Tracking" v="Serial numbers" />}
+              {(await listCustomFields(db, user.firmId, { activeOnly: true })).map((f) => item.customValues?.[String(f.id)] ? <Detail key={f.id} k={f.name} v={f.kind === "yesno" ? (item.customValues[String(f.id)] === "yes" ? "Yes" : "No") : f.kind === "date" ? formatDate(item.customValues[String(f.id)]) : item.customValues[String(f.id)]} /> : null)}
               {item.description && <Detail k="Description" v={<span className="whitespace-pre-line">{item.description}</span>} />}
             </dl>
             {can(user, "masters.delete") && (

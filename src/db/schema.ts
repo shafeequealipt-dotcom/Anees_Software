@@ -233,6 +233,8 @@ export const items = pgTable(
     location: varchar("location", { length: 100 }),
     trackBatches: boolean("track_batches").notNull().default(false),
     trackSerials: boolean("track_serials").notNull().default(false),
+    /** Values of the company's custom item fields, keyed by field id. */
+    customValues: jsonb("custom_values").$type<Record<string, string>>().notNull().default({}),
     active: boolean("active").notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -241,6 +243,22 @@ export const items = pgTable(
     index("items_name_idx").on(sql`lower(${t.name})`),
     uniqueIndex("items_code_key").on(t.firmId, t.code).where(sql`${t.code} is not null`),
   ],
+);
+
+/** Extra fields the owner adds to items (e.g. Brand, Warranty, Shelf life). */
+export const customFields = pgTable(
+  "custom_fields",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    entity: varchar("entity", { length: 20 }).notNull().default("item"),
+    name: varchar("name", { length: 60 }).notNull(),
+    kind: varchar("kind", { length: 10 }).notNull().default("text"),
+    showOnInvoice: boolean("show_on_invoice").notNull().default(false),
+    sort: integer("sort").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+  },
+  (t) => [uniqueIndex("custom_fields_firm_name_key").on(t.firmId, t.entity, t.name)],
 );
 
 /** Named price lists (e.g. Retail, Wholesale). A party can be put on one; items carry a price per list. */

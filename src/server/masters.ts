@@ -24,6 +24,7 @@ import { financialYear, isIsoDate, todayIST } from "@/lib/dates";
 import { checkGstin } from "@/lib/gst/gstin";
 import { checkTrn } from "@/lib/gst/trn";
 import { region } from "@/lib/region";
+import { cleanCustomValues } from "./custom-fields";
 import { isValidStateCode } from "@/lib/gst/states";
 
 /** Opening balances default to the first day of the current financial year. */
@@ -199,6 +200,7 @@ export const itemSchema = z.object({
   location: text(100),
   trackBatches: z.boolean().default(false),
   trackSerials: z.boolean().default(false),
+  customValues: z.record(z.string(), z.string().max(200)).optional(),
   active: z.boolean().default(true),
 });
 
@@ -241,7 +243,9 @@ export async function saveItem(db: DB, firmId: number, raw: z.input<typeof itemS
       const [ok] = await tx.select({ id: table.id }).from(table).where(and(eq(table.id, refId), eq(table.firmId, firmId)));
       if (!ok) throw new MasterError(`Choose a ${label} from this company.`);
     }
-    const values = { ...input, firmId, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
+    const customValues = input.customValues === undefined ? undefined : await cleanCustomValues(tx as unknown as DB, firmId, input.customValues);
+    const values = { ...input, customValues, firmId, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
+    if (values.customValues === undefined) delete (values as { customValues?: unknown }).customValues;
     delete (values as { id?: number }).id;
     let id = input.id;
     let before;
