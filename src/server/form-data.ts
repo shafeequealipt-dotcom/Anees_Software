@@ -76,7 +76,7 @@ export interface Visibility {
   purchase: boolean;
 }
 
-export async function loadVoucherFormData(db: DB, firmId: number, type: VoucherType, opts: { id?: number; fromId?: number; partyId?: number }, see: Visibility) {
+export async function loadVoucherFormData(db: DB, firmId: number, type: VoucherType, opts: { id?: number; fromId?: number; fromIds?: number[]; partyId?: number }, see: Visibility) {
   const info = VOUCHER_INFO[type];
   const [firm] = await db.select().from(firms).where(eq(firms.id, firmId));
   const settings = await getSettings(db, firmId);
@@ -91,7 +91,12 @@ export async function loadVoucherFormData(db: DB, firmId: number, type: VoucherT
   ]);
 
   const existing = opts.id ? await getVoucher(db, firmId, opts.id) : null;
-  const source = !existing && opts.fromId ? await getVoucher(db, firmId, opts.fromId) : null;
+  const fromIds = [...new Set(opts.fromIds?.length ? opts.fromIds : opts.fromId ? [opts.fromId] : [])];
+  const found = existing ? [] : (await Promise.all(fromIds.map((sid) => getVoucher(db, firmId, sid)))).filter((x): x is NonNullable<typeof x> => !!x);
+  // Combined documents must be for the same party as the first one.
+  const sources = found.filter((s) => !s.voucher.partyId || !found[0].voucher.partyId || s.voucher.partyId === found[0].voucher.partyId);
+  const source = sources.length ? { ...sources[0], lines: sources.flatMap((s) => s.lines) } : null;
+  const sourceRefs = sources.map((s) => ({ id: s.voucher.id, label: `${s.voucher.prefix}${s.voucher.number}` }));
 
   const [next] = await db
     .select({ n: sql<number>`coalesce(max(${vouchers.number}), 0)::int + 1` })
@@ -121,6 +126,7 @@ export async function loadVoucherFormData(db: DB, firmId: number, type: VoucherT
     categories: categories.map((c) => ({ id: c.id, name: c.name })),
     existing,
     source,
+    sourceRefs,
     presetPartyId: opts.partyId ?? null,
   };
 }

@@ -292,3 +292,35 @@ async function moneyTotal() {
   const [r] = await db.select({ t: sql<number>`coalesce(sum(${moneyLedger.amountPaise}),0)::bigint` }).from(moneyLedger);
   return Number(r.t);
 }
+
+describe("combining several orders into one bill", () => {
+  it("merges the orders, links them, and marks each as billed", async () => {
+    const { listCombinable } = await import("@/server/vouchers");
+    const o1 = await saveVoucher(db, firmId, { type: "sales_order", date: "2026-09-20", partyId: customer, lines: [{ itemId: notebook, description: "Notebook A5", qtyMilli: 2000, ratePaise: 5000, taxRateId: gst5 }] }, 1);
+    const o2 = await saveVoucher(db, firmId, { type: "delivery_challan", date: "2026-09-21", partyId: customer, lines: [{ itemId: pen, description: "Blue pen", qtyMilli: 3000, ratePaise: 1000, taxRateId: gst18 }] }, 1);
+    const other = await saveVoucher(db, firmId, { type: "sales_order", date: "2026-09-21", partyId: outOfState, lines: [{ itemId: notebook, description: "Notebook A5", qtyMilli: 1000, ratePaise: 5000, taxRateId: gst5 }] }, 1);
+
+    const before = await listCombinable(db, firmId, "sale_invoice");
+    expect(before.find((g) => g.partyId === customer)!.docs.map((d) => d.id)).toEqual(expect.arrayContaining([o1.id, o2.id]));
+
+    const bill = await saveVoucher(db, firmId, {
+      type: "sale_invoice",
+      date: "2026-09-22",
+      partyId: customer,
+      sourceVoucherIds: [o1.id, o2.id],
+      lines: [
+        { itemId: notebook, description: "Notebook A5", qtyMilli: 2000, ratePaise: 5000, taxRateId: gst5 },
+        { itemId: pen, description: "Blue pen", qtyMilli: 3000, ratePaise: 1000, taxRateId: gst18 },
+      ],
+    }, 1);
+    const after = await listCombinable(db, firmId, "sale_invoice");
+    expect(after.find((g) => g.partyId === customer)?.docs.map((d) => d.id) ?? []).not.toEqual(expect.arrayContaining([o1.id]));
+    expect(after.find((g) => g.partyId === outOfState)!.docs.map((d) => d.id)).toContain(other.id);
+    const full = (await getVoucher(db, firmId, bill.id))!;
+    expect(full.sources.map((s) => s.id).sort()).toEqual([o1.id, o2.id].sort());
+    expect((await getVoucher(db, firmId, o1.id))!.converted.map((c) => c.id)).toEqual([bill.id]);
+    expect((await listVouchers(db, firmId, { types: ["sales_order"] })).find((v) => v.id === o1.id)!.converted).toBe(true);
+
+    await expect(saveVoucher(db, firmId, { type: "sale_invoice", date: "2026-09-22", partyId: customer, sourceVoucherIds: [o1.id, other.id], lines: [{ description: "x", qtyMilli: 1000, ratePaise: 100 }] }, 1)).rejects.toThrow(/same party/);
+  });
+});

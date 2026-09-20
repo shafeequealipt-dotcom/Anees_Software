@@ -72,7 +72,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const [paymentRef, setPaymentRef] = useState(ex?.paymentRef ?? "");
   const [categoryId, setCategoryId] = useState<number | null>(ex?.categoryId ?? null);
   const [direction, setDirection] = useState<1 | -1>((ex?.direction as 1 | -1) ?? 1);
-  const [notes, setNotes] = useState(ex?.notes ?? "");
+  const [notes, setNotes] = useState(ex?.notes ?? (data.sourceRefs.length > 1 ? `Combined from ${data.sourceRefs.map((r) => r.label).join(", ")}` : ""));
   const [terms, setTerms] = useState(ex?.terms ?? (data.type === "quotation" ? data.settings.quotationTerms : info.outward && info.takesPayment ? (data.firm?.terms ?? "") : ""));
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState(ex?.supplierInvoiceNo ?? "");
   const [originalInvoiceNo, setOriginalInvoiceNo] = useState(ex?.originalInvoiceNo ?? (src && ["credit_note", "debit_note"].includes(data.type) ? `${src.voucher.prefix}${src.voucher.number}` : ""));
@@ -254,6 +254,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         direction: data.type === "stock_adjustment" ? direction : null,
         categoryId,
         sourceVoucherId: src?.voucher.id ?? ex?.sourceVoucherId ?? null,
+        sourceVoucherIds: data.sourceRefs.length > 1 ? data.sourceRefs.map((r) => r.id) : undefined,
         originalInvoiceNo: originalInvoiceNo || null,
         originalInvoiceDate: originalInvoiceDate || null,
         supplierInvoiceNo: supplierInvoiceNo || null,
@@ -364,7 +365,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
 
   const showPartyBlock = info.partySide !== "none";
   const partyRequired = !info.takesPayment || data.type === "delivery_challan";
-  const title = ex ? `Edit ${info.label.toLowerCase()} ${data.settings.prefix}${ex.number}` : src ? `New ${info.label.toLowerCase()} from ${VOUCHER_INFO[src.voucher.type].label.toLowerCase()} ${src.voucher.prefix}${src.voucher.number}` : `New ${info.label.toLowerCase()}`;
+  const title = ex ? `Edit ${info.label.toLowerCase()} ${data.settings.prefix}${ex.number}` : src ? data.sourceRefs.length > 1 ? `New ${info.label.toLowerCase()} combining ${data.sourceRefs.map((r) => r.label).join(", ")}` : `New ${info.label.toLowerCase()} from ${VOUCHER_INFO[src.voucher.type].label.toLowerCase()} ${src.voucher.prefix}${src.voucher.number}` : `New ${info.label.toLowerCase()}`;
 
   return (
     <div className="flex flex-col gap-4 pb-24">

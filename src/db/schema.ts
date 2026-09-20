@@ -535,6 +535,16 @@ export const shareLinks = pgTable("share_links", {
   createdAt: createdAt(),
 });
 
+/** Which orders/challans a bill was made from (a bill can combine several). */
+export const voucherSources = pgTable(
+  "voucher_sources",
+  {
+    voucherId: integer("voucher_id").notNull().references(() => vouchers.id, { onDelete: "cascade" }),
+    sourceId: integer("source_id").notNull().references(() => vouchers.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.voucherId, t.sourceId] }), index("voucher_sources_source_idx").on(t.sourceId)],
+);
+
 /** Messages waiting to be sent (or already sent) by WhatsApp or email: payment reminders, alerts to the owner, updates to parties. */
 export const notifications = pgTable(
   "notifications",

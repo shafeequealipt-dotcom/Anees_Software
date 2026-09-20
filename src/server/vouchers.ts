@@ -15,6 +15,7 @@ import {
   taxRates,
   users,
   VOUCHER_TYPES,
+  voucherSources,
   voucherLines,
   vouchers,
   type VoucherType,
@@ -90,6 +91,8 @@ export const voucherSchema = z.object({
   direction: z.union([z.literal(1), z.literal(-1)]).nullish(),
   categoryId: int.positive().nullish(),
   sourceVoucherId: int.positive().nullish(),
+  /** Several orders/challans combined into this bill. */
+  sourceVoucherIds: z.array(int.positive()).max(50).optional(),
   originalInvoiceNo: optText(60),
   originalInvoiceDate: optDate,
   supplierInvoiceNo: optText(60),
@@ -232,9 +235,11 @@ export async function saveVoucher(
       const [cat] = await tx.select({ id: ledgerCategories.id }).from(ledgerCategories).where(and(eq(ledgerCategories.id, input.categoryId), eq(ledgerCategories.firmId, firmId)));
       if (!cat) throw new VoucherError("Choose a category from this company.", "categoryId");
     }
-    if (input.sourceVoucherId) {
-      const [src] = await tx.select({ id: vouchers.id }).from(vouchers).where(and(eq(vouchers.id, input.sourceVoucherId), eq(vouchers.firmId, firmId)));
-      if (!src) throw new VoucherError("The source document no longer exists.");
+    const sourceIds = [...new Set(input.sourceVoucherIds?.length ? input.sourceVoucherIds : input.sourceVoucherId ? [input.sourceVoucherId] : [])];
+    if (sourceIds.length) {
+      const srcs = await tx.select({ id: vouchers.id, partyId: vouchers.partyId, status: vouchers.status }).from(vouchers).where(and(inArray(vouchers.id, sourceIds), eq(vouchers.firmId, firmId)));
+      if (srcs.length !== sourceIds.length || srcs.some((s) => s.status === "deleted")) throw new VoucherError("The source document no longer exists.");
+      if (party && srcs.some((s) => s.partyId && s.partyId !== party.id)) throw new VoucherError("All the documents combined into one bill must be for the same party.");
     }
     if (input.type === "money_transfer" && !input.toAccountId) throw new VoucherError("Choose the account to move money into.", "toAccountId");
 
@@ -305,7 +310,7 @@ export async function saveVoucher(
       paymentRef: input.paymentRef,
       direction: ["stock_adjustment", "money_adjustment"].includes(input.type) ? (input.direction ?? 1) : null,
       categoryId: input.categoryId ?? null,
-      sourceVoucherId: input.sourceVoucherId ?? existing?.sourceVoucherId ?? null,
+      sourceVoucherId: sourceIds[0] ?? existing?.sourceVoucherId ?? null,
       originalInvoiceNo: input.originalInvoiceNo,
       originalInvoiceDate: input.originalInvoiceDate,
       supplierInvoiceNo: input.supplierInvoiceNo,
@@ -328,6 +333,11 @@ export async function saveVoucher(
     } else {
       const [row] = await tx.insert(vouchers).values({ ...values, createdBy: userId }).returning({ id: vouchers.id });
       id = row.id;
+    }
+
+    if (sourceIds.length) {
+      await tx.delete(voucherSources).where(eq(voucherSources.voucherId, id));
+      await tx.insert(voucherSources).values(sourceIds.map((sourceId) => ({ voucherId: id, sourceId })));
     }
 
     // ── Lines
@@ -732,16 +742,16 @@ export async function getVoucher(db: DB | Tx, firmId: number, id: number) {
     .from(allocations)
     .innerJoin(vouchers, eq(vouchers.id, allocations.toVoucherId))
     .where(eq(allocations.fromVoucherId, id));
-  const converted = await db
-    .select({ id: vouchers.id, type: vouchers.type, prefix: vouchers.prefix, number: vouchers.number, date: vouchers.date })
-    .from(vouchers)
-    .where(and(eq(vouchers.sourceVoucherId, id), eq(vouchers.status, "active")));
-  const source = v.sourceVoucherId
-    ? (await db.select({ id: vouchers.id, type: vouchers.type, prefix: vouchers.prefix, number: vouchers.number, date: vouchers.date }).from(vouchers).where(eq(vouchers.id, v.sourceVoucherId)))[0] ?? null
-    : null;
+  const pick = { id: vouchers.id, type: vouchers.type, prefix: vouchers.prefix, number: vouchers.number, date: vouchers.date };
+  const convertedRows = await db.select(pick).from(vouchers).where(and(eq(vouchers.sourceVoucherId, id), eq(vouchers.status, "active")));
+  const viaLinks = await db.select(pick).from(voucherSources).innerJoin(vouchers, eq(vouchers.id, voucherSources.voucherId)).where(and(eq(voucherSources.sourceId, id), eq(vouchers.status, "active")));
+  const converted = [...new Map([...convertedRows, ...viaLinks].map((c) => [c.id, c])).values()];
+  const sourceRows = await db.select(pick).from(voucherSources).innerJoin(vouchers, eq(vouchers.id, voucherSources.sourceId)).where(eq(voucherSources.voucherId, id));
+  const source = sourceRows[0] ?? (v.sourceVoucherId ? (await db.select(pick).from(vouchers).where(eq(vouchers.id, v.sourceVoucherId)))[0] ?? null : null);
+  const sources = sourceRows.length ? sourceRows : source ? [source] : [];
   const settledPaise = settledBy.reduce((s, a) => s + a.amountPaise, 0);
   const balancePaise = VOUCHER_INFO[v.type].takesPayment && v.partyId ? v.totalPaise - v.paidPaise - settledPaise : 0;
-  return { voucher: v, lines, settledBy, settles, converted, source, balancePaise };
+  return { voucher: v, lines, settledBy, settles, converted, source, sources, balancePaise };
 }
 
 export function paymentStatus(v: { totalPaise: number; dueDate: string | null; status: string }, balancePaise: number) {
@@ -750,4 +760,30 @@ export function paymentStatus(v: { totalPaise: number; dueDate: string | null; s
   if (v.dueDate && v.dueDate < todayIST()) return "overdue" as const;
   if (balancePaise < v.totalPaise) return "partial" as const;
   return "unpaid" as const;
+}
+
+/** Open orders, quotations and challans that can still be turned into a bill, grouped by party. */
+export async function listCombinable(db: DB, firmId: number, target: "sale_invoice" | "purchase_bill") {
+  const types: VoucherType[] = target === "sale_invoice" ? ["quotation", "sales_order", "delivery_challan"] : ["purchase_order"];
+  const list = await db
+    .select({ id: vouchers.id, type: vouchers.type, prefix: vouchers.prefix, number: vouchers.number, date: vouchers.date, partyId: vouchers.partyId, partyName: vouchers.partyName, totalPaise: vouchers.totalPaise })
+    .from(vouchers)
+    .where(
+      and(
+        eq(vouchers.firmId, firmId),
+        inArray(vouchers.type, types),
+        eq(vouchers.status, "active"),
+        sql`${vouchers.partyId} is not null`,
+        sql`not exists (select 1 from vouchers x where x.source_voucher_id = ${vouchers.id} and x.status = 'active')`,
+        sql`not exists (select 1 from voucher_sources vs join vouchers x on x.id = vs.voucher_id where vs.source_id = ${vouchers.id} and x.status = 'active')`,
+      ),
+    )
+    .orderBy(asc(vouchers.date), asc(vouchers.id));
+  const byParty = new Map<number, { partyId: number; partyName: string; docs: typeof list }>();
+  for (const d of list) {
+    const g = byParty.get(d.partyId!) ?? { partyId: d.partyId!, partyName: d.partyName ?? "", docs: [] };
+    g.docs.push(d);
+    byParty.set(d.partyId!, g);
+  }
+  return [...byParty.values()].sort((a, b) => a.partyName.localeCompare(b.partyName));
 }

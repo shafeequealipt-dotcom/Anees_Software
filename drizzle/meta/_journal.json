@@ -50,6 +50,13 @@
       "when": 1789909230076,
       "tag": "0006_price_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789909493307,
+      "tag": "0007_voucher_sources",
+      "breakpoints": true
     }
   ]
 }

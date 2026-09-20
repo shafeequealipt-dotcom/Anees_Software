@@ -46,6 +46,11 @@ export default async function VoucherListPage({ params, searchParams }: { params
                 Export to Excel
               </a>
             )}
+            {(type === "sale_invoice" || type === "purchase_bill") && can(user, "vouchers.create") && (
+              <LinkButton href={`${info.path}/combine`} variant="secondary">
+                {type === "sale_invoice" ? "Combine orders & challans" : "Combine orders"}
+              </LinkButton>
+            )}
             <LinkButton href={`${info.path}/new`} variant="primary">
               + New {info.label.toLowerCase()}
             </LinkButton>

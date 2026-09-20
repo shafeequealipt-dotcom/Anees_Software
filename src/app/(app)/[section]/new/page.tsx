@@ -21,7 +21,7 @@ export default async function NewVoucherPage({ params, searchParams }: { params:
   const sp = await searchParams;
   const db = await getDb();
   const data = await loadVoucherFormData(db, user.firmId, type, {
-    fromId: sp.from ? Number(sp.from) || undefined : undefined,
+    fromIds: sp.from ? sp.from.split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 50) : undefined,
     partyId: sp.party ? Number(sp.party) || undefined : undefined,
   }, { balance: can(user, "see.partyBalance"), contact: can(user, "see.partyContact"), purchase: can(user, "see.purchasePrice") });
   const saved = sp.saved ? <div className="mb-3"><Alert tone="good">Saved {sp.saved}. Ready for the next one.</Alert></div> : null;

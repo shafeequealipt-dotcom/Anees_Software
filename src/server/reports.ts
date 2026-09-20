@@ -59,7 +59,8 @@ export async function listVouchers(
     sql`select v.id, v.type, v.prefix, v.number, v.date::text, v.due_date::text, v.status, v.party_id, v.party_name,
           v.total_paise, v.paid_paise, v.taxable_paise, (v.cgst_paise + v.sgst_paise + v.igst_paise + v.cess_paise) as tax_paise,
           ${balanceExpr} as balance_paise, v.payment_mode, a.name as account_name, c.name as category_name,
-          exists(select 1 from vouchers x where x.source_voucher_id = v.id and x.status = 'active') as converted,
+          (exists(select 1 from vouchers x where x.source_voucher_id = v.id and x.status = 'active')
+            or exists(select 1 from voucher_sources vs join vouchers x on x.id = vs.voucher_id where vs.source_id = v.id and x.status = 'active')) as converted,
           v.supplier_invoice_no
         from vouchers v
         left join accounts a on a.id = v.account_id
