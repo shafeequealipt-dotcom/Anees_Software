@@ -18,6 +18,7 @@ interface Values {
   printPaperSize: "A4" | "A5";
   showBankDetailsOnInvoice: boolean;
   showUpiQrOnInvoice: boolean;
+  tdsTcsEnabled: boolean;
   quotationTerms: string;
   prefixes: Record<VoucherType, string>;
 }
@@ -57,6 +58,7 @@ export function PreferencesForm({ initial, india }: { initial: Values; india: bo
           <Checkbox label="Prices include tax by default" checked={v.defaultPriceIncludesTax} onChange={(e) => set("defaultPriceIncludesTax", e.target.checked)} />
           <Checkbox label="Show MRP on bills" checked={v.showMrp} onChange={(e) => set("showMrp", e.target.checked)} />
           <Checkbox label="Allow selling more than is in stock" checked={v.allowNegativeStock} onChange={(e) => set("allowNegativeStock", e.target.checked)} />
+          {india && <Checkbox label="Use TCS and TDS on bills (tax collected / deducted at source)" checked={v.tdsTcsEnabled} onChange={(e) => set("tdsTcsEnabled", e.target.checked)} className="sm:col-span-2" />}
           <Field label="When a customer goes over their credit limit" className="sm:col-span-2" hint="Set each customer's limit on their party page.">
             <Select value={v.creditLimitMode} onChange={(e) => set("creditLimitMode", e.target.value as Values["creditLimitMode"])}>
               <option value="off">Do nothing</option>

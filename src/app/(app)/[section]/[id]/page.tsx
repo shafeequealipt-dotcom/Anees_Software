@@ -217,10 +217,12 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   {v.igstPaise > 0 && <Sum k={TL.igst} v={v.igstPaise} />}
                   {v.cessPaise > 0 && <Sum k="Cess" v={v.cessPaise} />}
                   {v.roundOffPaise !== 0 && <Sum k="Round off" v={v.roundOffPaise} />}
+                  {v.tcsPaise > 0 && <Sum k={`TCS (${formatPercent(v.tcsBp)})`} v={v.tcsPaise} />}
                   <div className="mt-1 flex justify-between border-t border-line pt-2 text-base font-semibold">
                     <span>Total</span>
                     <Money paise={v.totalPaise} />
                   </div>
+                  {v.tdsPaise > 0 && <Sum k={`TDS ${info.outward ? "deducted by customer" : "deducted from supplier"} (${formatPercent(v.tdsBp)})`} v={-v.tdsPaise} />}
                   {info.takesPayment && v.paidPaise > 0 && <Sum k={info.outward ? "Received on bill" : "Paid on bill"} v={v.paidPaise} />}
                   {info.takesPayment && v.partyId && (
                     <div className="flex justify-between font-medium">

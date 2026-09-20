@@ -17,6 +17,8 @@ export interface PostingVoucher {
   partyId: number | null;
   totalPaise: number;
   paidPaise: number;
+  /** Tax deducted at source by the payer: they owe (or we owe) this much less. */
+  tdsPaise?: number;
   accountId: number | null;
   toAccountId: number | null;
   direction: number | null;
@@ -119,8 +121,9 @@ export function buildPostings(v: PostingVoucher): Postings {
     return out;
   }
 
-  const paid = Math.max(0, Math.min(v.paidPaise, v.totalPaise));
-  const unpaid = v.totalPaise - paid;
+  const tds = Math.max(0, v.tdsPaise ?? 0);
+  const paid = Math.max(0, Math.min(v.paidPaise, v.totalPaise - tds));
+  const unpaid = v.totalPaise - tds - paid;
   if (!v.partyId && unpaid !== 0) {
     throw new PostingError("Without a party, the full amount must be paid now. Choose a party to record a credit bill.");
   }
@@ -128,6 +131,7 @@ export function buildPostings(v: PostingVoucher): Postings {
 
   if (v.partyId) {
     out.party.push({ partyId: v.partyId, date, amountPaise: rule.party * v.totalPaise });
+    if (tds > 0) out.party.push({ partyId: v.partyId, date, amountPaise: -rule.party * tds, memo: "Tax deducted at source" });
     if (paid > 0) out.party.push({ partyId: v.partyId, date, amountPaise: -rule.party * paid, memo: "Paid on bill" });
   }
   if (paid > 0 && v.accountId) out.money.push({ accountId: v.accountId, date, amountPaise: rule.money * paid });

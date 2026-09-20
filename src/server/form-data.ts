@@ -108,6 +108,7 @@ export async function loadVoucherFormData(db: DB, firmId: number, type: VoucherT
     firm: firm ? { country: firm.country, stateCode: firm.stateCode, gstScheme: firm.gstScheme, terms: firm.invoiceTerms } : null,
     settings: {
       roundOff: settings.roundOff,
+      tdsTcsEnabled: settings.tdsTcsEnabled,
       lineDiscount: settings.lineDiscount,
       billDiscount: settings.billDiscount,
       defaultPriceIncludesTax: settings.defaultPriceIncludesTax,

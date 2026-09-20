@@ -67,6 +67,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const [roundOff, setRoundOff] = useState(ex ? ex.roundOffPaise !== 0 || data.settings.roundOff : data.settings.roundOff);
   const [paid, setPaid] = useState(ex && info.takesPayment ? rupees(ex.paidPaise) : "");
   const [fullyPaid, setFullyPaid] = useState(false);
+  const [tcsPct, setTcsPct] = useState(ex?.tcsBp ? String(ex.tcsBp / 100) : "");
+  const [tdsPct, setTdsPct] = useState(ex?.tdsBp ? String(ex.tdsBp / 100) : "");
   const defaultAccount = data.accounts.find((a) => a.kind === "cash" && a.isDefault) ?? data.accounts[0];
   const [accountId, setAccountId] = useState<number | null>(ex?.accountId ?? defaultAccount?.id ?? null);
   const [paymentMode, setPaymentMode] = useState(ex?.paymentMode ?? "Cash");
@@ -184,9 +186,17 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
     [lines, supply, roundOff, noTax, billDiscPct, billDiscAmt, data.type],
   );
 
-  const total = calc.totalPaise;
-  const paidPaise = !partyId ? total : fullyPaid ? total : Math.min(Math.max(0, toPaise(paid) || 0), total);
-  const balance = total - paidPaise;
+  const showTds = data.settings.tdsTcsEnabled && data.firm?.country === "IN";
+  const tcsAllowed = showTds && data.type === "sale_invoice";
+  const tdsAllowed = showTds && !!partyId && ["sale_invoice", "purchase_bill", "expense"].includes(data.type);
+  const tcsBp = tcsAllowed ? Math.max(0, toBasisPoints(tcsPct) || 0) : 0;
+  const tdsBp = tdsAllowed ? Math.max(0, toBasisPoints(tdsPct) || 0) : 0;
+  const tcsPaise = Math.round(((calc.taxablePaise + calc.cgstPaise + calc.sgstPaise + calc.igstPaise + calc.cessPaise) * tcsBp) / 10000);
+  const tdsPaise = Math.round((calc.taxablePaise * tdsBp) / 10000);
+  const total = calc.totalPaise + tcsPaise;
+  const payable = total - tdsPaise;
+  const paidPaise = !partyId ? total : fullyPaid ? payable : Math.min(Math.max(0, toPaise(paid) || 0), payable);
+  const balance = payable - paidPaise;
 
   function updateLine(key: string, patch: Partial<Line>) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -245,6 +255,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         placeOfSupply: placeOfSupply || null,
         reverseCharge,
         itcEligible: data.type === "expense" ? itcEligible : true,
+        tcsBp,
+        tdsBp,
         withoutTax,
         billDiscountBp: billDiscPct ? toBasisPoints(billDiscPct) || 0 : 0,
         billDiscountPaise: billDiscPct ? 0 : toPaise(billDiscAmt) || 0,
@@ -304,7 +316,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         router.refresh();
       }
     },
-    [info, lines, ex, data.type, number, date, dueDate, partyId, partyName, partyPhone, billingAddress, shippingAddress, placeOfSupply, reverseCharge, itcEligible, withoutTax, billDiscPct, billDiscAmt, roundOff, paidPaise, accountId, paymentMode, paymentRef, direction, categoryId, src, originalInvoiceNo, originalInvoiceDate, supplierInvoiceNo, poNumber, ewayBillNo, vehicleNo, transportName, notes, terms, itemMap, router],
+    [info, lines, ex, data.type, number, date, dueDate, partyId, partyName, partyPhone, billingAddress, shippingAddress, placeOfSupply, reverseCharge, itcEligible, tcsBp, tdsBp, withoutTax, billDiscPct, billDiscAmt, roundOff, paidPaise, accountId, paymentMode, paymentRef, direction, categoryId, src, originalInvoiceNo, originalInvoiceDate, supplierInvoiceNo, poNumber, ewayBillNo, vehicleNo, transportName, notes, terms, itemMap, router],
   );
 
   const saveRef = useRef(save);
@@ -724,10 +736,27 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               <Money paise={calc.roundOffPaise} className="text-muted" />
             </div>
           )}
+          {tcsAllowed && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-muted">
+                TCS <Input value={tcsPct} onChange={(e) => setTcsPct(e.target.value)} inputMode="decimal" className="num h-7 w-16 text-right" placeholder="0" /> %
+              </span>
+              <Money paise={tcsPaise} className="text-muted" />
+            </div>
+          )}
           <div className="flex items-baseline justify-between border-t border-line pt-2 text-lg font-semibold">
             <span>Total</span>
             <Money paise={total} />
           </div>
+
+          {tdsAllowed && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-muted">
+                TDS {info.outward ? "deducted by customer" : "deducted from supplier"} <Input value={tdsPct} onChange={(e) => setTdsPct(e.target.value)} inputMode="decimal" className="num h-7 w-16 text-right" placeholder="0" /> %
+              </span>
+              <Money paise={-tdsPaise} className="text-muted" />
+            </div>
+          )}
 
           {info.takesPayment && (
             <div className="mt-2 flex flex-col gap-2 border-t border-line pt-3">
@@ -735,7 +764,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted">{info.outward ? "Received now" : "Paid now"}</span>
-                    <Input value={fullyPaid ? rupees(total) : paid} disabled={fullyPaid} onChange={(e) => setPaid(e.target.value)} placeholder="0" className="num h-8 w-32 text-right" inputMode="decimal" />
+                    <Input value={fullyPaid ? rupees(payable) : paid} disabled={fullyPaid} onChange={(e) => setPaid(e.target.value)} placeholder="0" className="num h-8 w-32 text-right" inputMode="decimal" />
                   </div>
                   <Checkbox label={info.outward ? "Fully received" : "Fully paid"} checked={fullyPaid} onChange={(e) => setFullyPaid(e.target.checked)} />
                 </>

@@ -36,7 +36,10 @@ const GROUPS: { title: string; items: { href: string; label: string; hint: strin
   },
   {
     title: "Tax",
-    items: [{ href: "/reports/tax", label: "Tax report", hint: "Tax collected and paid, by rate" }],
+    items: [
+      { href: "/reports/tax", label: "Tax report", hint: "Tax collected and paid, by rate" },
+      { href: "/reports/tds-tcs", label: "TCS and TDS", hint: "For Indian tax returns" },
+    ],
   },
 ];
 

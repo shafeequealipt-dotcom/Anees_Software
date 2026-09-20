@@ -154,8 +154,10 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
     if (v.igstPaise) totals.push({ k: TL.igst, v: money(v.igstPaise) });
     if (v.cessPaise) totals.push({ k: TL.cess, v: money(v.cessPaise) });
     if (v.roundOffPaise) totals.push({ k: "Round off", v: money(v.roundOffPaise) });
+    if (v.tcsPaise) totals.push({ k: `TCS (${formatPercent(v.tcsBp)})`, v: money(v.tcsPaise) });
   }
   totals.push({ k: "Total", v: money(v.totalPaise), bold: true });
+  if (v.tdsPaise) totals.push({ k: `TDS deducted (${formatPercent(v.tdsBp)})`, v: `-${money(v.tdsPaise)}` });
   if (info.takesPayment && v.partyId) {
     if (v.paidPaise > 0) totals.push({ k: "Paid", v: money(v.paidPaise) });
     if (data.balancePaise > 0) totals.push({ k: "Balance due", v: money(data.balancePaise), bold: true });

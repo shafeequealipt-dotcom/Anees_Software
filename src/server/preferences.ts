@@ -17,6 +17,7 @@ export const preferencesSchema = z.object({
   printPaperSize: z.enum(["A4", "A5"]),
   showBankDetailsOnInvoice: z.boolean(),
   showUpiQrOnInvoice: z.boolean(),
+  tdsTcsEnabled: z.boolean(),
   quotationTerms: z.string().trim().max(1000),
   prefixes: z.record(z.enum(VOUCHER_TYPES), z.string().trim().max(12, "Prefixes are at most 12 characters.").regex(/^[A-Za-z0-9\-_/]*$/, "Use letters, numbers, - _ or / in a prefix.")),
 });

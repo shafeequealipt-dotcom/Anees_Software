@@ -95,6 +95,9 @@ export const voucherSchema = z.object({
   sourceVoucherId: int.positive().nullish(),
   /** Expenses: is the tax on this bill claimable as input tax credit? */
   itcEligible: z.boolean().default(true),
+  /** India: % tax collected at source (sales) and % tax deducted at source (sales, purchases, expenses). */
+  tcsBp: z.number().int().min(0).max(10000).default(0),
+  tdsBp: z.number().int().min(0).max(10000).default(0),
   /** Several orders/challans combined into this bill. */
   sourceVoucherIds: z.array(int.positive()).max(50).optional(),
   originalInvoiceNo: optText(60),
@@ -211,7 +214,12 @@ export async function saveVoucher(
       })),
     });
 
-    const totalPaise = info.hasLines ? calc.totalPaise : input.amountPaise;
+    const taxTotal = calc.cgstPaise + calc.sgstPaise + calc.igstPaise + calc.cessPaise;
+    const tcsBp = info.hasLines && firm.country === "IN" && input.type === "sale_invoice" ? input.tcsBp : 0;
+    const tdsBp = info.hasLines && firm.country === "IN" && party && ["sale_invoice", "purchase_bill", "expense"].includes(input.type) ? input.tdsBp : 0;
+    const tcsPaise = Math.round(((calc.taxablePaise + taxTotal) * tcsBp) / 10000);
+    const tdsPaise = Math.round((calc.taxablePaise * tdsBp) / 10000);
+    const totalPaise = info.hasLines ? calc.totalPaise + tcsPaise : input.amountPaise;
     if (!info.hasLines && totalPaise <= 0) throw new VoucherError("Enter an amount more than zero.", "amountPaise");
     if (info.hasLines && input.type !== "stock_adjustment" && totalPaise < 0) {
       throw new VoucherError("The bill total can't be negative.");
@@ -219,7 +227,7 @@ export async function saveVoucher(
 
     let paidPaise = 0;
     if (info.takesPayment) {
-      paidPaise = Math.min(input.paidPaise, totalPaise);
+      paidPaise = Math.min(input.paidPaise, totalPaise - tdsPaise);
       if (!party) paidPaise = totalPaise; // walk-in / cash bill
     } else if (!info.hasLines) {
       paidPaise = totalPaise;
@@ -316,6 +324,10 @@ export async function saveVoucher(
       categoryId: input.categoryId ?? null,
       sourceVoucherId: sourceIds[0] ?? existing?.sourceVoucherId ?? null,
       itcEligible: input.itcEligible,
+      tcsBp,
+      tcsPaise,
+      tdsBp,
+      tdsPaise,
       originalInvoiceNo: input.originalInvoiceNo,
       originalInvoiceDate: input.originalInvoiceDate,
       supplierInvoiceNo: input.supplierInvoiceNo,
@@ -401,6 +413,7 @@ export async function saveVoucher(
         partyId: party?.id ?? null,
         totalPaise,
         paidPaise,
+        tdsPaise,
         accountId,
         toAccountId: values.toAccountId,
         direction: values.direction,
@@ -443,9 +456,9 @@ export async function saveVoucher(
     }
     if (existing && info.takesPayment && party) {
       const allocated = await allocatedTo(tx, id);
-      if (allocated + paidPaise > totalPaise) {
+      if (allocated + paidPaise > totalPaise - tdsPaise) {
         // Bill got smaller than what has already been paid against it: release the excess from the newest payments.
-        await trimAllocations(tx, id, allocated + paidPaise - totalPaise);
+        await trimAllocations(tx, id, allocated + paidPaise - (totalPaise - tdsPaise));
         warnings.push("The bill total is now less than what was already paid against it. The extra payment is kept as an advance on the party.");
       }
     }
@@ -476,7 +489,7 @@ export async function saveVoucher(
     if (input.type === "sale_invoice" && party?.creditLimitPaise != null && cfg.creditLimitMode !== "off") {
       const [b] = await tx.select({ bal: sql<number>`coalesce(sum(${partyLedger.amountPaise}), 0)::bigint` }).from(partyLedger).where(eq(partyLedger.partyId, party.id));
       const owes = Number(b.bal);
-      const worsens = !existing || totalPaise - paidPaise > existing.totalPaise - existing.paidPaise;
+      const worsens = !existing || totalPaise - tdsPaise - paidPaise > existing.totalPaise - existing.tdsPaise - existing.paidPaise;
       if (owes > party.creditLimitPaise && worsens) {
         setRegion(firm.country);
         const msg = `${party.name} now owes ${formatMoney(owes)}, above the credit limit of ${formatMoney(party.creditLimitPaise)}.`;
@@ -562,6 +575,7 @@ export async function openBills(db: DB | Tx, partyId: number, types: VoucherType
       dueDate: vouchers.dueDate,
       totalPaise: vouchers.totalPaise,
       paidPaise: vouchers.paidPaise,
+      tdsPaise: vouchers.tdsPaise,
       allocated: sql<number>`coalesce((select sum(a.amount_paise) from allocations a where a.to_voucher_id = "vouchers"."id" ${
         excludeFromVoucherId ? sql`and a.from_voucher_id <> ${excludeFromVoucherId}` : sql``
       }), 0)::bigint`,
@@ -570,7 +584,7 @@ export async function openBills(db: DB | Tx, partyId: number, types: VoucherType
     .where(and(eq(vouchers.partyId, partyId), inArray(vouchers.type, types), eq(vouchers.status, "active")))
     .orderBy(asc(vouchers.date), asc(vouchers.id));
   return rows
-    .map((r) => ({ ...r, balancePaise: r.totalPaise - r.paidPaise - Number(r.allocated) }))
+    .map((r) => ({ ...r, balancePaise: r.totalPaise - r.tdsPaise - r.paidPaise - Number(r.allocated) }))
     .filter((r) => r.balancePaise > 0);
 }
 
@@ -691,14 +705,14 @@ export async function restoreVoucher(db: DB, firmId: number, id: number, userId:
 
     let reattached = 0;
     for (const a of snap.allocations) {
-      const [from] = await tx.select({ total: vouchers.totalPaise, paid: vouchers.paidPaise, status: vouchers.status }).from(vouchers).where(eq(vouchers.id, a.fromVoucherId));
-      const [to] = await tx.select({ total: vouchers.totalPaise, paid: vouchers.paidPaise, status: vouchers.status }).from(vouchers).where(eq(vouchers.id, a.toVoucherId));
+      const [from] = await tx.select({ total: sql<number>`${vouchers.totalPaise} - ${vouchers.tdsPaise}`.mapWith(Number), paid: vouchers.paidPaise, status: vouchers.status }).from(vouchers).where(eq(vouchers.id, a.fromVoucherId));
+      const [to] = await tx.select({ total: sql<number>`${vouchers.totalPaise} - ${vouchers.tdsPaise}`.mapWith(Number), paid: vouchers.paidPaise, status: vouchers.status }).from(vouchers).where(eq(vouchers.id, a.toVoucherId));
       const usable = (vid: number, row?: { status: string }) => vid === id || row?.status === "active";
       if (!usable(a.fromVoucherId, from) || !usable(a.toVoucherId, to)) continue;
       const [fromUsed] = await tx.select({ n: sql<number>`coalesce(sum(${allocations.amountPaise}), 0)::bigint` }).from(allocations).where(eq(allocations.fromVoucherId, a.fromVoucherId));
       const toUsed = await allocatedTo(tx, a.toVoucherId);
-      const fromLeft = (from?.total ?? v.totalPaise) - Number(fromUsed.n);
-      const toLeft = (to?.total ?? v.totalPaise) - (to?.paid ?? v.paidPaise) - toUsed;
+      const fromLeft = (from?.total ?? v.totalPaise - v.tdsPaise) - Number(fromUsed.n);
+      const toLeft = (to?.total ?? v.totalPaise - v.tdsPaise) - (to?.paid ?? v.paidPaise) - toUsed;
       const amount = Math.min(a.amountPaise, fromLeft, toLeft);
       if (amount > 0) {
         await tx.insert(allocations).values({ fromVoucherId: a.fromVoucherId, toVoucherId: a.toVoucherId, amountPaise: amount });
@@ -763,7 +777,7 @@ export async function getVoucher(db: DB | Tx, firmId: number, id: number) {
   const source = sourceRows[0] ?? (v.sourceVoucherId ? (await db.select(pick).from(vouchers).where(eq(vouchers.id, v.sourceVoucherId)))[0] ?? null : null);
   const sources = sourceRows.length ? sourceRows : source ? [source] : [];
   const settledPaise = settledBy.reduce((s, a) => s + a.amountPaise, 0);
-  const balancePaise = VOUCHER_INFO[v.type].takesPayment && v.partyId ? v.totalPaise - v.paidPaise - settledPaise : 0;
+  const balancePaise = VOUCHER_INFO[v.type].takesPayment && v.partyId ? v.totalPaise - v.tdsPaise - v.paidPaise - settledPaise : 0;
   return { voucher: v, lines, settledBy, settles, converted, source, sources, balancePaise };
 }
 

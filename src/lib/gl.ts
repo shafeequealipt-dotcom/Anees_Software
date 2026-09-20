@@ -22,6 +22,8 @@ export interface VoucherForGl {
   roundOffPaise: number;
   itcEligible: boolean;
   categoryId: number | null;
+  tcsPaise?: number;
+  tdsPaise?: number;
 }
 
 /** Bills that touch the accounts. Orders, quotations, challans and stock adjustments do not. */
@@ -50,6 +52,8 @@ export function journalForVoucher(v: VoucherForGl, partyNet: number, money: { ac
       push(lines, "sales", -v.taxablePaise);
       push(lines, "output_tax", -tax);
       push(lines, "round_off", -v.roundOffPaise);
+      push(lines, "tcs_payable", -(v.tcsPaise ?? 0));
+      push(lines, "tds_receivable", v.tdsPaise ?? 0);
       break;
     case "credit_note":
       push(lines, "sales", v.taxablePaise, "Sale return");
@@ -60,6 +64,7 @@ export function journalForVoucher(v: VoucherForGl, partyNet: number, money: { ac
       push(lines, "purchases", v.taxablePaise);
       push(lines, "input_tax", tax);
       push(lines, "round_off", v.roundOffPaise);
+      push(lines, "tds_payable", -(v.tdsPaise ?? 0));
       break;
     case "debit_note":
       push(lines, "purchases", -v.taxablePaise, "Purchase return");
@@ -70,6 +75,7 @@ export function journalForVoucher(v: VoucherForGl, partyNet: number, money: { ac
       push(lines, cat ?? "expense_default", v.taxablePaise + (v.itcEligible ? 0 : tax));
       push(lines, "input_tax", v.itcEligible ? tax : 0);
       push(lines, "round_off", v.roundOffPaise);
+      push(lines, "tds_payable", -(v.tdsPaise ?? 0));
       break;
     case "other_income":
       push(lines, cat ?? "other_income", -v.taxablePaise);

@@ -10,7 +10,7 @@ const settleable = sql`v.type in ('sale_invoice','purchase_bill','credit_note','
 
 /** SQL expression: unpaid balance of voucher alias v. */
 const balanceExpr = sql`case when ${settleable} and v.party_id is not null and v.status = 'active'
-  then v.total_paise - v.paid_paise - coalesce((select sum(a.amount_paise) from allocations a where a.to_voucher_id = v.id), 0)
+  then v.total_paise - v.tds_paise - v.paid_paise - coalesce((select sum(a.amount_paise) from allocations a where a.to_voucher_id = v.id), 0)
   else 0 end`;
 
 // ─── Voucher lists ───────────────────────────────────────────────────────────

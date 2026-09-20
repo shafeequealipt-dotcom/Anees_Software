@@ -159,3 +159,41 @@ export async function serialReport(db: DB, firmId: number, opts: { itemId?: numb
   }
   return out.sort((a, b) => a.item_name.localeCompare(b.item_name) || a.serial.localeCompare(b.serial));
 }
+
+// ─── TCS and TDS (India) ─────────────────────────────────────────────────────
+
+export interface TdsTcsRow {
+  id: number;
+  type: string;
+  prefix: string;
+  number: number;
+  date: string;
+  party_name: string | null;
+  party_gstin: string | null;
+  taxable_paise: number;
+  total_paise: number;
+  tcs_paise: number;
+  tds_paise: number;
+  tcs_bp: number;
+  tds_bp: number;
+}
+
+/** Bills that collected TCS or had TDS deducted, for the tax returns. */
+export async function tdsTcsReport(db: DB, firmId: number, from: string, to: string) {
+  const list = nums(
+    await rows<TdsTcsRow>(
+      db,
+      sql`select v.id, v.type, v.prefix, v.number, v.date::text, coalesce(p.name, v.party_name) as party_name, p.gstin as party_gstin,
+            v.taxable_paise, v.total_paise, v.tcs_paise, v.tds_paise, v.tcs_bp, v.tds_bp
+          from vouchers v left join parties p on p.id = v.party_id
+          where v.firm_id = ${firmId} and v.status = 'active' and v.date between ${from} and ${to} and (v.tcs_paise > 0 or v.tds_paise > 0)
+          order by v.date, v.id`,
+    ),
+    ["taxable_paise", "total_paise", "tcs_paise", "tds_paise"],
+  );
+  const sum = (rs: TdsTcsRow[], k: "tcs_paise" | "tds_paise") => rs.reduce((s, r) => s + r[k], 0);
+  const tcs = list.filter((r) => r.tcs_paise > 0);
+  const tdsReceivable = list.filter((r) => r.tds_paise > 0 && r.type === "sale_invoice");
+  const tdsPayable = list.filter((r) => r.tds_paise > 0 && r.type !== "sale_invoice");
+  return { tcs, tdsReceivable, tdsPayable, tcsTotal: sum(tcs, "tcs_paise"), tdsReceivableTotal: sum(tdsReceivable, "tds_paise"), tdsPayableTotal: sum(tdsPayable, "tds_paise") };
+}

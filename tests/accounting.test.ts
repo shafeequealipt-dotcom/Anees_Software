@@ -133,3 +133,57 @@ describe("accounts in use", () => {
     void blocked;
   });
 });
+
+describe("TCS and TDS", () => {
+  it("adds TCS to the total, takes TDS off what is owed, and keeps the books balanced", async () => {
+    const { gstinCheckDigit } = await import("@/lib/gst/gstin");
+    const { openBills, getVoucher, cancelVoucher } = await import("@/server/vouchers");
+    const { partyBalances } = await import("@/server/reports");
+    const { tdsTcsReport } = await import("@/server/profit-reports");
+    const db = await testDb();
+    await runFirstSetup(db, { businessName: "Test Traders", gstin: "27ABCDE1234F1Z" + gstinCheckDigit("27ABCDE1234F1Z"), gstScheme: "regular", stateCode: "27", ownerName: "Owner", email: "o@t.example", password: "Tulsi-Garden-4471" });
+    const [f] = await db.select().from(firms);
+    const g18 = (await db.select().from(taxRates).where(eq(taxRates.firmId, f.id))).find((r) => r.gstBp === 1800 && r.nature === "taxable")!;
+    const acct = (await db.select().from(accounts).where(eq(accounts.firmId, f.id)))[0];
+    const cust = await saveParty(db, f.id, { name: "Big Corp", kind: "customer", stateCode: "27" }, 1);
+    const sup = await saveParty(db, f.id, { name: "Contractor", kind: "supplier", stateCode: "27" }, 1);
+
+    const sale = await saveVoucher(db, f.id, { type: "sale_invoice", date: "2026-09-10", partyId: cust, tcsBp: 100, tdsBp: 1000, lines: [{ description: "Goods", qtyMilli: 1000, ratePaise: 100_000, taxRateId: g18.id }] }, 1);
+    const v = (await getVoucher(db, f.id, sale.id))!;
+    expect(v.voucher).toMatchObject({ taxablePaise: 100_000, tcsPaise: 1_180, tdsPaise: 10_000, totalPaise: 119_180 });
+    expect(v.balancePaise).toBe(109_180);
+    expect((await partyBalances(db, f.id)).find((p) => p.id === cust)!.balance_paise).toBe(109_180);
+    expect((await openBills(db, cust, ["sale_invoice"]))[0].balancePaise).toBe(109_180);
+
+    // Paying what is actually owed clears the bill
+    await saveVoucher(db, f.id, { type: "payment_in", date: "2026-09-15", partyId: cust, amountPaise: 109_180, accountId: acct.id }, 1);
+    expect((await openBills(db, cust, ["sale_invoice"]))).toHaveLength(0);
+    expect((await partyBalances(db, f.id)).find((p) => p.id === cust)!.balance_paise).toBe(0);
+
+    // Purchase with TDS deducted from the supplier
+    const bill = await saveVoucher(db, f.id, { type: "purchase_bill", date: "2026-09-12", partyId: sup, tdsBp: 200, lines: [{ description: "Work", qtyMilli: 1000, ratePaise: 50_000, taxRateId: g18.id }] }, 1);
+    const pb = (await getVoucher(db, f.id, bill.id))!;
+    expect(pb.voucher).toMatchObject({ tdsPaise: 1_000, totalPaise: 59_000 });
+    expect((await partyBalances(db, f.id)).find((p) => p.id === sup)!.balance_paise).toBe(-58_000);
+
+    const tb = await trialBalance(db, f.id, "2099-12-31");
+    expect(tb.reduce((s, r) => s + r.debit, 0)).toBe(tb.reduce((s, r) => s + r.credit, 0));
+    expect(tb.find((r) => r.name.startsWith("TCS payable"))!.net).toBe(-1_180);
+    expect(tb.find((r) => r.name.startsWith("TDS receivable"))!.net).toBe(10_000);
+    expect(tb.find((r) => r.name.startsWith("TDS payable"))!.net).toBe(-1_000);
+    const rep = await tdsTcsReport(db, f.id, "2026-09-01", "2026-09-30");
+    expect([rep.tcsTotal, rep.tdsReceivableTotal, rep.tdsPayableTotal]).toEqual([1_180, 10_000, 1_000]);
+
+    await cancelVoucher(db, f.id, sale.id, 1);
+    const tb2 = await trialBalance(db, f.id, "2099-12-31");
+    expect(tb2.find((r) => r.name.startsWith("TDS receivable"))).toBeUndefined();
+
+    // Saudi companies ignore the fields
+    const db2 = await testDb();
+    await runFirstSetup(db2, { businessName: "Al Amal", country: "SA", ownerName: "Owner", email: "o@a.example", password: "Tulsi-Garden-4471" });
+    const [g] = await db2.select().from(firms);
+    const c2 = await saveParty(db2, g.id, { name: "Riyadh Co", kind: "customer" }, 1);
+    const s2 = await saveVoucher(db2, g.id, { type: "sale_invoice", date: "2026-09-10", partyId: c2, tcsBp: 100, tdsBp: 1000, lines: [{ description: "x", qtyMilli: 1000, ratePaise: 10_000 }] }, 1);
+    expect((await getVoucher(db2, g.id, s2.id))!.voucher).toMatchObject({ tcsPaise: 0, tdsPaise: 0 });
+  });
+});

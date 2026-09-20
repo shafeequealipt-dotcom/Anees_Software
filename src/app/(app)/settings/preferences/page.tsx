@@ -21,6 +21,7 @@ export default async function PreferencesPage() {
         printPaperSize: s.printPaperSize,
         showBankDetailsOnInvoice: s.showBankDetailsOnInvoice,
         showUpiQrOnInvoice: s.showUpiQrOnInvoice,
+        tdsTcsEnabled: s.tdsTcsEnabled,
         quotationTerms: s.quotationTerms,
         prefixes: s.prefixes,
       }}

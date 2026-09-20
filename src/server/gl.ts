@@ -30,6 +30,9 @@ const SYSTEM: Record<string, { name: string; type: AccountType; grp: string }> =
   opening_stock: { name: "Opening stock", type: "expense", grp: "Cost of goods" },
   depreciation: { name: "Depreciation", type: "expense", grp: "Expenses" },
   accum_dep: { name: "Accumulated depreciation", type: "asset", grp: "Fixed assets" },
+  tcs_payable: { name: "TCS payable (collected on sales)", type: "liability", grp: "Current liabilities" },
+  tds_receivable: { name: "TDS receivable (deducted by customers)", type: "asset", grp: "Current assets" },
+  tds_payable: { name: "TDS payable (deducted from suppliers)", type: "liability", grp: "Current liabilities" },
   asset_disposal: { name: "Gain or loss on sale of assets", type: "income", grp: "Other income" },
 };
 

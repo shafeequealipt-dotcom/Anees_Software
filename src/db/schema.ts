@@ -403,6 +403,12 @@ export const vouchers = pgTable(
     deletedSnapshot: jsonb("deleted_snapshot"),
     /** Expenses: is the tax on this bill claimable as input tax credit? */
     itcEligible: boolean("itc_eligible").notNull().default(true),
+    /** India: tax collected at source by the seller (added to the bill total). */
+    tcsBp: integer("tcs_bp").notNull().default(0),
+    tcsPaise: paise("tcs_paise").notNull().default(0),
+    /** India: tax deducted at source by the payer (the payer pays us / we pay the supplier this much less). */
+    tdsBp: integer("tds_bp").notNull().default(0),
+    tdsPaise: paise("tds_paise").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
