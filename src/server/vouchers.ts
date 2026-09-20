@@ -23,6 +23,8 @@ import { audit } from "@/lib/audit";
 import { isIsoDate, todayIST } from "@/lib/dates";
 import { calculateVoucher, supplyFor } from "@/lib/gst/engine";
 import { buildPostings, PostingError } from "@/lib/posting";
+import { formatMoney } from "@/lib/money";
+import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
 import { SETTLES, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 
@@ -450,6 +452,19 @@ export async function saveVoucher(
             warnings.push(`Stock of "${item.name}" is now ${qty / 1000} (below zero).`);
           }
         }
+      }
+    }
+
+    // ── Credit limit
+    if (input.type === "sale_invoice" && party?.creditLimitPaise != null && cfg.creditLimitMode !== "off") {
+      const [b] = await tx.select({ bal: sql<number>`coalesce(sum(${partyLedger.amountPaise}), 0)::bigint` }).from(partyLedger).where(eq(partyLedger.partyId, party.id));
+      const owes = Number(b.bal);
+      const worsens = !existing || totalPaise - paidPaise > existing.totalPaise - existing.paidPaise;
+      if (owes > party.creditLimitPaise && worsens) {
+        setRegion(firm.country);
+        const msg = `${party.name} now owes ${formatMoney(owes)}, above the credit limit of ${formatMoney(party.creditLimitPaise)}.`;
+        if (cfg.creditLimitMode === "block") throw new VoucherError(`${msg} Change the bill, or raise the limit on the party.`, "partyId");
+        warnings.push(msg);
       }
     }
 

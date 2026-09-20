@@ -15,6 +15,7 @@ import { zatcaQrBase64 } from "@/lib/zatca";
 import { formatINR, formatPercent, formatQty } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { typeFromPath, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
+import { voucherProfit } from "@/server/profit-reports";
 import { getVoucher, paymentStatus } from "@/server/vouchers";
 
 export async function generateMetadata({ params }: { params: Promise<{ section: string; id: string }> }) {
@@ -44,6 +45,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
 
   const R = region();
   const TL = taxColumnLabels(R);
+  const profit = can(user, "see.profit") ? await voucherProfit(db, user.firmId, v.id) : null;
   // Saudi Arabia: tax invoices and credit notes carry a ZATCA (Phase 1) QR code.
   const qrSource = R.country === "SA" && firm?.gstin && ["sale_invoice", "credit_note"].includes(v.type) && v.status === "active";
   const zatcaQr = qrSource
@@ -327,6 +329,15 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   </li>
                 ))}
               </ul>
+            </Panel>
+          )}
+          {profit && (
+            <Panel title="Profit on this bill">
+              <dl className="flex flex-col gap-1 text-sm">
+                <div className="flex justify-between"><dt className="text-muted">Sold for (before tax)</dt><dd><Money paise={profit.revenuePaise} /></dd></div>
+                <div className="flex justify-between"><dt className="text-muted">Cost of goods</dt><dd><Money paise={profit.costPaise} /></dd></div>
+                <div className="flex justify-between border-t border-line pt-1 font-semibold"><dt>Profit</dt><dd><Money paise={profit.profitPaise} className={profit.profitPaise < 0 ? "text-bad" : "text-good"} /> <span className="text-xs font-normal text-muted">({formatPercent(profit.marginBp)})</span></dd></div>
+              </dl>
             </Panel>
           )}
           {zatcaQr && (

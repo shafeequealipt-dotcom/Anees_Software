@@ -8,6 +8,7 @@ import type { VoucherType } from "@/db/schema";
 export const DEFAULT_SETTINGS = {
   roundOff: true,
   allowNegativeStock: true,
+  creditLimitMode: "warn" as "off" | "warn" | "block",
   showLowStockWarning: true,
   defaultPriceIncludesTax: false,
   lineDiscount: true,

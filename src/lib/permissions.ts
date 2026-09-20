@@ -34,6 +34,7 @@ export const PERMISSION_GROUPS = [
     title: "Fields this role can see",
     items: [
       { key: "see.purchasePrice", label: "Purchase prices of items", hint: "Hidden from item pages and item forms; existing prices stay unchanged when others edit." },
+      { key: "see.profit", label: "Profit on bills and profit reports", hint: "Shows what each bill earned after the cost of goods." },
       { key: "see.stockValue", label: "Value of stock", hint: "Stock value totals and value-at-cost figures." },
       { key: "see.partyBalance", label: "Party balances", hint: "Amounts owed to or by a party, and their statements." },
       { key: "see.partyContact", label: "Party phone, address and tax number", hint: "Hidden in party lists, party pages, search and the edit form. Bills still carry the address." },

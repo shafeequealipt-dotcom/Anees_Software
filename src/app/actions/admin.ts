@@ -10,6 +10,7 @@ import { AuthError, assertUser, clientIp, currentUser, hashPassword, passwordPro
 import { createCompany, createUser, deleteRole, editUserSchema, firmSchema, newUserSchema, resetUserPassword, roleSchema, saveFirm, saveRole, setCompanyActive, updateUser } from "@/server/admin";
 import { MasterError } from "@/server/masters";
 import type { companySchema } from "@/server/setup";
+import { type preferencesSchema, savePreferences } from "@/server/preferences";
 import { markMessage } from "@/server/notify/outbox";
 import { type messagingSchema, saveMessagingSettings } from "@/server/notify/settings";
 
@@ -158,6 +159,17 @@ export async function messageAction(id: number, action: "sent" | "retry" | "canc
     const user = await assertUser("settings.edit");
     await markMessage(await getDb(), user.firmId, id, action);
     revalidatePath("/settings/messaging");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function savePreferencesAction(input: z.input<typeof preferencesSchema>): Promise<Result> {
+  try {
+    const user = await assertUser("settings.edit");
+    await savePreferences(await getDb(), user.firmId, input, user.id);
+    revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
     return fail(e);
