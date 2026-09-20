@@ -333,6 +333,15 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
               </ul>
             </Panel>
           )}
+          {R.country === "IN" && v.type === "sale_invoice" && v.status === "active" && firm?.gstin && can(user, "reports.sales") && (
+            <Panel title="E-way bill">
+              <p className="text-xs text-muted">For goods worth more than ₹50,000 moving between places. Download the file and upload it at ewaybillgst.gov.in (Generate in bulk). The portal checks it and gives you the e-way bill number, which you can then type into this bill.</p>
+              <a href={`/api/vouchers/${v.id}/eway`} className="mt-2 inline-flex h-8 items-center rounded-md border border-line bg-panel px-2.5 text-sm font-medium hover:bg-ground">
+                Download e-way bill file
+              </a>
+              <p className="mt-2 text-xs text-faint">If something is missing (PIN code, HSN code), the download shows what to add.</p>
+            </Panel>
+          )}
           {profit && (
             <Panel title="Profit on this bill">
               <dl className="flex flex-col gap-1 text-sm">

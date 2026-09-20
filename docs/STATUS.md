@@ -45,7 +45,7 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 ## Last updated
 
-2026-09-20 · session: GST-optional + Saudi build deployed live; Settings, users, roles & field visibility built; **multiple companies built (64 tests pass) — Settings + multi-company build not yet deployed**
+2026-09-21 · session: full feature list built (119 tests pass). Settings, users, roles and multi-company are LIVE; the rest (PDF, Excel, accounting, messaging, price lists, etc.) is committed but NOT yet deployed
 
 ---
 
@@ -207,47 +207,49 @@ Verified = automated test passes, or manually clicked through in the dev server.
   clearance/reporting — needs onboarding certificates); Arabic/bilingual invoices and RTL screens (invoice PDF is
   not built yet — build it bilingual); Hijri dates; zakat reports. Update migration: `drizzle/0001_country_and_optional_state.sql`.
 
-## Roadmap: new feature list (planned 2026-09-20, nothing below is built yet)
+## Feature list from the owner (Vyapar paid-plan features) — built 2026-09-20/21
 
-Source: owner's feature list (Vyapar paid-plan features). Sizes: S = a day or less, M = a few days, L = a week or more.
-Order matters: later items depend on earlier ones.
+All items below are **built, tested (119 automated tests) and pushed; not yet deployed to the server** unless a line says so.
 
-**Phase A: foundations (others depend on these)**
-1. Invoice PDF (A4, bilingual for Saudi) + public share page `/share/[token]` (L) — needed by WhatsApp, reminders, e-way bill print
-2. Excel import/export routes + party/item import (M)
-3. Soft delete + "Deleted transactions" bin with restore, unlimited (M) — change `deleteVoucher` to mark deleted + reverse ledgers; audit already keeps before-snapshot
-4. Notification engine: outbox table + scheduled runner (systemd timer) + channels (WhatsApp link/API, email SMTP) (M)
+| Feature | Status | Where |
+|---|---|---|
+| Sync across devices | Already true (one cloud DB) | — |
+| Multiple companies | Built + deployed | header switcher, Settings → Companies |
+| Invoice PDF, print, download, public share page | Built | `src/server/pdf/`, `/api/vouchers/[id]/pdf`, `/share/[token]` |
+| Excel import/export (parties, items, bills, statements) | Built | `src/server/excel.ts`, `imports.ts`, `/parties/import`, `/items/import` |
+| Bulk update of items | Built (export → edit → import; blanks unchanged) | `/items/import` |
+| Restore deleted transactions (unlimited) | Built | soft delete + `/deleted` (`vouchers.restore`) |
+| Multiple prices per item, per-party rates | Built | Settings → Price lists; item page; party page (`src/lib/pricing.ts`) |
+| Credit limit | Built (off / warn / block) | Settings → Billing |
+| Combine orders/challans into one sale | Built | `/sales/combine`, `voucher_sources` |
+| Custom fields for items | Built (forms, Excel, printed invoices) | Settings → Item fields |
+| Profit on invoice, bill-wise & party-wise profit | Built (`see.profit`) | `/reports/profit` |
+| Item batch and serial report | Built | `/reports/batches`, `/reports/serials` |
+| Accounting module (chart of accounts, journals, ledgers, trial balance, balance sheet) | Built | `/accounting`, `src/lib/gl.ts`, `src/server/gl.ts` |
+| Fixed assets (depreciation, sale/scrap) | Built | `/accounting/assets` |
+| Expenses with input tax credit | Built | tick box on expense form; tax report includes claimable expenses |
+| TCS / TDS on bills (India) | Built (turn on in Settings → Billing) | bill form, `/reports/tds-tcs` |
+| E-way bill | Built as a JSON file to upload on the GST portal (no live API) | bill page → E-way bill panel, `src/lib/eway.ts` |
+| WhatsApp / email sending | Built engine; **works only after keys are set on the server** | `src/server/notify/`, Settings → Messages |
+| Payment reminders (automatic) | Built; needs the scheduler (below) | Settings → Messages |
+| Message to self / message to party on change | Built | Settings → Messages |
+| Service reminders | Built | item field "service reminder", `/services` |
+| Remove ads from invoices | Not applicable | — |
 
-**Phase B: sales & inventory features**
-5. Multiple price lists per item + per-party rates/discounts (M)  (covers "multiple pricing" and "different rates for each party")
-6. Bulk item update (grid edit + Excel round trip) (M)
-7. Credit-limit enforcement on sales (warn/block, override by permission) — field already exists (S)
-8. Combine many sales orders / challans into one sale (partial quantities tracked via a link table) (M)
-9. Custom fields for items (owner defines text/number/date fields; show on forms, optionally invoice) (M)
-10. Item batch & serial report (data model exists: `trackBatches`, `trackSerials`) (S)
-11. Profit on invoice + billwise P&L + partywise P&L, new permission `see.profit` (M)
+### To switch messaging and reminders on (server side, once)
+Add to `/opt/billing/.env`, then `sudo billing deploy` (or restart the app): `CRON_SECRET=<long random>`;
+for WhatsApp `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` (and optionally `WHATSAPP_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANG`);
+for email `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`. Install the timer:
+copy `deploy/server/systemd/billing-notify.timer` to `/etc/systemd/system/`, `systemctl enable --now billing-notify.timer`.
+Without WhatsApp keys, messages wait as "Tap to send" in Settings → Messages (wa.me links) — nothing is lost.
 
-**Phase C: accounting**
-12. General ledger: chart of accounts, automatic double-entry posting per voucher, manual journal, trial balance, ledger report (L)
-13. Balance sheet (needs 12) (M)
-14. Expenses with input tax credit (tax lines on expenses, feeds tax report; India GST ITC / Saudi input VAT) (M)
-15. Fixed assets: register, depreciation (straight-line / written-down), disposal, journal posting (needs 12) (L)
-
-**Phase D: messaging (needs A1 + A4; WhatsApp needs Meta Business account)**
-16. WhatsApp Connect (send invoices/statements; Business Cloud API) (L)
-17. Automated payment reminders for overdue bills (M)
-18. Message to self on each transaction; message to party when a transaction is edited/cancelled (S each)
-19. Service reminders (per sold service item: next-due date, upcoming list, notify) (M)
-
-**Phase E: India-only (only if the business is GST-registered in India)**
-20. TCS on invoices and TDS on invoices/expenses (rates, ledger postings, reports) (M)
-21. E-way bill: first export the JSON for the GST portal, later direct API via a GSP (L)
-
-**Decision items**
-- Multiple companies: current design is single business (vouchers have `firmId`, but parties/items/accounts are shared). Options: true multi-company (firm switcher; `firmId` on every master + report; L/XL) or one separate installation per company (no code, more servers). Decide only if a second legal entity exists.
-- Sync across devices: already true (single cloud database). Optional later: installable web app (PWA).
-- Remove ads on invoices: not applicable (no ads in this app).
-- Bigger server recommended before Phase D (schedulers + PDF + WhatsApp are heavier than the ~1 GB shared host).
+### Known limits of the new features
+- Accounting uses the periodic stock method: stock on hand is valued from stock records and added on the balance sheet, not held in a ledger account. Rounding differences go to a "Round off" account.
+- E-way bill: file for portal upload only; no direct GSP/API generation.
+- WhatsApp Business API needs a Meta-verified number; business-initiated messages need an approved template.
+- TDS is taken on the amount before tax; TCS on amount plus tax. Confirm with the accountant.
+- Arabic / bilingual invoice text and ZATCA Phase 2 are still not built.
+- Multi-company region race (see "Multiple companies") is avoided in PDFs/share pages (formatted in one synchronous block) but still exists for on-screen formatting.
 
 ## Not started
 
