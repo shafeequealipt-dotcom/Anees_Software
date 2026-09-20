@@ -20,6 +20,8 @@ export const metadata = { title: "Party" };
 
 export default async function PartyPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ from?: string; to?: string }> }) {
   const user = await requireUser();
+  const seeBalance = can(user, "see.partyBalance");
+  const seeContact = can(user, "see.partyContact");
   const { id } = await params;
   const sp = await searchParams;
   const db = await getDb();
@@ -50,9 +52,11 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
           </span>
         }
         subtitle={
-          <span>
-            Balance: <PartyBalance paise={balance} />
-          </span>
+          seeBalance ? (
+            <span>
+              Balance: <PartyBalance paise={balance} />
+            </span>
+          ) : undefined
         }
         actions={
           <>
@@ -60,8 +64,8 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
             {p.kind !== "customer" && <LinkButton size="sm" href={`/purchases/new?party=${p.id}`}>New purchase</LinkButton>}
             <LinkButton size="sm" href={`/payments-in/new?party=${p.id}`}>Receive payment</LinkButton>
             <LinkButton size="sm" href={`/payments-out/new?party=${p.id}`}>Make payment</LinkButton>
-            {balance > 0 && p.phone && <WhatsAppButton phone={p.phone} text={reminder} />}
-            {can(user.role, "masters.edit") && <LinkButton size="sm" href={`/parties/${p.id}/edit`}>Edit</LinkButton>}
+            {seeBalance && seeContact && balance > 0 && p.phone && <WhatsAppButton phone={p.phone} text={reminder} />}
+            {can(user, "masters.edit") && <LinkButton size="sm" href={`/parties/${p.id}/edit`}>Edit</LinkButton>}
           </>
         }
       />
@@ -71,24 +75,24 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
           <Panel title="Details">
             <dl className="flex flex-col gap-2 text-sm">
               <Detail k="Type" v={p.kind === "both" ? "Customer & supplier" : p.kind === "customer" ? "Customer" : "Supplier"} />
-              {p.phone && <Detail k="Phone" v={<a className="text-brand-600" href={`tel:${p.phone}`}>{p.phone}</a>} />}
-              {p.email && <Detail k="Email" v={p.email} />}
-              {p.gstin && <Detail k={region().taxIdLabel} v={<span className="font-mono">{p.gstin}</span>} />}
-              {region().usesStates && p.stateCode && <Detail k="State" v={`${p.stateCode} – ${stateName(p.stateCode)}`} />}
+              {seeContact && p.phone && <Detail k="Phone" v={<a className="text-brand-600" href={`tel:${p.phone}`}>{p.phone}</a>} />}
+              {seeContact && p.email && <Detail k="Email" v={p.email} />}
+              {seeContact && p.gstin && <Detail k={region().taxIdLabel} v={<span className="font-mono">{p.gstin}</span>} />}
+              {seeContact && region().usesStates && p.stateCode && <Detail k="State" v={`${p.stateCode} – ${stateName(p.stateCode)}`} />}
               {group && <Detail k="Group" v={group.name} />}
               {p.creditDays != null && <Detail k="Credit period" v={`${p.creditDays} days`} />}
-              {p.creditLimitPaise != null && <Detail k="Credit limit" v={<Money paise={p.creditLimitPaise} />} />}
-              {p.billingAddress && <Detail k="Billing address" v={<span className="whitespace-pre-line">{p.billingAddress}</span>} />}
-              {p.shippingAddress && <Detail k="Shipping address" v={<span className="whitespace-pre-line">{p.shippingAddress}</span>} />}
+              {seeBalance && p.creditLimitPaise != null && <Detail k="Credit limit" v={<Money paise={p.creditLimitPaise} />} />}
+              {seeContact && p.billingAddress && <Detail k="Billing address" v={<span className="whitespace-pre-line">{p.billingAddress}</span>} />}
+              {seeContact && p.shippingAddress && <Detail k="Shipping address" v={<span className="whitespace-pre-line">{p.shippingAddress}</span>} />}
               {p.notes && <Detail k="Notes" v={<span className="whitespace-pre-line">{p.notes}</span>} />}
             </dl>
-            {can(user.role, "masters.delete") && (
+            {can(user, "masters.delete") && (
               <div className="mt-3 border-t border-line pt-2">
                 <DeleteMasterButton kind="party" id={p.id} name={p.name} />
               </div>
             )}
           </Panel>
-          {openBills.length > 0 && (
+          {seeBalance && openBills.length > 0 && (
             <Panel title="Unpaid bills" padded={false}>
               <ul className="divide-y divide-line text-sm">
                 {openBills.map((b) => (
@@ -106,6 +110,11 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
           )}
         </div>
 
+        {!seeBalance ? (
+          <Panel title="Statement">
+            <p className="text-sm text-muted">Your role doesn't include seeing party balances and statements.</p>
+          </Panel>
+        ) : (
         <Panel
           title={`Statement · ${formatDate(from)} – ${formatDate(to)}`}
           padded={false}
@@ -168,6 +177,7 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
             </tbody>
           </Table>
         </Panel>
+        )}
       </div>
     </>
   );

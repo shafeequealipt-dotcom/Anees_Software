@@ -519,12 +519,18 @@ export async function taxReport(db: DB, from: string, to: string, side: "outward
 
 // ─── Global search ───────────────────────────────────────────────────────────
 
-export async function globalSearch(db: DB, q: string) {
+export async function globalSearch(db: DB, q: string, opts: { partyContact?: boolean } = {}) {
+  const contact = opts.partyContact ?? true;
   const term = q.trim().toLowerCase();
   if (term.length < 2) return { parties: [], items: [], vouchers: [] };
   const like = `%${term}%`;
   const [p, i, v] = await Promise.all([
-    rows<{ id: number; name: string; phone: string | null }>(db, sql`select id, name, phone from parties where lower(name) like ${like} or coalesce(phone,'') like ${like} or lower(coalesce(gstin,'')) like ${like} order by lower(name) limit 8`),
+    rows<{ id: number; name: string; phone: string | null }>(
+      db,
+      contact
+        ? sql`select id, name, phone from parties where lower(name) like ${like} or coalesce(phone,'') like ${like} or lower(coalesce(gstin,'')) like ${like} order by lower(name) limit 8`
+        : sql`select id, name, null::text as phone from parties where lower(name) like ${like} order by lower(name) limit 8`,
+    ),
     rows<{ id: number; name: string; code: string | null }>(db, sql`select id, name, code from items where lower(name) like ${like} or lower(coalesce(code,'')) like ${like} order by lower(name) limit 8`),
     rows<{ id: number; type: VoucherType; prefix: string; number: number; date: string; party_name: string | null; total_paise: number }>(
       db,

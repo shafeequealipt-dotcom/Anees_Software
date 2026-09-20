@@ -42,8 +42,10 @@ export function ItemForm({
   categories: initialCategories,
   units: initialUnits,
   taxRates,
+  hidePurchase,
 }: {
   initial?: ItemFormValue;
+  hidePurchase?: boolean;
   categories: { id: number; name: string }[];
   units: { id: number; name: string; code: string }[];
   taxRates: { id: number; name: string; gstBp: number }[];
@@ -196,14 +198,16 @@ export function ItemForm({
             </label>
           </div>
         </Field>
-        <Field label={`Purchase price (${region().currencyCode})`} error={err("purchasePricePaise")}>
-          <div className="flex items-center gap-2">
-            <Input value={v.purchasePrice} onChange={(e) => set("purchasePrice", e.target.value)} inputMode="decimal" className="num" />
-            <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
-              <input type="checkbox" checked={v.purchaseIncl} onChange={(e) => set("purchaseIncl", e.target.checked)} className="accent-brand-600" /> incl. tax
-            </label>
-          </div>
-        </Field>
+        {!hidePurchase && (
+          <Field label={`Purchase price (${region().currencyCode})`} error={err("purchasePricePaise")}>
+            <div className="flex items-center gap-2">
+              <Input value={v.purchasePrice} onChange={(e) => set("purchasePrice", e.target.value)} inputMode="decimal" className="num" />
+              <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
+                <input type="checkbox" checked={v.purchaseIncl} onChange={(e) => set("purchaseIncl", e.target.checked)} className="accent-brand-600" /> incl. tax
+              </label>
+            </div>
+          </Field>
+        )}
         <Field label={`MRP (${region().currencyCode})`} hint="Optional, shown on some print layouts.">
           <Input value={v.mrp} onChange={(e) => set("mrp", e.target.value)} inputMode="decimal" className="num" />
         </Field>
@@ -244,9 +248,9 @@ export function ItemForm({
             <Field label="Opening stock" hint="Quantity you had before starting to use this app.">
               <Input value={v.openingQty} onChange={(e) => set("openingQty", e.target.value)} inputMode="decimal" className="num" />
             </Field>
-            <Field label={`Opening stock cost/unit (${region().currencyCode})`}>
+            {!hidePurchase && (<Field label={`Opening stock cost/unit (${region().currencyCode})`}>
               <Input value={v.openingRate} onChange={(e) => set("openingRate", e.target.value)} inputMode="decimal" className="num" />
-            </Field>
+            </Field>)}
             <Field label="As of date" hint="Leave empty for 1 April of this financial year.">
               <Input type="date" value={v.openingDate} onChange={(e) => set("openingDate", e.target.value)} />
             </Field>

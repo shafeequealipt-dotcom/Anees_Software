@@ -48,7 +48,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
         actions={
           <>
             {isGoods && <LinkButton size="sm" href={`/stock-adjustments/new?item=${item.id}`}>Adjust stock</LinkButton>}
-            {can(user.role, "masters.edit") && <LinkButton size="sm" href={`/items/${item.id}/edit`}>Edit</LinkButton>}
+            {can(user, "masters.edit") && <LinkButton size="sm" href={`/items/${item.id}/edit`}>Edit</LinkButton>}
           </>
         }
       />
@@ -59,7 +59,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
             <dl className="flex flex-col gap-2 text-sm">
               {region().usesHsn && item.hsn && <Detail k="HSN / SAC" v={item.hsn} />}
               <Detail k="Sale price" v={<Money paise={item.salePricePaise} />} hint={item.salePriceIncludesTax ? "incl. tax" : "excl. tax"} />
-              {can(user.role, "prices.seePurchase") && <Detail k="Purchase price" v={<Money paise={item.purchasePricePaise} />} hint={item.purchasePriceIncludesTax ? "incl. tax" : "excl. tax"} />}
+              {can(user, "see.purchasePrice") && <Detail k="Purchase price" v={<Money paise={item.purchasePricePaise} />} hint={item.purchasePriceIncludesTax ? "incl. tax" : "excl. tax"} />}
               {item.mrpPaise ? <Detail k="MRP" v={<Money paise={item.mrpPaise} />} /> : null}
               {tax && <Detail k="Tax rate" v={formatPercent(tax.gstBp)} />}
               {unit && <Detail k="Unit" v={altUnit ? `${unit.name} (also ${altUnit.name}, ${formatQty(item.altUnitFactorMilli ?? 0)}:1)` : unit.name} />}
@@ -69,7 +69,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
               {item.trackSerials && <Detail k="Tracking" v="Serial numbers" />}
               {item.description && <Detail k="Description" v={<span className="whitespace-pre-line">{item.description}</span>} />}
             </dl>
-            {can(user.role, "masters.delete") && (
+            {can(user, "masters.delete") && (
               <div className="mt-3 border-t border-line pt-2">
                 <DeleteMasterButton kind="item" id={item.id} name={item.name} />
               </div>
@@ -81,9 +81,11 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                 {formatQty(mv.closingMilli)} {unit?.code}
               </div>
               {low && <p className="mt-1 text-xs text-warn">At or below the low-stock alert.</p>}
-              <div className="mt-2 text-sm text-muted">
-                Value at cost: <Money paise={Math.max(0, mv.closingMilli) * item.purchasePricePaise / 1000} />
-              </div>
+              {can(user, "see.stockValue") && (
+                <div className="mt-2 text-sm text-muted">
+                  Value at cost: <Money paise={Math.max(0, mv.closingMilli) * item.purchasePricePaise / 1000} />
+                </div>
+              )}
             </Panel>
           )}
         </div>

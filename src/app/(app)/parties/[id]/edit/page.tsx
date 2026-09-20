@@ -5,11 +5,14 @@ import { PageHeader } from "@/components/ui";
 import { getDb } from "@/db";
 import { parties, partyGroups } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 
 export const metadata = { title: "Edit party" };
 
 export default async function EditPartyPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser("masters.edit");
+  const user = await requireUser("masters.edit");
+  const hideContact = !can(user, "see.partyContact");
+  const hideBalance = !can(user, "see.partyBalance");
   const { id } = await params;
   const db = await getDb();
   const [p] = await db.select().from(parties).where(eq(parties.id, Number(id) || 0));
@@ -18,7 +21,16 @@ export default async function EditPartyPage({ params }: { params: Promise<{ id: 
   return (
     <>
       <PageHeader title={`Edit ${p.name}`} back={{ href: `/parties/${p.id}`, label: p.name }} />
-      <PartyForm initial={p} groups={groups} />
+      <PartyForm
+        initial={{
+          ...p,
+          ...(hideContact ? { phone: null, email: null, gstin: null, stateCode: null, billingAddress: null, shippingAddress: null } : {}),
+          ...(hideBalance ? { openingBalancePaise: 0, openingDate: null, creditLimitPaise: null } : {}),
+        }}
+        groups={groups}
+        hideContact={hideContact}
+        hideBalance={hideBalance}
+      />
     </>
   );
 }

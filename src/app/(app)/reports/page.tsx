@@ -39,7 +39,7 @@ const GROUPS: { title: string; items: { href: string; label: string; hint: strin
 
 export default async function ReportsPage() {
   const user = await requireUser("reports.sales");
-  const seeAll = can(user.role, "reports.all");
+  const seeAll = can(user, "reports.all");
 
   return (
     <>

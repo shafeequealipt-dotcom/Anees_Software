@@ -15,6 +15,13 @@
       "when": 1789793268081,
       "tag": "0001_country_and_optional_state",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789893388306,
+      "tag": "0002_roles_and_permissions",
+      "breakpoints": true
     }
   ]
 }

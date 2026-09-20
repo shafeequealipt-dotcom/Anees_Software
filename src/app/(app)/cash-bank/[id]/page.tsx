@@ -44,7 +44,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
         actions={
           <>
             <LinkButton size="sm" href={`/transfers/new`}>Transfer</LinkButton>
-            {can(user.role, "money.edit") && <LinkButton size="sm" href={`/cash-bank/${a.id}/edit`}>Edit</LinkButton>}
+            {can(user, "money.edit") && <LinkButton size="sm" href={`/cash-bank/${a.id}/edit`}>Edit</LinkButton>}
           </>
         }
       />

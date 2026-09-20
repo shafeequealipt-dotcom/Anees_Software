@@ -26,11 +26,11 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
   try {
     const user = await assertUser(input.id ? "vouchers.edit" : "vouchers.create");
     const info = VOUCHER_INFO[input.type];
-    if (["money_adjustment", "money_transfer", "other_income"].includes(input.type) && !can(user.role, "money.edit")) {
+    if (["money_adjustment", "money_transfer", "other_income"].includes(input.type) && !can(user, "money.edit")) {
       throw new AuthError("You don't have permission to record this.");
     }
     const db = await getDb();
-    if (input.id && !can(user.role, "vouchers.editOld")) {
+    if (input.id && !can(user, "vouchers.editOld")) {
       const [v] = await db.select({ createdAt: vouchers.createdAt }).from(vouchers).where(eq(vouchers.id, input.id));
       const created = v ? new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(v.createdAt) : null;
       if (created && created !== todayIST()) throw new AuthError("Only the owner or accountant can edit entries from earlier days.");
@@ -69,7 +69,7 @@ export async function deleteVoucherAction(id: number): Promise<ActionResult> {
 }
 
 export async function openBillsAction(partyId: number, type: VoucherInput["type"], excludeVoucherId?: number) {
-  await assertUser();
+  const user = await assertUser();
   const types = SETTLES[type];
   if (!types) return { bills: [], balancePaise: 0 };
   const db = await getDb();
@@ -80,7 +80,7 @@ export async function openBillsAction(partyId: number, type: VoucherInput["type"
     .where(and(eq(partyLedger.partyId, partyId), excludeVoucherId ? sql`coalesce(${partyLedger.voucherId}, 0) <> ${excludeVoucherId}` : sql`true`));
   return {
     bills: bills.map((b) => ({ id: b.id, type: b.type, number: `${b.prefix}${b.number}`, date: b.date, dueDate: b.dueDate, totalPaise: b.totalPaise, balancePaise: b.balancePaise })),
-    balancePaise: Number(bal.b),
+    balancePaise: can(user, "see.partyBalance") ? Number(bal.b) : 0,
   };
 }
 

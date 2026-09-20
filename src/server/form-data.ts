@@ -67,7 +67,13 @@ export async function loadItemOptions(db: DB): Promise<ItemOpt[]> {
   );
 }
 
-export async function loadVoucherFormData(db: DB, type: VoucherType, opts: { id?: number; fromId?: number; partyId?: number }) {
+export interface Visibility {
+  balance: boolean;
+  contact: boolean;
+  purchase: boolean;
+}
+
+export async function loadVoucherFormData(db: DB, type: VoucherType, opts: { id?: number; fromId?: number; partyId?: number }, see: Visibility) {
   const info = VOUCHER_INFO[type];
   const [firm] = await db.select().from(firms).where(eq(firms.isDefault, true));
   const settings = await getSettings(db);
@@ -103,8 +109,9 @@ export async function loadVoucherFormData(db: DB, type: VoucherType, opts: { id?
       quotationTerms: settings.quotationTerms,
     },
     nextNumber: next.n,
-    parties: partyOptions,
-    items: itemOptions,
+    see,
+    parties: partyOptions.map((p) => ({ ...p, phone: see.contact ? p.phone : null, balancePaise: see.balance ? p.balancePaise : 0 })),
+    items: itemOptions.map((i) => ({ ...i, purchasePricePaise: see.purchase ? i.purchasePricePaise : 0 })),
     taxes: taxes.map((t) => ({ id: t.id, name: t.name, gstBp: t.gstBp, cessBp: t.cessBp })),
     accounts: accountList,
     categories: categories.map((c) => ({ id: c.id, name: c.name })),

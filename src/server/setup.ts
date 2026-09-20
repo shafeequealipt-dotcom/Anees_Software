@@ -1,8 +1,8 @@
 import "server-only";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
-import { accounts, firms, ledgerCategories, taxRates, units, users } from "@/db/schema";
+import { accounts, firms, ledgerCategories, roles, taxRates, units, users } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { hashPassword, passwordProblem } from "@/lib/auth";
 import { checkGstin } from "@/lib/gst/gstin";
@@ -70,9 +70,10 @@ export async function runFirstSetup(db: DB, raw: z.input<typeof setupSchema>) {
       email: input.email,
       isDefault: true,
     });
+    const [ownerRole] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.isOwner, true));
     const [owner] = await tx
       .insert(users)
-      .values({ name: input.ownerName, email: input.email, passwordHash, role: "owner" })
+      .values({ name: input.ownerName, email: input.email, passwordHash, roleId: ownerRole.id })
       .returning({ id: users.id });
 
     await seedDefaults(tx as unknown as DB, input.country);

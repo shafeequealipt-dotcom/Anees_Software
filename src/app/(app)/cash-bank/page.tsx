@@ -31,7 +31,7 @@ export default async function CashBankPage() {
         subtitle="Every account's balance is the sum of its transactions — nothing is entered by hand."
         actions={
           <>
-            {can(user.role, "money.edit") && (
+            {can(user, "money.edit") && (
               <>
                 <LinkButton href="/transfers/new" size="md">Transfer money</LinkButton>
                 <LinkButton href="/cash-adjustments/new" size="md">Adjust balance</LinkButton>

@@ -5,13 +5,15 @@ import { Badge, Empty, LinkButton, Money, PageHeader, Panel, Table, td, th } fro
 import { getDb } from "@/db";
 import { itemCategories } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { formatQty } from "@/lib/money";
 import { stockSummary } from "@/server/reports";
 
 export const metadata = { title: "Items & stock" };
 
 export default async function ItemsPage({ searchParams }: { searchParams: Promise<{ q?: string; show?: string; category?: string }> }) {
-  await requireUser();
+  const user = await requireUser();
+  const seeValue = can(user, "see.stockValue");
   const sp = await searchParams;
   const db = await getDb();
   const categories = await db.select().from(itemCategories).orderBy(asc(itemCategories.name));
@@ -61,10 +63,12 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
           <div className="text-xs text-muted">Items shown</div>
           <div className="font-semibold">{shown.length}</div>
         </div>
-        <div className="rounded-lg border border-line bg-panel px-3 py-2">
-          <div className="text-xs text-muted">Stock value (at cost)</div>
-          <Money paise={stockValue} className="font-semibold" />
-        </div>
+        {seeValue && (
+          <div className="rounded-lg border border-line bg-panel px-3 py-2">
+            <div className="text-xs text-muted">Stock value (at cost)</div>
+            <Money paise={stockValue} className="font-semibold" />
+          </div>
+        )}
       </div>
       <Panel padded={false}>
         {shown.length === 0 ? (
@@ -79,7 +83,7 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
                 <th className={th}>Category</th>
                 <th className={th + " text-right"}>Sale price</th>
                 <th className={th + " text-right"}>Stock</th>
-                <th className={th + " text-right"}>Stock value</th>
+                {seeValue && <th className={th + " text-right"}>Stock value</th>}
               </tr>
             </thead>
             <tbody>
@@ -113,9 +117,11 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
                       </div>
                     )}
                   </td>
-                  <td className={td + " text-right"}>
-                    <Money paise={i.stock_value_paise} />
-                  </td>
+                  {seeValue && (
+                    <td className={td + " text-right"}>
+                      <Money paise={i.stock_value_paise} />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

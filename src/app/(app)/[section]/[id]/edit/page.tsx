@@ -4,6 +4,7 @@ import { VoucherForm } from "@/components/voucher-form";
 import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { typeFromPath, VOUCHER_INFO } from "@/lib/voucher-types";
+import { can } from "@/lib/permissions";
 import { loadVoucherFormData } from "@/server/form-data";
 
 export const metadata = { title: "Edit" };
@@ -12,9 +13,9 @@ export default async function EditVoucherPage({ params }: { params: Promise<{ se
   const { section, id } = await params;
   const type = typeFromPath(section);
   if (!type || !Number(id)) notFound();
-  await requireUser("vouchers.edit");
+  const user = await requireUser("vouchers.edit");
   const db = await getDb();
-  const data = await loadVoucherFormData(db, type, { id: Number(id) });
+  const data = await loadVoucherFormData(db, type, { id: Number(id) }, { balance: can(user, "see.partyBalance"), contact: can(user, "see.partyContact"), purchase: can(user, "see.purchasePrice") });
   if (!data.existing) notFound();
   if (data.existing.voucher.type !== type) redirect(`${VOUCHER_INFO[data.existing.voucher.type].path}/${id}/edit`);
   if (data.existing.voucher.status === "cancelled") redirect(`${VOUCHER_INFO[type].path}/${id}`);

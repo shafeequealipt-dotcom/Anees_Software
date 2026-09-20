@@ -4,7 +4,8 @@ import { Nav, type NavGroup } from "@/components/nav";
 import { GlobalSearch } from "@/components/search";
 import { buttonClass } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { can, ROLE_LABELS } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
+import { ChangePasswordForm } from "@/components/change-password-form";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/parties", label: "Parties" },
         { href: "/items", label: "Items & stock" },
         { href: "/expenses", label: "Expenses" },
-        ...(can(user.role, "money.view")
+        ...(can(user, "money.view")
           ? [
               { href: "/other-income", label: "Other income" },
               { href: "/cash-bank", label: "Cash & bank" },
@@ -51,7 +52,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     {
       items: [
         { href: "/reports", label: "Reports" },
-        ...(can(user.role, "settings.edit") ? [{ href: "/settings", label: "Settings" }] : []),
+        ...(can(user, "settings.edit") || can(user, "users.manage") || can(user, "audit.view") ? [{ href: "/settings", label: "Settings" }] : []),
       ],
     },
   ];
@@ -88,7 +89,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 <div className="border-b border-line px-3 py-2">
                   <div className="text-sm font-medium">{user.name}</div>
                   <div className="text-xs text-muted">
-                    {user.email} · {ROLE_LABELS[user.role]}
+                    {user.email} · {user.roleName}
                   </div>
                 </div>
                 <Link href="/account" className="block px-3 py-2 text-sm hover:bg-ground">
@@ -104,7 +105,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{user.mustChangePassword ? <ChangePasswordForm forced /> : children}</div>
         </main>
       </div>
     </div>

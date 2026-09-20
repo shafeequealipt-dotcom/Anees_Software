@@ -30,7 +30,17 @@ export interface PartyFormValue {
 
 const r = (p: number | null | undefined) => (p ? String(Math.abs(p) / 100) : "");
 
-export function PartyForm({ initial, groups: initialGroups }: { initial?: PartyFormValue; groups: { id: number; name: string }[] }) {
+export function PartyForm({
+  initial,
+  groups: initialGroups,
+  hideContact,
+  hideBalance,
+}: {
+  initial?: PartyFormValue;
+  groups: { id: number; name: string }[];
+  hideContact?: boolean;
+  hideBalance?: boolean;
+}) {
   const router = useRouter();
   const [v, setV] = useState({
     kind: initial?.kind ?? "customer",
@@ -125,6 +135,8 @@ export function PartyForm({ initial, groups: initialGroups }: { initial?: PartyF
             </Button>
           </div>
         </Field>
+        {!hideContact && (
+          <>
         <Field label="Phone" error={err("phone")}>
           <Input type="tel" value={v.phone} onChange={(e) => set("phone", e.target.value)} />
         </Field>
@@ -162,10 +174,14 @@ export function PartyForm({ initial, groups: initialGroups }: { initial?: PartyF
           <Checkbox label="Shipping address is the same" checked={v.sameShipping} onChange={(e) => set("sameShipping", e.target.checked)} />
           {!v.sameShipping && <Textarea className="mt-2" rows={2} value={v.shippingAddress} onChange={(e) => set("shippingAddress", e.target.value)} placeholder="Shipping address" />}
         </div>
+          </>
+        )}
       </div>
 
       <div className="grid gap-4 rounded-lg border border-line bg-panel p-4 sm:grid-cols-2">
         <h2 className="text-sm font-semibold sm:col-span-2">Balance & credit</h2>
+        {!hideBalance && (
+          <>
         <Field label={`Opening balance (${region().currencyCode})`} hint="What was pending before you started using this app.">
           <div className="flex gap-2">
             <Input value={v.opening} onChange={(e) => set("opening", e.target.value)} inputMode="decimal" className="num" placeholder="0" />
@@ -184,6 +200,8 @@ export function PartyForm({ initial, groups: initialGroups }: { initial?: PartyF
         <Field label={`Credit limit (${region().currencyCode})`}>
           <Input value={v.creditLimit} onChange={(e) => set("creditLimit", e.target.value)} inputMode="decimal" className="num" />
         </Field>
+          </>
+        )}
         <Field label="Notes" className="sm:col-span-2">
           <Textarea rows={2} value={v.notes} onChange={(e) => set("notes", e.target.value)} />
         </Field>

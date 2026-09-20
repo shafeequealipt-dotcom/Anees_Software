@@ -6,8 +6,8 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import * as OTPAuth from "otpauth";
 import { getDb } from "@/db";
-import { loginAttempts, sessions, users } from "@/db/schema";
-import { can, type Permission, type Role } from "./permissions";
+import { loginAttempts, roles, sessions, users } from "@/db/schema";
+import { can, type Permission } from "./permissions";
 import { ensureRegion } from "@/server/region";
 
 const COOKIE = "sid";
@@ -21,7 +21,10 @@ export interface CurrentUser {
   id: number;
   name: string;
   email: string;
-  role: Role;
+  roleId: number;
+  roleName: string;
+  isOwner: boolean;
+  permissions: string[];
   totpEnabled: boolean;
   mustChangePassword: boolean;
   sessionId: string;
@@ -140,9 +143,10 @@ async function loadSession(): Promise<{ user: CurrentUser; mfaPassed: boolean } 
   const db = await getDb();
   const id = sha256(token);
   const [row] = await db
-    .select({ s: sessions, u: users })
+    .select({ s: sessions, u: users, r: roles })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
+    .innerJoin(roles, eq(roles.id, users.roleId))
     .where(eq(sessions.id, id));
   if (!row) return null;
   const now = Date.now();
@@ -160,7 +164,10 @@ async function loadSession(): Promise<{ user: CurrentUser; mfaPassed: boolean } 
       id: row.u.id,
       name: row.u.name,
       email: row.u.email,
-      role: row.u.role,
+      roleId: row.r.id,
+      roleName: row.r.name,
+      isOwner: row.r.isOwner,
+      permissions: row.r.permissions,
       totpEnabled: row.u.totpEnabled,
       mustChangePassword: row.u.mustChangePassword,
       sessionId: id,
@@ -194,7 +201,7 @@ export async function requireUser(permission?: Permission): Promise<CurrentUser>
     if (await pendingMfaUser()) redirect("/login/code");
     redirect("/login");
   }
-  if (permission && !can(user.role, permission)) redirect("/?denied=1");
+  if (permission && !can(user, permission)) redirect("/?denied=1");
   await ensureRegion();
   return user;
 }
@@ -203,7 +210,8 @@ export async function requireUser(permission?: Permission): Promise<CurrentUser>
 export async function assertUser(permission?: Permission): Promise<CurrentUser> {
   const user = await currentUser();
   if (!user) throw new AuthError("Your session has ended. Sign in again.");
-  if (permission && !can(user.role, permission)) throw new AuthError("You don't have permission to do that.");
+  if (user.mustChangePassword) throw new AuthError("Change your temporary password first (open any page to do it).");
+  if (permission && !can(user, permission)) throw new AuthError("You don't have permission to do that.");
   await ensureRegion();
   return user;
 }

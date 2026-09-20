@@ -91,9 +91,9 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
           <VoucherActions
             id={v.id}
             path={info.path}
-            editable={can(user.role, "vouchers.edit")}
-            canCancel={can(user.role, "vouchers.cancel") && info.posts}
-            canDelete={can(user.role, "vouchers.delete")}
+            editable={can(user, "vouchers.edit")}
+            canCancel={can(user, "vouchers.cancel") && info.posts}
+            canDelete={can(user, "vouchers.delete")}
             cancelled={v.status === "cancelled"}
             pdf={info.hasLines || v.type === "payment_in" || v.type === "payment_out"}
             share={info.outward || v.type === "payment_in" ? { phone: v.partyPhone, text: shareText } : undefined}
@@ -350,7 +350,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   {editor ? ` by ${editor.name}` : ""}
                 </div>
               )}
-              {can(user.role, "audit.view") && (
+              {can(user, "audit.view") && (
                 <Link href={`/settings/audit?entity=voucher&id=${v.id}`} className="text-brand-600 hover:underline">
                   See full change history
                 </Link>

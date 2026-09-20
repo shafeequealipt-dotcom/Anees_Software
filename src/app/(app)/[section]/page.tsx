@@ -41,7 +41,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
         title={info.plural}
         actions={
           <>
-            {can(user.role, "reports.sales") && (
+            {can(user, "reports.sales") && (
               <a href={exportHref} className="text-sm text-brand-600 hover:underline">
                 Export to Excel
               </a>

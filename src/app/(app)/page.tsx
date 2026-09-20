@@ -16,7 +16,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const sp = await searchParams;
   const db = await getDb();
   const d = await dashboard(db);
-  const seeMoney = can(user.role, "money.view");
+  const seeMoney = can(user, "money.view");
   const today = todayIST();
 
   // Fill 12 months so the chart has no gaps
@@ -59,8 +59,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="To receive from customers" value={formatINR(d.receivable)} tone="good" href="/parties?show=receivable" />
-        <Stat label="To pay suppliers" value={formatINR(d.payable)} tone="bad" href="/parties?show=payable" />
+        {can(user, "see.partyBalance") && (
+          <>
+            <Stat label="To receive from customers" value={formatINR(d.receivable)} tone="good" href="/parties?show=receivable" />
+            <Stat label="To pay suppliers" value={formatINR(d.payable)} tone="bad" href="/parties?show=payable" />
+          </>
+        )}
         {seeMoney ? (
           <Stat label="Cash & bank balance" value={formatINR(cashTotal)} href="/cash-bank" hint={`${d.money.length} account${d.money.length === 1 ? "" : "s"}`} />
         ) : (

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
-import { users } from "@/db/schema";
+import { roles, users } from "@/db/schema";
 import { createSession } from "@/lib/auth";
 import { DEMO_EMAIL, DEMO_PASSWORD, seedDemo } from "@/server/demo";
 
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   await seedDemo(db);
   const url = new URL(req.url);
   if (url.searchParams.get("login") === "1") {
-    const [owner] = await db.select().from(users).where(eq(users.role, "owner"));
+    const [owner] = await db.select({ id: users.id }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(eq(roles.isOwner, true));
     if (!owner) return new Response("No owner", { status: 500 });
     await createSession(owner.id, true);
     const to = url.searchParams.get("to") ?? "/";

@@ -27,7 +27,6 @@ const milli = (name: string) => bigint(name, { mode: "number" });
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 
-export const userRole = pgEnum("user_role", ["owner", "accountant", "staff"]);
 export const partyKind = pgEnum("party_kind", ["customer", "supplier", "both"]);
 export const itemKind = pgEnum("item_kind", ["goods", "service"]);
 export const accountKind = pgEnum("account_kind", ["cash", "bank"]);
@@ -89,6 +88,18 @@ export const firms = pgTable("firms", {
   updatedAt: updatedAt(),
 });
 
+/** A named set of permissions. The owner role has every permission and cannot be edited. */
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 60 }).notNull().unique(),
+  description: varchar("description", { length: 300 }),
+  permissions: jsonb("permissions").$type<string[]>().notNull().default([]),
+  isOwner: boolean("is_owner").notNull().default(false),
+  /** Built-in roles cannot be deleted. */
+  isSystem: boolean("is_system").notNull().default(false),
+  createdAt: createdAt(),
+});
+
 export const users = pgTable(
   "users",
   {
@@ -97,7 +108,7 @@ export const users = pgTable(
     email: varchar("email", { length: 200 }).notNull(),
     phone: varchar("phone", { length: 30 }),
     passwordHash: text("password_hash").notNull(),
-    role: userRole("role").notNull().default("staff"),
+    roleId: integer("role_id").notNull().references(() => roles.id),
     totpSecret: text("totp_secret"),
     totpEnabled: boolean("totp_enabled").notNull().default(false),
     active: boolean("active").notNull().default(true),

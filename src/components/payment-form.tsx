@@ -120,7 +120,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
               render: (
                 <div className="flex justify-between gap-3">
                   <span>{p.name}</span>
-                  <PartyBalance paise={p.balancePaise} className="text-xs" />
+                  {data.see.balance && <PartyBalance paise={p.balancePaise} className="text-xs" />}
                 </div>
               ),
             }))}
@@ -133,7 +133,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
             placeholder="Search party…"
             autoFocus={!ex}
           />
-          {party && (
+          {party && data.see.balance && (
             <p className="mt-1 text-xs text-muted">
               Current balance: <PartyBalance paise={balance} />
             </p>

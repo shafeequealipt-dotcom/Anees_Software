@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
+import { eq } from "drizzle-orm";
+import { items, parties } from "@/db/schema";
 import { AuthError, assertUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import {
   accountSchema,
   deleteItem,
@@ -35,7 +38,20 @@ function fail(e: unknown): { ok: false; error: string; field?: string } {
 export async function savePartyAction(input: z.input<typeof partySchema>): Promise<Result<{ id: number }>> {
   try {
     const user = await assertUser("masters.edit");
-    const id = await saveParty(await getDb(), input, user.id);
+    const db = await getDb();
+    let data = input;
+    if (input.id) {
+      const [old] = await db.select().from(parties).where(eq(parties.id, input.id));
+      if (old) {
+        if (!can(user, "see.partyContact")) {
+          data = { ...data, phone: old.phone, email: old.email, gstin: old.gstin, pan: old.pan, stateCode: old.stateCode, billingAddress: old.billingAddress, shippingAddress: old.shippingAddress };
+        }
+        if (!can(user, "see.partyBalance")) {
+          data = { ...data, openingBalancePaise: old.openingBalancePaise, openingDate: old.openingDate, creditLimitPaise: old.creditLimitPaise };
+        }
+      }
+    }
+    const id = await saveParty(db, data, user.id);
     revalidatePath("/parties");
     return { ok: true, id };
   } catch (e) {
@@ -66,7 +82,13 @@ export async function savePartyGroupAction(name: string): Promise<Result<{ id: n
 export async function saveItemAction(input: z.input<typeof itemSchema>): Promise<Result<{ id: number }>> {
   try {
     const user = await assertUser("masters.edit");
-    const id = await saveItem(await getDb(), input, user.id);
+    const db = await getDb();
+    let data = input;
+    if (input.id && !can(user, "see.purchasePrice")) {
+      const [old] = await db.select().from(items).where(eq(items.id, input.id));
+      if (old) data = { ...data, purchasePricePaise: old.purchasePricePaise, purchasePriceIncludesTax: old.purchasePriceIncludesTax, openingRatePaise: old.openingRatePaise };
+    }
+    const id = await saveItem(db, data, user.id);
     revalidatePath("/items");
     return { ok: true, id };
   } catch (e) {

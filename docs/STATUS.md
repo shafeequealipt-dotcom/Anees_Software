@@ -45,7 +45,7 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 ## Last updated
 
-2026-09-19 · session: first production deploy to the Oracle server (live at https://billing.dnhcare.co.in)
+2026-09-20 · session: GST-optional + Saudi build deployed live; Settings, users, roles & field visibility built (58 tests pass; deploy of this one is next)
 
 ---
 
@@ -85,8 +85,20 @@ Verified = automated test passes, or manually clicked through in the dev server.
 
 ### Auth & security
 - [x] Sessions (12h, 2h idle timeout), Argon2 passwords, login lockout (5 fails/
-  account, 30 fails/IP), TOTP two-step login, role permissions (owner/accountant/
-  staff) — `src/lib/auth.ts`, `src/lib/permissions.ts`
+  account, 30 fails/IP), TOTP two-step login — `src/lib/auth.ts`
+- [x] **Roles are now data (2026-09-20)**: `roles` table (migration `0002`), each role = a list of ticked
+  permissions; built-in Owner (all, locked), Accountant, Billing staff (editable), plus custom roles.
+  Catalog in `src/lib/permissions.ts` (`PERMISSION_GROUPS`): actions, screens, and **field visibility**
+  (`see.purchasePrice`, `see.stockValue`, `see.partyBalance`, `see.partyContact`). `can(user, key)`.
+  Enforced server-side (data is not sent to the browser when hidden) on: items list/detail/edit/report,
+  parties list/detail/edit, dashboard, voucher & payment forms, global search; hidden fields are preserved
+  on save by the server actions. Bills still carry the party address/GST no. (needed on invoices).
+- [x] **Admin portal (2026-09-20)** `/settings/*` (was 404): Business details, Users (add, edit, role,
+  deactivate, reset password; last-owner and self-lockout guards), Roles & access (permission checklist),
+  Tax rates, Units, Activity log. `/account`: change own password; users with a temporary password are
+  forced to choose their own before anything else (also blocked in server actions).
+  Files: `src/server/admin.ts`, `src/app/actions/admin.ts`, `src/components/{business,user,role,change-password}-form.tsx`,
+  `master-lists.tsx`, `settings-tabs.tsx`, tests `tests/admin.test.ts`
 - [x] Audit log on every create/update/delete/cancel/login — `src/lib/audit.ts`
 
 ### Screens (clicked through in dev server, working)
@@ -197,17 +209,15 @@ feature list each of these maps to.
 - [ ] Item import from Excel
 
 ### Settings
-- [ ] Business details + logo upload
+- [x] Business details, staff users, roles & field visibility, tax rates, units, activity log — DONE 2026-09-20
+- [ ] Logo/signature upload
 - [ ] Invoice appearance settings
-- [ ] Staff users: list, add, role, deactivate, password reset
-- [ ] Tax rates, units, expense/income categories management screens (server
-  functions already exist in `src/server/masters.ts`)
+- [ ] Expense/income categories and item categories management screens
+- [ ] Per-voucher-type numbering prefixes, invoice/quotation terms, other `settings` keys
 - [ ] Backups page (status, manual snapshot trigger, download — owner only)
-- [ ] Audit log viewer (`/settings/audit`, already linked from voucher detail
-  page but doesn't exist yet)
 
 ### My account
-- [ ] Change password
+- [x] Change password (done 2026-09-20)
 - [ ] Turn on/off two-step login (TOTP), shows QR code (`newTotpSecret`,
   `totpUri` already exist in `src/lib/auth.ts`)
 
@@ -215,8 +225,7 @@ feature list each of these maps to.
 - [ ] Read a Vyapar backup file and map it into this schema (design not started)
 
 ### Production readiness
-- [ ] Full production build test (`npm run build`) — not yet run, disk space was
-  the blocker during the build session
+- [x] Production build (`next build`) passes locally (2026-09-20)
 - [ ] **Owner creates their login** at the setup link (`sudo billing setup-link`) — not done yet
 - [ ] **Backups not proven yet.** Needs: owner's `age` public key at `/opt/billing/secrets/backup-recipients.txt`
   (owner keeps the private key), Oracle Object Storage keys + buckets, optional Google Drive. A first

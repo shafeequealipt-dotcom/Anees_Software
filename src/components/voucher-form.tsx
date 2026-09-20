@@ -308,11 +308,11 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               <span>
                 {p.name} <span className="text-xs text-faint">{p.phone}</span>
               </span>
-              {p.balancePaise !== 0 && <PartyBalance paise={p.balancePaise} className="text-xs" />}
+              {data.see.balance && p.balancePaise !== 0 && <PartyBalance paise={p.balancePaise} className="text-xs" />}
             </div>
           ),
         })),
-    [parties, info.partySide, data.type, partyId],
+    [parties, info.partySide, data.type, partyId, data.see.balance],
   );
 
   const itemOptions = useMemo(
@@ -389,9 +389,11 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                   {party.phone && <span>{party.phone}</span>}
                   {party.gstin && <span className="font-mono">{R.taxIdLabel} {party.gstin}</span>}
                   {R.usesStates && party.stateCode && <span>{stateName(party.stateCode)}</span>}
-                  <span>
-                    Balance: <PartyBalance paise={party.balancePaise} />
-                  </span>
+                  {data.see.balance && (
+                    <span>
+                      Balance: <PartyBalance paise={party.balancePaise} />
+                    </span>
+                  )}
                 </div>
               ) : (
                 info.takesPayment &&
