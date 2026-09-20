@@ -4,6 +4,7 @@ import type { DB } from "@/db";
 import type { VoucherType } from "@/db/schema";
 import { nums, rows } from "@/db/query";
 import { addDays, monthRange, todayIST } from "@/lib/dates";
+import { depreciationBetween } from "./gl";
 
 const settleable = sql`v.type in ('sale_invoice','purchase_bill','credit_note','debit_note','expense','other_income')`;
 
@@ -441,11 +442,12 @@ export async function profitAndLoss(db: DB, firmId: number, from: string, to: st
   );
   const openingStock = await stockValueAtStartOf(db, firmId, from);
   const closingStock = await stockValueAt(db, firmId, to);
+  const depreciation = await depreciationBetween(db, firmId, from, to);
   const netSales = t.sales - t.sale_returns;
   const netPurchases = t.purchases - t.purchase_returns;
   const costOfGoodsSold = openingStock + netPurchases - closingStock;
   const grossProfit = netSales - costOfGoodsSold;
-  const netProfit = grossProfit + t.other_income - t.expenses;
+  const netProfit = grossProfit + t.other_income - t.expenses - depreciation;
   return {
     sales: t.sales,
     saleReturns: t.sale_returns,
@@ -461,6 +463,7 @@ export async function profitAndLoss(db: DB, firmId: number, from: string, to: st
     incomeByCategory,
     expenses: t.expenses,
     expenseByCategory,
+    depreciation,
     netProfit,
   };
 }
@@ -500,17 +503,19 @@ export interface TaxRow {
 /** GST collected (sales, less sale returns) or paid (purchases, less purchase returns), by rate. */
 export async function taxReport(db: DB, firmId: number, from: string, to: string, side: "outward" | "inward" = "outward") {
   const [fwd, ret] = side === "outward" ? ["sale_invoice", "credit_note"] : ["purchase_bill", "debit_note"];
+  // Expenses whose tax can be claimed back count as tax paid, alongside purchase bills.
+  const extra = side === "inward" ? sql`or (v.type = 'expense' and v.itc_eligible)` : sql``;
   const rows_ = nums(
     await rows<TaxRow>(
       db,
       sql`select l.gst_bp, l.cess_bp,
-            sum(case when v.type = ${fwd} then l.taxable_paise else -l.taxable_paise end) as taxable_paise,
-            sum(case when v.type = ${fwd} then l.cgst_paise else -l.cgst_paise end) as cgst_paise,
-            sum(case when v.type = ${fwd} then l.sgst_paise else -l.sgst_paise end) as sgst_paise,
-            sum(case when v.type = ${fwd} then l.igst_paise else -l.igst_paise end) as igst_paise,
-            sum(case when v.type = ${fwd} then l.cess_paise else -l.cess_paise end) as cess_paise
+            sum(case when v.type = ${fwd} or v.type = 'expense' then l.taxable_paise else -l.taxable_paise end) as taxable_paise,
+            sum(case when v.type = ${fwd} or v.type = 'expense' then l.cgst_paise else -l.cgst_paise end) as cgst_paise,
+            sum(case when v.type = ${fwd} or v.type = 'expense' then l.sgst_paise else -l.sgst_paise end) as sgst_paise,
+            sum(case when v.type = ${fwd} or v.type = 'expense' then l.igst_paise else -l.igst_paise end) as igst_paise,
+            sum(case when v.type = ${fwd} or v.type = 'expense' then l.cess_paise else -l.cess_paise end) as cess_paise
           from voucher_lines l join vouchers v on v.id = l.voucher_id
-          where v.firm_id = ${firmId} and v.status = 'active' and v.type in (${fwd}, ${ret}) and v.date between ${from} and ${to} and l.gst_bp > 0
+          where v.firm_id = ${firmId} and v.status = 'active' and (v.type in (${fwd}, ${ret}) ${extra}) and v.date between ${from} and ${to} and l.gst_bp > 0
           group by l.gst_bp, l.cess_bp
           order by l.gst_bp, l.cess_bp`,
     ),

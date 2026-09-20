@@ -60,6 +60,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const [billingAddress, setBillingAddress] = useState(base?.billingAddress ?? "");
   const [shippingAddress, setShippingAddress] = useState(base?.shippingAddress ?? "");
   const [reverseCharge, setReverseCharge] = useState(base?.reverseCharge ?? false);
+  const [itcEligible, setItcEligible] = useState(ex?.itcEligible ?? true);
   const [withoutTax, setWithoutTax] = useState(ex?.withoutTax ?? false);
   const [billDiscPct, setBillDiscPct] = useState(base?.billDiscountBp ? String(base.billDiscountBp / 100) : "");
   const [billDiscAmt, setBillDiscAmt] = useState(base?.billDiscountPaise ? rupees(base.billDiscountPaise) : "");
@@ -243,6 +244,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         shippingAddress: shippingAddress || null,
         placeOfSupply: placeOfSupply || null,
         reverseCharge,
+        itcEligible: data.type === "expense" ? itcEligible : true,
         withoutTax,
         billDiscountBp: billDiscPct ? toBasisPoints(billDiscPct) || 0 : 0,
         billDiscountPaise: billDiscPct ? 0 : toPaise(billDiscAmt) || 0,
@@ -302,7 +304,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         router.refresh();
       }
     },
-    [info, lines, ex, data.type, number, date, dueDate, partyId, partyName, partyPhone, billingAddress, shippingAddress, placeOfSupply, reverseCharge, withoutTax, billDiscPct, billDiscAmt, roundOff, paidPaise, accountId, paymentMode, paymentRef, direction, categoryId, src, originalInvoiceNo, originalInvoiceDate, supplierInvoiceNo, poNumber, ewayBillNo, vehicleNo, transportName, notes, terms, itemMap, router],
+    [info, lines, ex, data.type, number, date, dueDate, partyId, partyName, partyPhone, billingAddress, shippingAddress, placeOfSupply, reverseCharge, itcEligible, withoutTax, billDiscPct, billDiscAmt, roundOff, paidPaise, accountId, paymentMode, paymentRef, direction, categoryId, src, originalInvoiceNo, originalInvoiceDate, supplierInvoiceNo, poNumber, ewayBillNo, vehicleNo, transportName, notes, terms, itemMap, router],
   );
 
   const saveRef = useRef(save);
@@ -677,6 +679,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               <Field label="Transporter">
                 <Input value={transportName} onChange={(e) => setTransportName(e.target.value)} />
               </Field>
+              {data.type === "expense" && !withoutTax && <Checkbox label="Tax on this expense can be claimed back (input tax credit)" checked={itcEligible} onChange={(e) => setItcEligible(e.target.checked)} />}
               {data.type === "sale_invoice" && <Checkbox label="Tax payable on reverse charge" checked={reverseCharge} onChange={(e) => setReverseCharge(e.target.checked)} />}
             </div>
           )}

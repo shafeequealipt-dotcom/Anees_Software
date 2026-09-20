@@ -44,6 +44,7 @@ export default async function ProfitLossPage({ searchParams }: { searchParams: P
             <Row k="Gross profit" v={p.grossProfit} />
             <Row k="Other income" v={p.otherIncome} />
             <Row k="Less: expenses" v={-p.expenses} />
+            {p.depreciation > 0 && <Row k="Less: depreciation" v={-p.depreciation} />}
             <div className="my-1 border-t border-line pt-1" />
             <Row k="Net profit" v={p.netProfit} bold tone={p.netProfit >= 0 ? "good" : "bad"} />
           </dl>

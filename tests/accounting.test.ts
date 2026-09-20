@@ -124,6 +124,11 @@ describe("accounts in use", () => {
     const tb = await trialBalance(db, firmId, asOf);
     expect(tb.find((r) => r.name.startsWith("Input tax"))!.net).toBe(18_000);
     expect(tb.find((r) => r.name === "Other expenses")!.net).toBe(100_000 + 11_800);
+    const { taxReport } = await import("@/server/reports");
+    const inward = await taxReport(db, firmId, "2026-09-01", "2026-09-30", "inward");
+    expect(inward).toHaveLength(1);
+    expect(inward[0]).toMatchObject({ gst_bp: 1800, taxable_paise: 100_000 });
+    expect(inward[0].cgst_paise + inward[0].sgst_paise + inward[0].igst_paise).toBe(18_000);
     void claim;
     void blocked;
   });

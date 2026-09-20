@@ -94,3 +94,25 @@ export function LinkSelect({ param, current, options, ariaLabel }: { param: stri
     </select>
   );
 }
+
+/** A single "as of" date that keeps its value in the address (?to=). */
+export function AsOfDate({ value }: { value: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  return (
+    <label className="flex items-center gap-2 text-sm text-muted">
+      As of
+      <input
+        type="date"
+        className={cx(inputClass, "w-40")}
+        value={value}
+        onChange={(e) => {
+          const next = new URLSearchParams(params.toString());
+          next.set("to", e.target.value);
+          router.push(`${pathname}?${next}`);
+        }}
+      />
+    </label>
+  );
+}
