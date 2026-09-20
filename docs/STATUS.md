@@ -189,6 +189,48 @@ Verified = automated test passes, or manually clicked through in the dev server.
   clearance/reporting — needs onboarding certificates); Arabic/bilingual invoices and RTL screens (invoice PDF is
   not built yet — build it bilingual); Hijri dates; zakat reports. Update migration: `drizzle/0001_country_and_optional_state.sql`.
 
+## Roadmap: new feature list (planned 2026-09-20, nothing below is built yet)
+
+Source: owner's feature list (Vyapar paid-plan features). Sizes: S = a day or less, M = a few days, L = a week or more.
+Order matters: later items depend on earlier ones.
+
+**Phase A: foundations (others depend on these)**
+1. Invoice PDF (A4, bilingual for Saudi) + public share page `/share/[token]` (L) — needed by WhatsApp, reminders, e-way bill print
+2. Excel import/export routes + party/item import (M)
+3. Soft delete + "Deleted transactions" bin with restore, unlimited (M) — change `deleteVoucher` to mark deleted + reverse ledgers; audit already keeps before-snapshot
+4. Notification engine: outbox table + scheduled runner (systemd timer) + channels (WhatsApp link/API, email SMTP) (M)
+
+**Phase B: sales & inventory features**
+5. Multiple price lists per item + per-party rates/discounts (M)  (covers "multiple pricing" and "different rates for each party")
+6. Bulk item update (grid edit + Excel round trip) (M)
+7. Credit-limit enforcement on sales (warn/block, override by permission) — field already exists (S)
+8. Combine many sales orders / challans into one sale (partial quantities tracked via a link table) (M)
+9. Custom fields for items (owner defines text/number/date fields; show on forms, optionally invoice) (M)
+10. Item batch & serial report (data model exists: `trackBatches`, `trackSerials`) (S)
+11. Profit on invoice + billwise P&L + partywise P&L, new permission `see.profit` (M)
+
+**Phase C: accounting**
+12. General ledger: chart of accounts, automatic double-entry posting per voucher, manual journal, trial balance, ledger report (L)
+13. Balance sheet (needs 12) (M)
+14. Expenses with input tax credit (tax lines on expenses, feeds tax report; India GST ITC / Saudi input VAT) (M)
+15. Fixed assets: register, depreciation (straight-line / written-down), disposal, journal posting (needs 12) (L)
+
+**Phase D: messaging (needs A1 + A4; WhatsApp needs Meta Business account)**
+16. WhatsApp Connect (send invoices/statements; Business Cloud API) (L)
+17. Automated payment reminders for overdue bills (M)
+18. Message to self on each transaction; message to party when a transaction is edited/cancelled (S each)
+19. Service reminders (per sold service item: next-due date, upcoming list, notify) (M)
+
+**Phase E: India-only (only if the business is GST-registered in India)**
+20. TCS on invoices and TDS on invoices/expenses (rates, ledger postings, reports) (M)
+21. E-way bill: first export the JSON for the GST portal, later direct API via a GSP (L)
+
+**Decision items**
+- Multiple companies: current design is single business (vouchers have `firmId`, but parties/items/accounts are shared). Options: true multi-company (firm switcher; `firmId` on every master + report; L/XL) or one separate installation per company (no code, more servers). Decide only if a second legal entity exists.
+- Sync across devices: already true (single cloud database). Optional later: installable web app (PWA).
+- Remove ads on invoices: not applicable (no ads in this app).
+- Bigger server recommended before Phase D (schedulers + PDF + WhatsApp are heavier than the ~1 GB shared host).
+
 ## Not started
 
 Ordered roughly by what go-live needs first. Check the plan doc for the full
