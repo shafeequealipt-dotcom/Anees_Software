@@ -31,6 +31,7 @@ export default async function PartiesPage({ searchParams }: { searchParams: Prom
         actions={
           <>
             <LinkButton href="/parties/import" size="md">Import from Excel</LinkButton>
+            <a href="/api/export/parties" className="inline-flex h-9 items-center rounded-md border border-line bg-panel px-3.5 text-sm font-medium hover:bg-ground">Export</a>
             <LinkButton href="/parties/new" variant="primary">+ Add party</LinkButton>
           </>
         }

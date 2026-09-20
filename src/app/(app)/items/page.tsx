@@ -33,7 +33,8 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
         title="Items & stock"
         actions={
           <>
-            <LinkButton href="/items/import">Import from Excel</LinkButton>
+            <LinkButton href="/items/import">Import / bulk update</LinkButton>
+            <a href="/api/export/items" className="inline-flex h-9 items-center rounded-md border border-line bg-panel px-3.5 text-sm font-medium hover:bg-ground">Export</a>
             <LinkButton href="/items/new" variant="primary">+ Add item</LinkButton>
           </>
         }
