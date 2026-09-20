@@ -521,3 +521,34 @@ export const shareLinks = pgTable("share_links", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: createdAt(),
 });
+
+/** Messages waiting to be sent (or already sent) by WhatsApp or email: payment reminders, alerts to the owner, updates to parties. */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 30 }).notNull(),
+    channel: varchar("channel", { length: 12 }).notNull(),
+    toAddress: varchar("to_address", { length: 200 }).notNull(),
+    toName: varchar("to_name", { length: 200 }),
+    subject: varchar("subject", { length: 200 }),
+    body: text("body").notNull(),
+    /** pending = will be sent automatically; manual = needs a person to tap the WhatsApp link; sent; failed; cancelled */
+    status: varchar("status", { length: 12 }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    dedupeKey: varchar("dedupe_key", { length: 120 }),
+    refType: varchar("ref_type", { length: 30 }),
+    refId: integer("ref_id"),
+    partyId: integer("party_id"),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("notifications_dedupe_key").on(t.firmId, t.dedupeKey).where(sql`${t.dedupeKey} is not null`),
+    index("notifications_status_idx").on(t.status, t.scheduledFor),
+    index("notifications_firm_created_idx").on(t.firmId, t.createdAt),
+  ],
+);

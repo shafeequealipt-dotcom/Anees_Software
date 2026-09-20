@@ -11,6 +11,7 @@ import { todayIST } from "@/lib/dates";
 import { can } from "@/lib/permissions";
 import { SETTLES, VOUCHER_INFO } from "@/lib/voucher-types";
 import { MasterError, saveParty } from "@/server/masters";
+import { notifyTransaction } from "@/server/notify/hooks";
 import { cancelVoucher, deleteVoucher, openBills, restoreVoucher, saveVoucher, VoucherError, type VoucherInput } from "@/server/vouchers";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
@@ -36,6 +37,7 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
       if (created && created !== todayIST()) throw new AuthError("Only the owner or accountant can edit entries from earlier days.");
     }
     const res = await saveVoucher(db, user.firmId, input, user.id, await clientIp());
+    await notifyTransaction(db, user.firmId, user.id, res.id, input.id ? "updated" : "created");
     revalidatePath(info.path);
     revalidatePath("/");
     return { ok: true, ...res };
@@ -49,6 +51,7 @@ export async function cancelVoucherAction(id: number): Promise<ActionResult> {
     const user = await assertUser("vouchers.cancel");
     const db = await getDb();
     await cancelVoucher(db, user.firmId, id, user.id, await clientIp());
+    await notifyTransaction(db, user.firmId, user.id, id, "cancelled");
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
@@ -61,6 +64,7 @@ export async function deleteVoucherAction(id: number): Promise<ActionResult> {
     const user = await assertUser("vouchers.delete");
     const db = await getDb();
     await deleteVoucher(db, user.firmId, id, user.id, await clientIp());
+    await notifyTransaction(db, user.firmId, user.id, id, "deleted");
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {

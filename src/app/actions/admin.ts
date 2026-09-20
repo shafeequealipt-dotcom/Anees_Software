@@ -10,6 +10,8 @@ import { AuthError, assertUser, clientIp, currentUser, hashPassword, passwordPro
 import { createCompany, createUser, deleteRole, editUserSchema, firmSchema, newUserSchema, resetUserPassword, roleSchema, saveFirm, saveRole, setCompanyActive, updateUser } from "@/server/admin";
 import { MasterError } from "@/server/masters";
 import type { companySchema } from "@/server/setup";
+import { markMessage } from "@/server/notify/outbox";
+import { type messagingSchema, saveMessagingSettings } from "@/server/notify/settings";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
 
@@ -134,6 +136,28 @@ export async function setCompanyActiveAction(firmId: number, active: boolean): P
     const user = await assertUser("companies.manage");
     await setCompanyActive(await getDb(), firmId, active, user.id);
     revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function saveMessagingSettingsAction(input: z.input<typeof messagingSchema>): Promise<Result> {
+  try {
+    const user = await assertUser("settings.edit");
+    await saveMessagingSettings(await getDb(), user.firmId, input, user.id);
+    revalidatePath("/settings/messaging");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function messageAction(id: number, action: "sent" | "retry" | "cancel"): Promise<Result> {
+  try {
+    const user = await assertUser("settings.edit");
+    await markMessage(await getDb(), user.firmId, id, action);
+    revalidatePath("/settings/messaging");
     return { ok: true };
   } catch (e) {
     return fail(e);

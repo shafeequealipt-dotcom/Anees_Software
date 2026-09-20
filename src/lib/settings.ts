@@ -65,6 +65,15 @@ export const DEFAULT_SETTINGS = {
   reminderMessage:
     "Dear {party}, a payment of {amount} is pending with {business}. Kindly pay at the earliest. Thank you.",
   financialYearStartMonth: 4,
+  // Messaging (WhatsApp / email)
+  notifyOwnerPhone: "",
+  notifyOwnerEmail: "",
+  notifyOwnerOnNewTransaction: false,
+  notifyPartyOnChange: false,
+  paymentReminders: false,
+  reminderFirstAfterDays: 1,
+  reminderEveryDays: 7,
+  reminderMaxCount: 3,
 };
 
 export type Settings = typeof DEFAULT_SETTINGS;
@@ -76,8 +85,10 @@ export async function getSettings(db: DB | Tx, firmId: number): Promise<Settings
   for (const r of rows) {
     if (!(r.key in out)) continue;
     const def = out[r.key];
+    // Some database drivers hand back a JSON string twice-decoded ("9811122233" becomes the number 9811122233); keep text settings as text.
+    const raw = typeof def === "string" && typeof r.value !== "string" ? String(r.value) : r.value;
     out[r.key] =
-      def && typeof def === "object" && !Array.isArray(def) ? { ...(def as object), ...(r.value as object) } : r.value;
+      def && typeof def === "object" && !Array.isArray(def) ? { ...(def as object), ...(r.value as object) } : raw;
   }
   return out as Settings;
 }

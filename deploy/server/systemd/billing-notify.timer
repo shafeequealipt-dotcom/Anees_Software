@@ -1,0 +1,11 @@
+[Unit]
+Description=Send waiting messages and payment reminders every 10 minutes
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=false
+RandomizedDelaySec=45
+Unit=billing-job@notify.service
+
+[Install]
+WantedBy=timers.target
