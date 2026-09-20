@@ -43,6 +43,13 @@ describe("roles and permissions", () => {
     expect(r[0].isOwner).toBe(true);
   });
 
+  it("counts the users in each role correctly", async () => {
+    const r = await listRoles(db);
+    const total = (await listUsers(db)).length;
+    expect(r.reduce((n, x) => n + x.userCount, 0)).toBe(total);
+    expect(r.find((x) => x.isOwner)!.userCount).toBe(1);
+  });
+
   it("owner can do everything; others only what is ticked", async () => {
     const r = await listRoles(db);
     const owner = { isOwner: true, permissions: [] as string[] };

@@ -33,7 +33,7 @@ export const itemKind = pgEnum("item_kind", ["goods", "service"]);
 export const accountKind = pgEnum("account_kind", ["cash", "bank"]);
 export const gstScheme = pgEnum("gst_scheme", ["regular", "composition", "unregistered"]);
 export const categoryKind = pgEnum("category_kind", ["expense", "income"]);
-export const voucherStatus = pgEnum("voucher_status", ["active", "cancelled"]);
+export const voucherStatus = pgEnum("voucher_status", ["active", "cancelled", "deleted"]);
 export const ledgerSource = pgEnum("ledger_source", ["voucher", "opening"]);
 
 export const VOUCHER_TYPES = [
@@ -364,6 +364,10 @@ export const vouchers = pgTable(
 
     createdBy: integer("created_by").references(() => users.id),
     updatedBy: integer("updated_by").references(() => users.id),
+    /** Deleted bills are hidden, keep their number, and can be restored from the snapshot of their ledger entries. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: integer("deleted_by").references(() => users.id),
+    deletedSnapshot: jsonb("deleted_snapshot"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

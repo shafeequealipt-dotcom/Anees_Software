@@ -41,7 +41,7 @@ export async function listVouchers(
   firmId: number,
   f: { types: VoucherType[]; from?: string; to?: string; partyId?: number; q?: string; status?: "open" | "paid" | "overdue" | "cancelled" | "all"; limit?: number; accountId?: number; categoryId?: number },
 ): Promise<VoucherRow[]> {
-  const where: SQL[] = [sql`v.firm_id = ${firmId}`, sql`v.type in (${sql.join(f.types.map((t) => sql`${t}`), sql`, `)})`];
+  const where: SQL[] = [sql`v.firm_id = ${firmId}`, sql`v.status <> 'deleted'`, sql`v.type in (${sql.join(f.types.map((t) => sql`${t}`), sql`, `)})`];
   if (f.from) where.push(sql`v.date >= ${f.from}`);
   if (f.to) where.push(sql`v.date <= ${f.to}`);
   if (f.partyId) where.push(sql`v.party_id = ${f.partyId}`);
@@ -355,7 +355,7 @@ export async function dayBook(db: DB, firmId: number, from: string, to: string) 
             coalesce((select sum(amount_paise) from money_ledger m where m.voucher_id = v.id and m.amount_paise > 0), 0) as money_in,
             coalesce((select -sum(amount_paise) from money_ledger m where m.voucher_id = v.id and m.amount_paise < 0), 0) as money_out
           from vouchers v left join users u on u.id = v.created_by
-          where v.firm_id = ${firmId} and v.date between ${from} and ${to}
+          where v.firm_id = ${firmId} and v.status <> 'deleted' and v.date between ${from} and ${to}
           order by v.date, v.created_at`,
     ),
     ["total_paise", "money_in", "money_out"],
@@ -536,7 +536,7 @@ export async function globalSearch(db: DB, firmId: number, q: string, opts: { pa
     rows<{ id: number; type: VoucherType; prefix: string; number: number; date: string; party_name: string | null; total_paise: number }>(
       db,
       sql`select id, type, prefix, number, date::text, party_name, total_paise from vouchers
-          where firm_id = ${firmId} and (lower(prefix || number::text) like ${like} or lower(coalesce(party_name,'')) like ${like} or lower(coalesce(supplier_invoice_no,'')) like ${like})
+          where firm_id = ${firmId} and status <> 'deleted' and (lower(prefix || number::text) like ${like} or lower(coalesce(party_name,'')) like ${like} or lower(coalesce(supplier_invoice_no,'')) like ${like})
           order by date desc limit 10`,
     ),
   ]);

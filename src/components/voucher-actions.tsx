@@ -72,7 +72,7 @@ export function VoucherActions({
   }
 
   async function remove() {
-    if (!confirm("Delete this entry permanently? This can't be undone. (Cancelling keeps a record instead.)")) return;
+    if (!confirm("Delete this entry? It moves to Deleted entries, where it can be restored. (Cancelling keeps it on record in the list.)")) return;
     setBusy(true);
     const res = await deleteVoucherAction(id);
     setBusy(false);

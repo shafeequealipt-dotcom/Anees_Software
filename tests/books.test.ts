@@ -7,7 +7,7 @@ import { accountSchema } from "@/server/masters";
 import { saveAccount, saveItem, saveParty } from "@/server/masters";
 import { accountStatement, dashboard, dayBook, itemSales, listVouchers, partyBalances, partyStatement, profitAndLoss, stockSummary } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
-import { cancelVoucher, getVoucher, openBills, saveVoucher, VoucherError } from "@/server/vouchers";
+import { cancelVoucher, deleteVoucher, getVoucher, listDeletedVouchers, openBills, restoreVoucher, saveVoucher, VoucherError } from "@/server/vouchers";
 import { testDb } from "./helpers/db";
 
 let db: DB;
@@ -233,3 +233,62 @@ describe("books end to end", () => {
     expect(p.active).toBe(false);
   });
 });
+
+describe("deleting and restoring bills", () => {
+  it("removes a deleted bill from every balance and brings it back exactly", async () => {
+    const before = {
+      stock: (await stockSummary(db, firmId, { includeInactive: true })).find((i) => i.id === pen)!.qty_milli,
+      bal: (await partyBalances(db, firmId)).find((p) => p.id === customer)!.balance_paise,
+      cash: await moneyTotal(),
+    };
+    const sale = await saveVoucher(db, firmId, { type: "sale_invoice", date: "2026-09-10", partyId: customer, paidPaise: 500, accountId: cashId, lines: [{ itemId: pen, description: "Blue pen", qtyMilli: 4000, ratePaise: 1000, taxRateId: gst18 }] }, 1);
+    const pay = await saveVoucher(db, firmId, { type: "payment_in", date: "2026-09-11", partyId: customer, amountPaise: 2000, accountId: cashId }, 1);
+    const afterSale = {
+      stock: (await stockSummary(db, firmId, { includeInactive: true })).find((i) => i.id === pen)!.qty_milli,
+      bal: (await partyBalances(db, firmId)).find((p) => p.id === customer)!.balance_paise,
+      cash: await moneyTotal(),
+    };
+    expect(afterSale.stock).toBe(before.stock - 4000);
+
+    await deleteVoucher(db, firmId, sale.id, 1);
+    expect(await getVoucher(db, firmId, sale.id)).toBeNull();
+    expect((await listVouchers(db, firmId, { types: ["sale_invoice"] })).some((v) => v.id === sale.id)).toBe(false);
+    expect((await stockSummary(db, firmId, { includeInactive: true })).find((i) => i.id === pen)!.qty_milli).toBe(before.stock);
+    expect((await listDeletedVouchers(db, firmId)).map((d) => d.id)).toEqual([sale.id]);
+    await expect(saveVoucher(db, firmId, { id: sale.id, type: "sale_invoice", date: "2026-09-10", partyId: customer, lines: [{ itemId: pen, description: "x", qtyMilli: 1000, ratePaise: 1000 }] }, 1)).rejects.toThrow(/Restore it first/);
+
+    // a new bill doesn't reuse the deleted number
+    const next = await saveVoucher(db, firmId, { type: "sale_invoice", date: "2026-09-12", partyId: customer, paidPaise: 0, lines: [{ itemId: pen, description: "Blue pen", qtyMilli: 1000, ratePaise: 1000, taxRateId: gst18 }] }, 1);
+    expect(next.number).not.toBe(sale.number);
+    await deleteVoucher(db, firmId, next.id, 1);
+
+    await restoreVoucher(db, firmId, sale.id, 1);
+    await restoreVoucher(db, firmId, next.id, 1);
+    await deleteVoucher(db, firmId, next.id, 1);
+    expect((await listDeletedVouchers(db, firmId)).map((d) => d.id)).toEqual([next.id]);
+    expect((await stockSummary(db, firmId, { includeInactive: true })).find((i) => i.id === pen)!.qty_milli).toBe(afterSale.stock);
+    expect((await partyBalances(db, firmId)).find((p) => p.id === customer)!.balance_paise).toBe(afterSale.bal);
+    expect(await moneyTotal()).toBe(afterSale.cash);
+    expect((await getVoucher(db, firmId, sale.id))!.voucher.status).toBe("active");
+    void pay;
+    await expect(restoreVoucher(db, firmId, sale.id, 1)).rejects.toThrow(/isn't in the deleted list/);
+  });
+
+  it("re-attaches a payment to its bill after both are deleted and restored", async () => {
+    const bill = await saveVoucher(db, firmId, { type: "sale_invoice", date: "2026-09-13", partyId: outOfState, paidPaise: 0, lines: [{ itemId: notebook, description: "Notebook", qtyMilli: 2000, ratePaise: 5000, taxRateId: gst5 }] }, 1);
+    const pay = await saveVoucher(db, firmId, { type: "payment_in", date: "2026-09-14", partyId: outOfState, amountPaise: 4000, accountId: cashId, allocations: [{ toVoucherId: bill.id, amountPaise: 4000 }] }, 1);
+    const open = async () => (await openBills(db, outOfState, ["sale_invoice"])).find((b) => b.id === bill.id)!.balancePaise;
+    const owed = await open();
+    await deleteVoucher(db, firmId, pay.id, 1);
+    expect(await open()).toBe(owed + 4000);
+    await restoreVoucher(db, firmId, pay.id, 1);
+    expect(await open()).toBe(owed);
+  });
+});
+
+async function moneyTotal() {
+  const { moneyLedger } = await import("@/db/schema");
+  const { sql } = await import("drizzle-orm");
+  const [r] = await db.select({ t: sql<number>`coalesce(sum(${moneyLedger.amountPaise}),0)::bigint` }).from(moneyLedger);
+  return Number(r.t);
+}

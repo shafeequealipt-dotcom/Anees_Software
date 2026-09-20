@@ -24,7 +24,7 @@ export async function listRoles(db: DB) {
       permissions: roles.permissions,
       isOwner: roles.isOwner,
       isSystem: roles.isSystem,
-      userCount: sql<number>`(select count(*)::int from users u where u.role_id = ${roles.id})`,
+      userCount: sql<number>`(select count(*)::int from users u where u.role_id = "roles"."id")`,
     })
     .from(roles)
     .orderBy(sql`${roles.isOwner} desc`, asc(roles.id));

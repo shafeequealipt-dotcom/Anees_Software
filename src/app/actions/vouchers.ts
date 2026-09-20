@@ -11,7 +11,7 @@ import { todayIST } from "@/lib/dates";
 import { can } from "@/lib/permissions";
 import { SETTLES, VOUCHER_INFO } from "@/lib/voucher-types";
 import { MasterError, saveParty } from "@/server/masters";
-import { cancelVoucher, deleteVoucher, openBills, saveVoucher, VoucherError, type VoucherInput } from "@/server/vouchers";
+import { cancelVoucher, deleteVoucher, openBills, restoreVoucher, saveVoucher, VoucherError, type VoucherInput } from "@/server/vouchers";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
 
@@ -63,6 +63,18 @@ export async function deleteVoucherAction(id: number): Promise<ActionResult> {
     await deleteVoucher(db, user.firmId, id, user.id, await clientIp());
     revalidatePath("/", "layout");
     return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function restoreVoucherAction(id: number): Promise<ActionResult<{ number: string; path: string }>> {
+  try {
+    const user = await assertUser("vouchers.restore");
+    const db = await getDb();
+    const r = await restoreVoucher(db, user.firmId, id, user.id, await clientIp());
+    revalidatePath("/", "layout");
+    return { ok: true, number: r.number, path: VOUCHER_INFO[r.type].path };
   } catch (e) {
     return fail(e);
   }

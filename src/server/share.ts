@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, ne } from "drizzle-orm";
 import type { DB } from "@/db";
 import { shareLinks, vouchers } from "@/db/schema";
 
@@ -10,6 +10,6 @@ export async function resolveShare(db: DB, token: string) {
     .select({ voucherId: shareLinks.voucherId, firmId: vouchers.firmId, status: vouchers.status })
     .from(shareLinks)
     .innerJoin(vouchers, eq(vouchers.id, shareLinks.voucherId))
-    .where(and(eq(shareLinks.token, token), gt(shareLinks.expiresAt, new Date())));
+    .where(and(eq(shareLinks.token, token), gt(shareLinks.expiresAt, new Date()), ne(vouchers.status, "deleted")));
   return row ?? null;
 }

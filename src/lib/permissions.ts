@@ -10,7 +10,8 @@ export const PERMISSION_GROUPS = [
       { key: "vouchers.edit", label: "Edit bills and entries", hint: "Only entries made today, unless the next option is also ticked." },
       { key: "vouchers.editOld", label: "Edit entries from earlier days" },
       { key: "vouchers.cancel", label: "Cancel bills" },
-      { key: "vouchers.delete", label: "Delete bills permanently" },
+      { key: "vouchers.delete", label: "Delete bills", hint: "Deleted bills go to the Deleted entries list and can be restored." },
+      { key: "vouchers.restore", label: "See deleted bills and restore them" },
     ],
   },
   {

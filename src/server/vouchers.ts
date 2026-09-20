@@ -13,6 +13,7 @@ import {
   partyLedger,
   stockLedger,
   taxRates,
+  users,
   VOUCHER_TYPES,
   voucherLines,
   vouchers,
@@ -137,6 +138,7 @@ export async function saveVoucher(
     if (input.id) {
       [existing] = await tx.select().from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, firmId))).for("update");
       if (!existing) throw new VoucherError("This entry no longer exists.");
+      if (existing.status === "deleted") throw new VoucherError("This entry was deleted. Restore it first.");
       if (existing.type !== input.type) throw new VoucherError("An entry can't change its type.");
       if (existing.status === "cancelled") throw new VoucherError("Cancelled entries can't be edited.");
     }
@@ -528,7 +530,7 @@ export async function openBills(db: DB | Tx, partyId: number, types: VoucherType
       dueDate: vouchers.dueDate,
       totalPaise: vouchers.totalPaise,
       paidPaise: vouchers.paidPaise,
-      allocated: sql<number>`coalesce((select sum(a.amount_paise) from allocations a where a.to_voucher_id = ${vouchers.id} ${
+      allocated: sql<number>`coalesce((select sum(a.amount_paise) from allocations a where a.to_voucher_id = "vouchers"."id" ${
         excludeFromVoucherId ? sql`and a.from_voucher_id <> ${excludeFromVoucherId}` : sql``
       }), 0)::bigint`,
     })
@@ -579,7 +581,7 @@ async function allocate(
 export async function cancelVoucher(db: DB, firmId: number, id: number, userId: number | null, ip?: string | null) {
   return db.transaction(async (tx) => {
     const [v] = await tx.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId))).for("update");
-    if (!v) throw new VoucherError("This entry no longer exists.");
+    if (!v || v.status === "deleted") throw new VoucherError("This entry no longer exists.");
     if (v.status === "cancelled") return;
     await tx.update(vouchers).set({ status: "cancelled", updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
     await clearPostings(tx, id);
@@ -597,28 +599,112 @@ export async function cancelVoucher(db: DB, firmId: number, id: number, userId: 
   });
 }
 
+interface DeletedSnapshot {
+  fromStatus: "active" | "cancelled";
+  party: Omit<typeof partyLedger.$inferSelect, "id">[];
+  money: Omit<typeof moneyLedger.$inferSelect, "id">[];
+  stock: Omit<typeof stockLedger.$inferSelect, "id">[];
+  allocations: { fromVoucherId: number; toVoucherId: number; amountPaise: number }[];
+}
+
+const without = <T extends { id: number }>(rows: T[]): Omit<T, "id">[] => rows.map(({ id: _id, ...rest }) => rest);
+
+/** Hides the bill and takes it out of every balance, but keeps everything needed to bring it back exactly (see restoreVoucher). */
 export async function deleteVoucher(db: DB, firmId: number, id: number, userId: number | null, ip?: string | null) {
   return db.transaction(async (tx) => {
     const [v] = await tx.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId))).for("update");
-    if (!v) return;
-    const lines = await tx.select().from(voucherLines).where(eq(voucherLines.voucherId, id));
-    await tx.update(vouchers).set({ sourceVoucherId: null }).where(eq(vouchers.sourceVoucherId, id));
-    await tx.delete(vouchers).where(eq(vouchers.id, id));
+    if (!v || v.status === "deleted") return;
+    const snapshot: DeletedSnapshot = {
+      fromStatus: v.status,
+      party: without(await tx.select().from(partyLedger).where(eq(partyLedger.voucherId, id))),
+      money: without(await tx.select().from(moneyLedger).where(eq(moneyLedger.voucherId, id))),
+      stock: without(await tx.select().from(stockLedger).where(eq(stockLedger.voucherId, id))),
+      allocations: (await tx.select().from(allocations).where(sql`${allocations.fromVoucherId} = ${id} or ${allocations.toVoucherId} = ${id}`)).map(({ fromVoucherId, toVoucherId, amountPaise }) => ({ fromVoucherId, toVoucherId, amountPaise })),
+    };
+    await clearPostings(tx, id);
+    await tx.delete(allocations).where(sql`${allocations.fromVoucherId} = ${id} or ${allocations.toVoucherId} = ${id}`);
+    await tx.update(vouchers).set({ status: "deleted", deletedAt: new Date(), deletedBy: userId, deletedSnapshot: snapshot, updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
     await audit(tx, {
-      userId,
       firmId,
+      userId,
       action: "delete",
       entity: "voucher",
       entityId: id,
       summary: `Deleted ${VOUCHER_INFO[v.type].label.toLowerCase()} ${voucherNumber(v)}${v.partyName ? ` for ${v.partyName}` : ""} — total ${(v.totalPaise / 100).toFixed(2)}`,
-      before: { ...v, lines },
+      before: { type: v.type, number: voucherNumber(v), totalPaise: v.totalPaise, status: v.status },
       ip,
     });
   });
 }
 
+/** Brings a deleted bill back exactly as it was: same number, same ledger entries, same payments where they still fit. */
+export async function restoreVoucher(db: DB, firmId: number, id: number, userId: number | null, ip?: string | null) {
+  return db.transaction(async (tx) => {
+    const [v] = await tx.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId))).for("update");
+    if (!v || v.status !== "deleted") throw new VoucherError("This entry isn't in the deleted list.");
+    const snap = v.deletedSnapshot as DeletedSnapshot | null;
+    if (!snap) throw new VoucherError("This entry has no saved snapshot, so it can't be restored.");
+
+    if (v.partyId) {
+      const [p] = await tx.select({ id: parties.id }).from(parties).where(and(eq(parties.id, v.partyId), eq(parties.firmId, firmId)));
+      if (!p) throw new VoucherError("The party on this entry no longer exists.");
+    }
+    if (snap.party.length) await tx.insert(partyLedger).values(snap.party);
+    if (snap.money.length) await tx.insert(moneyLedger).values(snap.money);
+    if (snap.stock.length) await tx.insert(stockLedger).values(snap.stock);
+
+    let reattached = 0;
+    for (const a of snap.allocations) {
+      const [from] = await tx.select({ total: vouchers.totalPaise, paid: vouchers.paidPaise, status: vouchers.status }).from(vouchers).where(eq(vouchers.id, a.fromVoucherId));
+      const [to] = await tx.select({ total: vouchers.totalPaise, paid: vouchers.paidPaise, status: vouchers.status }).from(vouchers).where(eq(vouchers.id, a.toVoucherId));
+      const usable = (vid: number, row?: { status: string }) => vid === id || row?.status === "active";
+      if (!usable(a.fromVoucherId, from) || !usable(a.toVoucherId, to)) continue;
+      const [fromUsed] = await tx.select({ n: sql<number>`coalesce(sum(${allocations.amountPaise}), 0)::bigint` }).from(allocations).where(eq(allocations.fromVoucherId, a.fromVoucherId));
+      const toUsed = await allocatedTo(tx, a.toVoucherId);
+      const fromLeft = (from?.total ?? v.totalPaise) - Number(fromUsed.n);
+      const toLeft = (to?.total ?? v.totalPaise) - (to?.paid ?? v.paidPaise) - toUsed;
+      const amount = Math.min(a.amountPaise, fromLeft, toLeft);
+      if (amount > 0) {
+        await tx.insert(allocations).values({ fromVoucherId: a.fromVoucherId, toVoucherId: a.toVoucherId, amountPaise: amount });
+        reattached++;
+      }
+    }
+
+    await tx.update(vouchers).set({ status: snap.fromStatus, deletedAt: null, deletedBy: null, deletedSnapshot: null, updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
+    await audit(tx, {
+      firmId,
+      userId,
+      action: "restore",
+      entity: "voucher",
+      entityId: id,
+      summary: `Restored ${VOUCHER_INFO[v.type].label.toLowerCase()} ${voucherNumber(v)}${v.partyName ? ` for ${v.partyName}` : ""}${snap.allocations.length && reattached < snap.allocations.length ? " (some payment links could not be re-attached)" : ""}`,
+      ip,
+    });
+    return { number: voucherNumber(v), type: v.type };
+  });
+}
+
+export async function listDeletedVouchers(db: DB, firmId: number) {
+  return db
+    .select({
+      id: vouchers.id,
+      type: vouchers.type,
+      prefix: vouchers.prefix,
+      number: vouchers.number,
+      date: vouchers.date,
+      partyName: vouchers.partyName,
+      totalPaise: vouchers.totalPaise,
+      deletedAt: vouchers.deletedAt,
+      deletedBy: users.name,
+    })
+    .from(vouchers)
+    .leftJoin(users, eq(users.id, vouchers.deletedBy))
+    .where(and(eq(vouchers.firmId, firmId), eq(vouchers.status, "deleted")))
+    .orderBy(desc(vouchers.deletedAt));
+}
+
 export async function getVoucher(db: DB | Tx, firmId: number, id: number) {
-  const [v] = await db.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId)));
+  const [v] = await db.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId), ne(vouchers.status, "deleted")));
   if (!v) return null;
   const lines = await db.select().from(voucherLines).where(eq(voucherLines.voucherId, id)).orderBy(asc(voucherLines.lineNo));
   const settledBy = await db
