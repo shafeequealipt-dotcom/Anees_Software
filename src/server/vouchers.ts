@@ -27,6 +27,7 @@ import { buildPostings, PostingError } from "@/lib/posting";
 import { formatMoney } from "@/lib/money";
 import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
+import { syncVoucherGl } from "./gl";
 import { SETTLES, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 
 export class VoucherError extends Error {
@@ -91,6 +92,8 @@ export const voucherSchema = z.object({
   direction: z.union([z.literal(1), z.literal(-1)]).nullish(),
   categoryId: int.positive().nullish(),
   sourceVoucherId: int.positive().nullish(),
+  /** Expenses: is the tax on this bill claimable as input tax credit? */
+  itcEligible: z.boolean().default(true),
   /** Several orders/challans combined into this bill. */
   sourceVoucherIds: z.array(int.positive()).max(50).optional(),
   originalInvoiceNo: optText(60),
@@ -311,6 +314,7 @@ export async function saveVoucher(
       direction: ["stock_adjustment", "money_adjustment"].includes(input.type) ? (input.direction ?? 1) : null,
       categoryId: input.categoryId ?? null,
       sourceVoucherId: sourceIds[0] ?? existing?.sourceVoucherId ?? null,
+      itcEligible: input.itcEligible,
       originalInvoiceNo: input.originalInvoiceNo,
       originalInvoiceDate: input.originalInvoiceDate,
       supplierInvoiceNo: input.supplierInvoiceNo,
@@ -423,6 +427,7 @@ export async function saveVoucher(
       throw e;
     }
     await insertPostings(tx, id, postings);
+    await syncVoucherGl(tx, firmId, id);
 
     // ── Settlement against bills
     const warnings: string[] = [];
@@ -611,6 +616,7 @@ export async function cancelVoucher(db: DB, firmId: number, id: number, userId: 
     await tx.update(vouchers).set({ status: "cancelled", updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
     await clearPostings(tx, id);
     await tx.delete(allocations).where(sql`${allocations.fromVoucherId} = ${id} or ${allocations.toVoucherId} = ${id}`);
+    await syncVoucherGl(tx, firmId, id);
     await audit(tx, {
       userId,
       firmId,
@@ -649,6 +655,7 @@ export async function deleteVoucher(db: DB, firmId: number, id: number, userId: 
     await clearPostings(tx, id);
     await tx.delete(allocations).where(sql`${allocations.fromVoucherId} = ${id} or ${allocations.toVoucherId} = ${id}`);
     await tx.update(vouchers).set({ status: "deleted", deletedAt: new Date(), deletedBy: userId, deletedSnapshot: snapshot, updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
+    await syncVoucherGl(tx, firmId, id);
     await audit(tx, {
       firmId,
       userId,
@@ -696,6 +703,7 @@ export async function restoreVoucher(db: DB, firmId: number, id: number, userId:
     }
 
     await tx.update(vouchers).set({ status: snap.fromStatus, deletedAt: null, deletedBy: null, deletedSnapshot: null, updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
+    await syncVoucherGl(tx, firmId, id);
     await audit(tx, {
       firmId,
       userId,

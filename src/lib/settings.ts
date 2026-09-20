@@ -75,6 +75,8 @@ export const DEFAULT_SETTINGS = {
   reminderFirstAfterDays: 1,
   reminderEveryDays: 7,
   reminderMaxCount: 3,
+  // Set once the double-entry books have been built from existing bills.
+  glBuiltAt: "",
 };
 
 export type Settings = typeof DEFAULT_SETTINGS;

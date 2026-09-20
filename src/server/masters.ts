@@ -25,6 +25,7 @@ import { checkGstin } from "@/lib/gst/gstin";
 import { checkTrn } from "@/lib/gst/trn";
 import { region } from "@/lib/region";
 import { cleanCustomValues } from "./custom-fields";
+import { removeOpening, syncAccountOpening, syncItemOpening, syncPartyOpening } from "./gl";
 import { isValidStateCode } from "@/lib/gst/states";
 
 /** Opening balances default to the first day of the current financial year. */
@@ -129,6 +130,7 @@ export async function saveParty(db: DB, firmId: number, raw: z.input<typeof part
         memo: "Opening balance",
       });
     }
+    await syncPartyOpening(tx, firmId, id!);
     await audit(tx, {
       firmId,
       userId,
@@ -154,6 +156,7 @@ export async function deleteParty(db: DB, firmId: number, id: number, userId: nu
       return "deactivated" as const;
     }
     await tx.delete(parties).where(eq(parties.id, id));
+    await removeOpening(tx, firmId, `party:${id}`);
     await audit(tx, { firmId, userId, action: "delete", entity: "party", entityId: id, summary: `Deleted party ${p.name}`, before: p });
     return "deleted" as const;
   });
@@ -270,6 +273,7 @@ export async function saveItem(db: DB, firmId: number, raw: z.input<typeof itemS
         valuePaise: Math.round((values.openingQtyMilli * values.openingRatePaise) / 1000),
       });
     }
+    await syncItemOpening(tx, firmId, id!);
     await audit(tx, {
       firmId,
       userId,
@@ -295,6 +299,7 @@ export async function deleteItem(db: DB, firmId: number, id: number, userId: num
       return "deactivated" as const;
     }
     await tx.delete(items).where(eq(items.id, id));
+    await removeOpening(tx, firmId, `item:${id}`);
     await audit(tx, { firmId, userId, action: "delete", entity: "item", entityId: id, summary: `Deleted item ${it.name}`, before: it });
     return "deleted" as const;
   });
@@ -397,6 +402,7 @@ export async function saveAccount(db: DB, firmId: number, raw: z.input<typeof ac
         memo: "Opening balance",
       });
     }
+    await syncAccountOpening(tx, firmId, id!);
     await audit(tx, { firmId, userId, action: input.id ? "update" : "create", entity: "account", entityId: id!, summary: `${input.id ? "Edited" : "Added"} ${values.kind} account ${values.name}`, after: values });
     return id!;
   });

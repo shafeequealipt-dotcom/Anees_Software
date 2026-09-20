@@ -31,6 +31,13 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    title: "Accounting books",
+    items: [
+      { key: "accounting.view", label: "See the accounts: ledgers, trial balance, balance sheet, fixed assets" },
+      { key: "accounting.edit", label: "Post journal entries, manage fixed assets and the chart of accounts" },
+    ],
+  },
+  {
     title: "Fields this role can see",
     items: [
       { key: "see.purchasePrice", label: "Purchase prices of items", hint: "Hidden from item pages and item forms; existing prices stay unchanged when others edit." },

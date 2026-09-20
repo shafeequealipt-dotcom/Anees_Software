@@ -367,7 +367,7 @@ export async function dayBook(db: DB, firmId: number, from: string, to: string) 
 // ─── Profit & loss ───────────────────────────────────────────────────────────
 
 /** Stock value at the end of `date` (all movements on that day included) — used for "closing stock". */
-async function stockValueAt(db: DB, firmId: number, date: string): Promise<number> {
+export async function stockValueAt(db: DB, firmId: number, date: string): Promise<number> {
   const list = await stockSummary(db, firmId, { asOf: date, includeInactive: true });
   return list.reduce((s, r) => s + r.stock_value_paise, 0);
 }

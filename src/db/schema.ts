@@ -399,6 +399,8 @@ export const vouchers = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     deletedBy: integer("deleted_by").references(() => users.id),
     deletedSnapshot: jsonb("deleted_snapshot"),
+    /** Expenses: is the tax on this bill claimable as input tax credit? */
+    itcEligible: boolean("itc_eligible").notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -615,4 +617,87 @@ export const partyRates = pgTable(
     discountBp: integer("discount_bp"),
   },
   (t) => [primaryKey({ columns: [t.partyId, t.itemId] })],
+);
+
+// ─── Accounting (double entry) ────────────────────────────────────────────────
+
+/** The chart of accounts. Some accounts are created automatically (cash, receivables, sales…) and marked with a `key`. */
+export const glAccounts = pgTable(
+  "gl_accounts",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    code: varchar("code", { length: 12 }).notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    /** asset, liability, equity, income or expense */
+    type: varchar("type", { length: 10 }).notNull(),
+    /** Section on the balance sheet or profit and loss, e.g. "Current assets". */
+    grp: varchar("grp", { length: 40 }),
+    /** Set for accounts the system maintains: 'receivable', 'sales', 'money:12', 'cat:3' … */
+    key: varchar("key", { length: 40 }),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("gl_accounts_firm_key").on(t.firmId, t.key).where(sql`${t.key} is not null`), uniqueIndex("gl_accounts_firm_code").on(t.firmId, t.code)],
+);
+
+/** Manual journal entries (for things that are not bills: loans, capital, corrections). */
+export const journals = pgTable(
+  "journals",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    number: integer("number").notNull(),
+    date: date("date").notNull(),
+    narration: varchar("narration", { length: 300 }),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("journals_firm_number").on(t.firmId, t.number)],
+);
+
+/** Every debit and credit. Bills, openings, journals and depreciation all end up here; a source's entries always balance. */
+export const glEntries = pgTable(
+  "gl_entries",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    date: date("date").notNull(),
+    accountId: integer("account_id").notNull().references(() => glAccounts.id),
+    debitPaise: paise("debit_paise").notNull().default(0),
+    creditPaise: paise("credit_paise").notNull().default(0),
+    /** voucher | opening | journal | asset */
+    source: varchar("source", { length: 10 }).notNull(),
+    voucherId: integer("voucher_id").references(() => vouchers.id, { onDelete: "cascade" }),
+    journalId: integer("journal_id").references(() => journals.id, { onDelete: "cascade" }),
+    /** For openings and assets: which master row, e.g. 'party:12', 'asset:3:dep:2026'. */
+    refKey: varchar("ref_key", { length: 60 }),
+    memo: varchar("memo", { length: 200 }),
+  },
+  (t) => [index("gl_entries_account_date_idx").on(t.accountId, t.date), index("gl_entries_voucher_idx").on(t.voucherId), index("gl_entries_ref_idx").on(t.firmId, t.refKey), index("gl_entries_firm_date_idx").on(t.firmId, t.date)],
+);
+
+export const fixedAssets = pgTable(
+  "fixed_assets",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    name: varchar("name", { length: 150 }).notNull(),
+    category: varchar("category", { length: 60 }).notNull().default("Equipment"),
+    purchaseDate: date("purchase_date").notNull(),
+    costPaise: paise("cost_paise").notNull(),
+    salvagePaise: paise("salvage_paise").notNull().default(0),
+    /** straight_line or reducing (written-down value) */
+    method: varchar("method", { length: 14 }).notNull().default("straight_line"),
+    /** Yearly rate in basis points (1500 = 15%). */
+    rateBp: integer("rate_bp").notNull(),
+    /** Where the money came from when it was bought: an account id, or null for an asset the business already owned. */
+    paidFromAccountId: integer("paid_from_account_id").references(() => accounts.id),
+    disposedOn: date("disposed_on"),
+    disposalPaise: paise("disposal_paise"),
+    notes: varchar("notes", { length: 300 }),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("fixed_assets_firm_idx").on(t.firmId)],
 );

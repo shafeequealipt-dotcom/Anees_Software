@@ -324,3 +324,41 @@ describe("combining several orders into one bill", () => {
     await expect(saveVoucher(db, firmId, { type: "sale_invoice", date: "2026-09-22", partyId: customer, sourceVoucherIds: [o1.id, other.id], lines: [{ description: "x", qtyMilli: 1000, ratePaise: 100 }] }, 1)).rejects.toThrow(/same party/);
   });
 });
+
+describe("double-entry books", () => {
+  it("mirror the party and cash ledgers, balance, and agree with the profit & loss", async () => {
+    const { balanceSheet, trialBalance, rebuildGl } = await import("@/server/gl");
+    const { stockValueAt } = await import("@/server/reports");
+    const { partyLedger, moneyLedger } = await import("@/db/schema");
+    const { sql } = await import("drizzle-orm");
+    const asOf = "2099-12-31";
+
+    const check = async () => {
+      const tb = await trialBalance(db, firmId, asOf);
+      const dr = tb.reduce((s, r) => s + r.debit, 0);
+      const cr = tb.reduce((s, r) => s + r.credit, 0);
+      expect(dr).toBe(cr);
+      expect(dr).toBeGreaterThan(0);
+
+      const [p] = await db.select({ n: sql<number>`coalesce(sum(${partyLedger.amountPaise}),0)::bigint` }).from(partyLedger);
+      const debtors = tb.filter((r) => r.name.startsWith("Sundry")).reduce((s, r) => s + r.net, 0);
+      expect(debtors).toBe(Number(p.n));
+      const [m] = await db.select({ n: sql<number>`coalesce(sum(${moneyLedger.amountPaise}),0)::bigint` }).from(moneyLedger);
+      const cash = tb.filter((r) => r.grp === "Cash and bank").reduce((s, r) => s + r.net, 0);
+      expect(cash).toBe(Number(m.n));
+
+      const stock = await stockValueAt(db, firmId, asOf);
+      const bs = await balanceSheet(db, firmId, asOf, stock);
+      expect(bs.totalAssets).toBe(bs.totalLiabilitiesAndEquity);
+      const pl = await profitAndLoss(db, firmId, "2026-04-01", asOf);
+      const roundOff = tb.filter((r) => r.name === "Round off").reduce((s, r) => s - r.net, 0);
+      expect(bs.profit - roundOff).toBe(pl.netProfit);
+    };
+
+    await check();
+    const before = JSON.stringify((await trialBalance(db, firmId, asOf)).map((r) => [r.name, r.debit, r.credit]));
+    await rebuildGl(db, firmId);
+    expect(JSON.stringify((await trialBalance(db, firmId, asOf)).map((r) => [r.name, r.debit, r.credit]))).toBe(before);
+    await check();
+  });
+});
