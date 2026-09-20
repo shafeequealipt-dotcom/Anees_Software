@@ -15,6 +15,9 @@ export const messagingSchema = z.object({
   reminderEveryDays: z.number().int().min(1).max(90),
   reminderMaxCount: z.number().int().min(1).max(20),
   reminderMessage: z.string().trim().min(5, "Write the reminder message.").max(500),
+  serviceReminders: z.boolean().default(false),
+  serviceLeadDays: z.number().int().min(0).max(60).default(3),
+  serviceMessage: z.string().trim().min(5, "Write the service reminder message.").max(500),
 });
 
 export async function saveMessagingSettings(db: DB, firmId: number, raw: z.input<typeof messagingSchema>, userId: number) {

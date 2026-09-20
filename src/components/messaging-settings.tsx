@@ -17,6 +17,9 @@ interface Values {
   reminderEveryDays: number;
   reminderMaxCount: number;
   reminderMessage: string;
+  serviceReminders: boolean;
+  serviceLeadDays: number;
+  serviceMessage: string;
 }
 
 interface Message {
@@ -127,6 +130,18 @@ export function MessagingSettings({
           </Field>
         </div>
         <p className="mt-2 text-xs text-muted">Customers are contacted on WhatsApp if they have a phone number, otherwise by email. Each customer gets at most one reminder a day.</p>
+      </Panel>
+
+      <Panel title="Service reminders">
+        <div className="grid max-w-2xl gap-4 sm:grid-cols-3">
+          <Checkbox className="sm:col-span-3" label="Remind customers when a service is due (set the interval on each item, e.g. every 90 days)" checked={v.serviceReminders} onChange={(e) => set("serviceReminders", e.target.checked)} />
+          <Field label="Remind (days before it is due)">
+            <Input value={v.serviceLeadDays} onChange={(e) => set("serviceLeadDays", Number(e.target.value.replace(/\D/g, "")) || 0)} inputMode="numeric" />
+          </Field>
+          <Field className="sm:col-span-3" label="Message" hint="{party}, {item}, {date} and {business} are filled in.">
+            <Textarea rows={2} value={v.serviceMessage} onChange={(e) => set("serviceMessage", e.target.value)} />
+          </Field>
+        </div>
       </Panel>
 
       <div>

@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { getDb } from "@/db";
 import { activeFirms, processOutbox } from "@/server/notify/outbox";
 import { runPaymentReminders } from "@/server/notify/reminders";
+import { runServiceReminders } from "@/server/notify/service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
   for (const f of await activeFirms(db)) {
     try {
       reminders[f.name] = await runPaymentReminders(db, f.id);
+      await runServiceReminders(db, f.id);
     } catch (e) {
       console.error("reminders failed for", f.name, e);
     }

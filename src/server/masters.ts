@@ -203,6 +203,7 @@ export const itemSchema = z.object({
   location: text(100),
   trackBatches: z.boolean().default(false),
   trackSerials: z.boolean().default(false),
+  serviceIntervalDays: z.number().int().min(1).max(3650).nullish(),
   customValues: z.record(z.string(), z.string().max(200)).optional(),
   active: z.boolean().default(true),
 });

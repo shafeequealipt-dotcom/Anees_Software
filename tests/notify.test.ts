@@ -132,3 +132,30 @@ describe("transaction alerts", () => {
     expect(partyMsg?.toAddress).toBe("919876543210");
   });
 });
+
+describe("service reminders", () => {
+  it("creates a reminder when a serviceable item is sold, and messages the customer when it is due", async () => {
+    const { items: itemsT } = await import("@/db/schema");
+    const { saveItem } = await import("@/server/masters");
+    const { listServiceReminders, runServiceReminders, markServiceDone } = await import("@/server/notify/service");
+    const ac = await saveItem(db, firmId, { name: "Split AC", salePricePaise: 3_000_000, serviceIntervalDays: 90 }, 1);
+    const plain = await saveItem(db, firmId, { name: "Cable", salePricePaise: 10_000 }, 1);
+    const today = todayIST();
+    const bill = await saveVoucher(db, firmId, { type: "sale_invoice", date: addDays(today, -88), partyId: party, paidPaise: 0, lines: [{ itemId: ac, description: "Split AC", qtyMilli: 1000, ratePaise: 3_000_000 }, { itemId: plain, description: "Cable", qtyMilli: 1000, ratePaise: 10_000 }] }, 1);
+    const list = await listServiceReminders(db, firmId, { status: "pending" });
+    const mine = list.filter((r) => r.voucherId === bill.id);
+    expect(mine).toHaveLength(1);
+    expect(mine[0].dueDate).toBe(addDays(today, 2));
+
+    expect((await runServiceReminders(db, firmId)).queued).toBe(0); // switched off
+    await saveSettings(db, firmId, { serviceReminders: true, serviceLeadDays: 3 });
+    expect((await runServiceReminders(db, firmId)).queued).toBe(1);
+    const msg = (await listMessages(db, firmId, { limit: 1000 })).find((m) => m.kind === "service_reminder")!;
+    expect(msg.body).toMatch(/Split AC/);
+    expect((await runServiceReminders(db, firmId)).queued).toBe(0); // only once
+
+    await markServiceDone(db, firmId, mine[0].id);
+    expect((await listServiceReminders(db, firmId, { status: "pending" })).some((r) => r.voucherId === bill.id)).toBe(false);
+    void itemsT;
+  });
+});

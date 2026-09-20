@@ -75,6 +75,9 @@ export const DEFAULT_SETTINGS = {
   reminderFirstAfterDays: 1,
   reminderEveryDays: 7,
   reminderMaxCount: 3,
+  serviceReminders: false,
+  serviceLeadDays: 3,
+  serviceMessage: "Dear {party}, your {item} is due for service on {date}. Please contact {business} to book a visit. Thank you.",
   // Set once the double-entry books have been built from existing bills.
   glBuiltAt: "",
 };

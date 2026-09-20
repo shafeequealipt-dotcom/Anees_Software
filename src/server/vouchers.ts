@@ -28,6 +28,7 @@ import { formatMoney } from "@/lib/money";
 import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
 import { syncVoucherGl } from "./gl";
+import { syncServiceReminders } from "./notify/service";
 import { SETTLES, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 
 export class VoucherError extends Error {
@@ -428,6 +429,7 @@ export async function saveVoucher(
     }
     await insertPostings(tx, id, postings);
     await syncVoucherGl(tx, firmId, id);
+    await syncServiceReminders(tx, firmId, id);
 
     // ── Settlement against bills
     const warnings: string[] = [];
@@ -617,6 +619,7 @@ export async function cancelVoucher(db: DB, firmId: number, id: number, userId: 
     await clearPostings(tx, id);
     await tx.delete(allocations).where(sql`${allocations.fromVoucherId} = ${id} or ${allocations.toVoucherId} = ${id}`);
     await syncVoucherGl(tx, firmId, id);
+    await syncServiceReminders(tx, firmId, id);
     await audit(tx, {
       userId,
       firmId,
@@ -656,6 +659,7 @@ export async function deleteVoucher(db: DB, firmId: number, id: number, userId: 
     await tx.delete(allocations).where(sql`${allocations.fromVoucherId} = ${id} or ${allocations.toVoucherId} = ${id}`);
     await tx.update(vouchers).set({ status: "deleted", deletedAt: new Date(), deletedBy: userId, deletedSnapshot: snapshot, updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
     await syncVoucherGl(tx, firmId, id);
+    await syncServiceReminders(tx, firmId, id);
     await audit(tx, {
       firmId,
       userId,
@@ -704,6 +708,7 @@ export async function restoreVoucher(db: DB, firmId: number, id: number, userId:
 
     await tx.update(vouchers).set({ status: snap.fromStatus, deletedAt: null, deletedBy: null, deletedSnapshot: null, updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
     await syncVoucherGl(tx, firmId, id);
+    await syncServiceReminders(tx, firmId, id);
     await audit(tx, {
       firmId,
       userId,

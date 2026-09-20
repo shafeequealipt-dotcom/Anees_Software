@@ -13,6 +13,7 @@ import type { companySchema } from "@/server/setup";
 import { type customFieldSchema, saveCustomField } from "@/server/custom-fields";
 import { type partyRatesSchema, type priceListSchema, savePriceList, setItemPrices, setPartyRates } from "@/server/pricing";
 import { type preferencesSchema, savePreferences } from "@/server/preferences";
+import { markServiceDone } from "@/server/notify/service";
 import { markMessage } from "@/server/notify/outbox";
 import { type messagingSchema, saveMessagingSettings } from "@/server/notify/settings";
 
@@ -217,6 +218,17 @@ export async function saveCustomFieldAction(input: z.input<typeof customFieldSch
     const id = await saveCustomField(await getDb(), user.firmId, input);
     revalidatePath("/settings/custom-fields");
     return { ok: true, id };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function markServiceDoneAction(id: number): Promise<Result> {
+  try {
+    const user = await assertUser("masters.edit");
+    await markServiceDone(await getDb(), user.firmId, id);
+    revalidatePath("/services");
+    return { ok: true };
   } catch (e) {
     return fail(e);
   }

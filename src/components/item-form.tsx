@@ -31,6 +31,7 @@ export interface ItemFormValue {
   location: string | null;
   trackBatches: boolean;
   trackSerials: boolean;
+  serviceIntervalDays?: number | null;
   customValues?: Record<string, string>;
   active: boolean;
 }
@@ -78,6 +79,7 @@ export function ItemForm({
     location: initial?.location ?? "",
     trackBatches: initial?.trackBatches ?? false,
     trackSerials: initial?.trackSerials ?? false,
+    serviceDays: initial?.serviceIntervalDays ? String(initial.serviceIntervalDays) : "",
     active: initial?.active ?? true,
   });
   const [categories, setCategories] = useState(initialCategories);
@@ -129,6 +131,7 @@ export function ItemForm({
       trackBatches: v.trackBatches,
       trackSerials: v.trackSerials,
       customValues: custom,
+      serviceIntervalDays: v.serviceDays ? Number(v.serviceDays) : null,
       active: v.active,
     });
     setSaving(false);
@@ -271,6 +274,9 @@ export function ItemForm({
         )}
         <Field label="Description" className="sm:col-span-2">
           <Textarea rows={2} value={v.description} onChange={(e) => set("description", e.target.value)} />
+        </Field>
+        <Field label="Service reminder (days after selling)" hint="Optional. E.g. 90 to remind the customer to book a service three months after each sale." className="sm:col-span-2">
+          <Input value={v.serviceDays} onChange={(e) => set("serviceDays", e.target.value.replace(/\D/g, ""))} inputMode="numeric" className="max-w-40" />
         </Field>
         {customFields.length > 0 && (
           <>

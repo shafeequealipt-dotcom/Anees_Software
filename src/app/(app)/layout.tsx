@@ -42,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/parties", label: "Parties" },
         { href: "/items", label: "Items & stock" },
         { href: "/expenses", label: "Expenses" },
+        { href: "/services", label: "Service reminders" },
         ...(can(user, "money.view")
           ? [
               { href: "/other-income", label: "Other income" },

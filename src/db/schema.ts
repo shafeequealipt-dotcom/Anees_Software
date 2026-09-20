@@ -233,6 +233,8 @@ export const items = pgTable(
     location: varchar("location", { length: 100 }),
     trackBatches: boolean("track_batches").notNull().default(false),
     trackSerials: boolean("track_serials").notNull().default(false),
+    /** Remind the customer to book a service this many days after buying (null = no reminder). */
+    serviceIntervalDays: integer("service_interval_days"),
     /** Values of the company's custom item fields, keyed by field id. */
     customValues: jsonb("custom_values").$type<Record<string, string>>().notNull().default({}),
     active: boolean("active").notNull().default(true),
@@ -554,6 +556,25 @@ export const shareLinks = pgTable("share_links", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: createdAt(),
 });
+
+/** "Your AC service is due": one row per sold item that has a service interval. */
+export const serviceReminders = pgTable(
+  "service_reminders",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    voucherId: integer("voucher_id").notNull().references(() => vouchers.id, { onDelete: "cascade" }),
+    partyId: integer("party_id").references(() => parties.id, { onDelete: "cascade" }),
+    itemId: integer("item_id").references(() => items.id, { onDelete: "set null" }),
+    itemName: varchar("item_name", { length: 300 }).notNull(),
+    dueDate: date("due_date").notNull(),
+    /** pending, done (customer was serviced or reminder dismissed) */
+    status: varchar("status", { length: 10 }).notNull().default("pending"),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("service_reminders_due_idx").on(t.firmId, t.status, t.dueDate), index("service_reminders_voucher_idx").on(t.voucherId)],
+);
 
 /** Which orders/challans a bill was made from (a bill can combine several). */
 export const voucherSources = pgTable(
