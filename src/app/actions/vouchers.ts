@@ -5,14 +5,19 @@ import { randomBytes } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
-import { parties, partyLedger, shareLinks, vouchers } from "@/db/schema";
+import { notifications, parties, partyLedger, shareLinks, vouchers } from "@/db/schema";
 import { AuthError, assertUser, clientIp } from "@/lib/auth";
 import { todayIST } from "@/lib/dates";
 import { can } from "@/lib/permissions";
 import { SETTLES, VOUCHER_INFO } from "@/lib/voucher-types";
 import { MasterError, saveParty } from "@/server/masters";
 import { notifyTransaction } from "@/server/notify/hooks";
-import { cancelVoucher, deleteVoucher, openBills, restoreVoucher, saveVoucher, VoucherError, type VoucherInput } from "@/server/vouchers";
+import { channelStatus } from "@/server/notify/channels";
+import { enqueue, partyChannel, processOutbox } from "@/server/notify/outbox";
+import { formatDate } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
+import { whatsappLink } from "@/lib/phone";
+import { cancelVoucher, deleteVoucher, getVoucher, openBills, restoreVoucher, saveVoucher, VoucherError, type VoucherInput } from "@/server/vouchers";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
 
@@ -143,6 +148,47 @@ export async function shareLinkAction(voucherId: number): Promise<ActionResult<{
     }
     const base = process.env.APP_URL ?? "http://localhost:3000";
     return { ok: true, url: `${base}/share/${token}` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Sends a bill to the party: automatically by WhatsApp or email when connected, otherwise as a ready-to-send WhatsApp link. */
+export async function sendVoucherAction(voucherId: number): Promise<ActionResult<{ mode: "sent" | "queued" | "manual"; link?: string; to: string }>> {
+  try {
+    const user = await assertUser();
+    const db = await getDb();
+    const data = await getVoucher(db, user.firmId, voucherId);
+    if (!data) return { ok: false, error: "This entry no longer exists." };
+    const v = data.voucher;
+    const [party] = v.partyId ? await db.select().from(parties).where(and(eq(parties.id, v.partyId), eq(parties.firmId, user.firmId))) : [];
+    const target = partyChannel(user.firm.country, { phone: v.partyPhone ?? party?.phone ?? null, email: party?.email ?? null });
+    if (!target) return { ok: false, error: "This customer has no phone number or email on file. Add one on the party first." };
+
+    let [link] = await db.select().from(shareLinks).where(and(eq(shareLinks.voucherId, voucherId), gt(shareLinks.expiresAt, new Date(Date.now() + 7 * 86400_000))));
+    if (!link) {
+      const token = randomBytes(18).toString("base64url");
+      [link] = await db.insert(shareLinks).values({ token, voucherId, expiresAt: new Date(Date.now() + 90 * 86400_000) }).returning();
+    }
+    const base = process.env.APP_URL ?? "http://localhost:3000";
+    const info = VOUCHER_INFO[v.type];
+    const text = `${user.firm.name}: ${info.label} ${v.prefix}${v.number} dated ${formatDate(v.date)} for ${formatMoney(v.totalPaise)}${data.balancePaise > 0 ? ` (balance due ${formatMoney(data.balancePaise)})` : ""}.\n\nView / download: ${base}/share/${link.token}`;
+    const id = await enqueue(db, user.firmId, {
+      kind: "manual",
+      channel: target.channel,
+      toAddress: target.toAddress,
+      toName: v.partyName,
+      subject: `${info.label} ${v.prefix}${v.number} from ${user.firm.name}`,
+      body: text,
+      dedupeKey: `send:${voucherId}:${Math.floor(Date.now() / 60_000)}`,
+      partyId: v.partyId ?? undefined,
+      refType: "voucher",
+      refId: voucherId,
+    });
+    if (target.channel === "whatsapp" && !channelStatus().whatsappApi) return { ok: true, mode: "manual", link: whatsappLink(target.toAddress, text), to: target.toAddress };
+    await processOutbox(db, { limit: 5 });
+    const [m] = id ? await db.select({ status: notifications.status }).from(notifications).where(eq(notifications.id, id)) : [];
+    return { ok: true, mode: m?.status === "sent" ? "sent" : "queued", to: target.toAddress };
   } catch (e) {
     return fail(e);
   }

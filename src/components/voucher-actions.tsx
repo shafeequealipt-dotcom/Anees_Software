@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { cancelVoucherAction, deleteVoucherAction, shareLinkAction } from "@/app/actions/vouchers";
+import { cancelVoucherAction, deleteVoucherAction, sendVoucherAction, shareLinkAction } from "@/app/actions/vouchers";
 import { Alert, Button, buttonClass } from "./ui";
 
 export function VoucherActions({
@@ -35,21 +35,22 @@ export function VoucherActions({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
 
   useEffect(() => {
     if (autoPrint && pdf) window.open(`/api/vouchers/${id}/pdf`, "_blank");
   }, [autoPrint, pdf, id]);
 
-  async function shareWhatsApp() {
-    if (!share) return;
+  async function send() {
     setBusy(true);
-    const res = await shareLinkAction(id);
+    setError(null);
+    setSent(null);
+    const res = await sendVoucherAction(id);
     setBusy(false);
     if (!res.ok) return setError(res.error);
-    const phone = (share.phone ?? "").replace(/\D/g, "");
-    const intl = phone.length === 10 ? `91${phone}` : phone;
-    const msg = `${share.text}\n\nView / download: ${res.url}`;
-    window.open(`https://wa.me/${intl}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+    if (res.mode === "manual" && res.link) window.open(res.link, "_blank", "noopener");
+    setSent(res.mode === "sent" ? "Sent." : res.mode === "queued" ? "Queued. It will go out shortly (see Settings → Messages)." : "WhatsApp is open with the message ready. Tap send there.");
+    setTimeout(() => setSent(null), 6000);
   }
 
   async function copyLink() {
@@ -96,9 +97,10 @@ export function VoucherActions({
         )}
         {pdf && share && !cancelled && (
           <>
-            <Button size="sm" onClick={shareWhatsApp} disabled={busy}>
-              WhatsApp
+            <Button size="sm" onClick={send} disabled={busy}>
+              {busy ? "Sending…" : "Send to customer"}
             </Button>
+            {sent && <span className="text-xs text-good">{sent}</span>}
             <Button size="sm" onClick={copyLink} disabled={busy}>
               {copied ? "Link copied" : "Copy link"}
             </Button>
