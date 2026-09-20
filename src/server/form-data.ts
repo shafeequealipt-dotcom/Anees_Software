@@ -3,8 +3,10 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import type { DB } from "@/db";
 import { rows, nums } from "@/db/query";
 import { accounts, firms, ledgerCategories, taxRates, vouchers, type VoucherType } from "@/db/schema";
+import { emptyPricing } from "@/lib/pricing";
 import { getSettings } from "@/lib/settings";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
+import { loadPricing } from "./pricing";
 import { getVoucher } from "./vouchers";
 
 export interface PartyOpt {
@@ -17,6 +19,7 @@ export interface PartyOpt {
   shippingAddress: string | null;
   kind: string;
   creditDays: number | null;
+  priceListId: number | null;
   balancePaise: number;
 }
 
@@ -43,7 +46,7 @@ export async function loadPartyOptions(db: DB, firmId: number): Promise<PartyOpt
     await rows<PartyOpt>(
       db,
       sql`select p.id, p.name, p.phone, p.gstin, p.state_code as "stateCode", p.billing_address as "billingAddress",
-            p.shipping_address as "shippingAddress", p.kind, p.credit_days as "creditDays",
+            p.shipping_address as "shippingAddress", p.kind, p.credit_days as "creditDays", p.price_list_id as "priceListId",
             coalesce((select sum(l.amount_paise) from party_ledger l where l.party_id = p.id), 0) as "balancePaise"
           from parties p where p.firm_id = ${firmId} and p.active order by lower(p.name)`,
     ),
@@ -110,6 +113,7 @@ export async function loadVoucherFormData(db: DB, firmId: number, type: VoucherT
     },
     nextNumber: next.n,
     see,
+    pricing: info.priceSide === "sale" && info.hasLines ? await loadPricing(db, firmId) : emptyPricing,
     parties: partyOptions.map((p) => ({ ...p, phone: see.contact ? p.phone : null, balancePaise: see.balance ? p.balancePaise : 0 })),
     items: itemOptions.map((i) => ({ ...i, purchasePricePaise: see.purchase ? i.purchasePricePaise : 0 })),
     taxes: taxes.map((t) => ({ id: t.id, name: t.name, gstBp: t.gstBp, cessBp: t.cessBp })),

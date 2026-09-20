@@ -109,7 +109,7 @@ export async function quickPartyAction(input: {
   stateCode?: string;
   billingAddress?: string;
   kind: "customer" | "supplier" | "both";
-}): Promise<ActionResult<{ party: { id: number; name: string; phone: string | null; gstin: string | null; stateCode: string | null; billingAddress: string | null; shippingAddress: string | null; kind: string; creditDays: number | null; balancePaise: number } }>> {
+}): Promise<ActionResult<{ party: { id: number; name: string; phone: string | null; gstin: string | null; stateCode: string | null; billingAddress: string | null; shippingAddress: string | null; kind: string; creditDays: number | null; priceListId: number | null; balancePaise: number } }>> {
   try {
     const user = await assertUser("masters.edit");
     const db = await getDb();
@@ -118,7 +118,7 @@ export async function quickPartyAction(input: {
     revalidatePath("/parties");
     return {
       ok: true,
-      party: { id: p.id, name: p.name, phone: p.phone, gstin: p.gstin, stateCode: p.stateCode, billingAddress: p.billingAddress, shippingAddress: p.shippingAddress, kind: p.kind, creditDays: p.creditDays, balancePaise: 0 },
+      party: { id: p.id, name: p.name, phone: p.phone, gstin: p.gstin, stateCode: p.stateCode, billingAddress: p.billingAddress, shippingAddress: p.shippingAddress, kind: p.kind, creditDays: p.creditDays, priceListId: p.priceListId, balancePaise: 0 },
     };
   } catch (e) {
     return fail(e);

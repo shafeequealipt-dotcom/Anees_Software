@@ -5,7 +5,9 @@ import { DeleteMasterButton, PrintButton, WhatsAppButton } from "@/components/pa
 import { DateRange } from "@/components/simple-filters";
 import { Badge, LinkButton, Money, PageHeader, Panel, PartyBalance, Table, td, th } from "@/components/ui";
 import { getDb } from "@/db";
-import { firms, parties, partyGroups } from "@/db/schema";
+import { firms, items, parties, partyGroups } from "@/db/schema";
+import { PartyRatesPanel } from "@/components/pricing-panels";
+import { getPartyRates } from "@/server/pricing";
 import { requireUser } from "@/lib/auth";
 import { financialYear, formatDate, todayIST } from "@/lib/dates";
 import { stateName } from "@/lib/gst/states";
@@ -92,6 +94,13 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
               </div>
             )}
           </Panel>
+          {can(user, "masters.edit") && p.kind !== "supplier" && (
+            <PartyRatesPanel
+              partyId={p.id}
+              items={(await db.select({ id: items.id, name: items.name, salePricePaise: items.salePricePaise }).from(items).where(and(eq(items.firmId, user.firmId), eq(items.active, true))).orderBy(items.name))}
+              initial={await getPartyRates(db, user.firmId, p.id)}
+            />
+          )}
           {seeBalance && openBills.length > 0 && (
             <Panel title="Unpaid bills" padded={false}>
               <ul className="divide-y divide-line text-sm">

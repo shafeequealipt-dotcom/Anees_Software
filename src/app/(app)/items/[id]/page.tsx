@@ -6,6 +6,8 @@ import { DateRange } from "@/components/simple-filters";
 import { Badge, LinkButton, Money, PageHeader, Panel, Table, td, th } from "@/components/ui";
 import { getDb } from "@/db";
 import { itemCategories, items, taxRates, units } from "@/db/schema";
+import { ItemPricesPanel } from "@/components/pricing-panels";
+import { getItemPrices } from "@/server/pricing";
 import { requireUser } from "@/lib/auth";
 import { financialYear, formatDate, todayIST } from "@/lib/dates";
 import { formatINR, formatPercent, formatQty } from "@/lib/money";
@@ -75,6 +77,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
               </div>
             )}
           </Panel>
+          {can(user, "masters.edit") && <ItemPricesPanel itemId={item.id} normalPricePaise={item.salePricePaise} rows={await getItemPrices(db, user.firmId, item.id)} />}
           {isGoods && mv && (
             <Panel title="Current stock">
               <div className={low ? "text-lg font-semibold text-warn" : "text-lg font-semibold"}>

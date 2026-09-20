@@ -10,6 +10,7 @@ import { AuthError, assertUser, clientIp, currentUser, hashPassword, passwordPro
 import { createCompany, createUser, deleteRole, editUserSchema, firmSchema, newUserSchema, resetUserPassword, roleSchema, saveFirm, saveRole, setCompanyActive, updateUser } from "@/server/admin";
 import { MasterError } from "@/server/masters";
 import type { companySchema } from "@/server/setup";
+import { type partyRatesSchema, type priceListSchema, savePriceList, setItemPrices, setPartyRates } from "@/server/pricing";
 import { type preferencesSchema, savePreferences } from "@/server/preferences";
 import { markMessage } from "@/server/notify/outbox";
 import { type messagingSchema, saveMessagingSettings } from "@/server/notify/settings";
@@ -170,6 +171,39 @@ export async function savePreferencesAction(input: z.input<typeof preferencesSch
     const user = await assertUser("settings.edit");
     await savePreferences(await getDb(), user.firmId, input, user.id);
     revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function savePriceListAction(input: z.input<typeof priceListSchema>): Promise<Result<{ id: number }>> {
+  try {
+    const user = await assertUser("settings.edit");
+    const id = await savePriceList(await getDb(), user.firmId, input);
+    revalidatePath("/settings/price-lists");
+    return { ok: true, id };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function setItemPricesAction(itemId: number, prices: { priceListId: number; salePricePaise: number | null; includesTax: boolean }[]): Promise<Result> {
+  try {
+    const user = await assertUser("masters.edit");
+    await setItemPrices(await getDb(), user.firmId, itemId, prices, user.id);
+    revalidatePath(`/items/${itemId}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function setPartyRatesAction(partyId: number, rates: z.input<typeof partyRatesSchema>): Promise<Result> {
+  try {
+    const user = await assertUser("masters.edit");
+    await setPartyRates(await getDb(), user.firmId, partyId, rates, user.id);
+    revalidatePath(`/parties/${partyId}`);
     return { ok: true };
   } catch (e) {
     return fail(e);

@@ -20,6 +20,7 @@ export interface PartyFormValue {
   shippingAddress: string | null;
   stateCode: string | null;
   groupId: number | null;
+  priceListId?: number | null;
   openingBalancePaise: number;
   openingDate: string | null;
   creditDays: number | null;
@@ -33,11 +34,13 @@ const r = (p: number | null | undefined) => (p ? String(Math.abs(p) / 100) : "")
 export function PartyForm({
   initial,
   groups: initialGroups,
+  priceLists = [],
   hideContact,
   hideBalance,
 }: {
   initial?: PartyFormValue;
   groups: { id: number; name: string }[];
+  priceLists?: { id: number; name: string }[];
   hideContact?: boolean;
   hideBalance?: boolean;
 }) {
@@ -53,6 +56,7 @@ export function PartyForm({
     sameShipping: !initial?.shippingAddress,
     stateCode: initial?.stateCode ?? "",
     groupId: initial?.groupId ? String(initial.groupId) : "",
+    priceListId: initial?.priceListId ? String(initial.priceListId) : "",
     opening: r(initial?.openingBalancePaise),
     openingSide: (initial?.openingBalancePaise ?? 0) < 0 ? "pay" : "receive",
     openingDate: initial?.openingDate ?? "",
@@ -82,6 +86,7 @@ export function PartyForm({
       shippingAddress: v.sameShipping ? null : v.shippingAddress || null,
       stateCode: v.stateCode || null,
       groupId: v.groupId ? Number(v.groupId) : null,
+      priceListId: v.priceListId ? Number(v.priceListId) : null,
       openingBalancePaise: v.openingSide === "pay" ? -opening : opening,
       openingDate: v.openingDate || null,
       creditDays: v.creditDays ? Number(v.creditDays) : null,
@@ -137,6 +142,18 @@ export function PartyForm({
         </Field>
         {!hideContact && (
           <>
+        {priceLists.length > 0 && (
+          <Field label="Price list" hint="Which selling prices this customer gets on new bills.">
+            <Select value={v.priceListId} onChange={(e) => set("priceListId", e.target.value)}>
+              <option value="">Normal prices</option>
+              {priceLists.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <Field label="Phone" error={err("phone")}>
           <Input type="tel" value={v.phone} onChange={(e) => set("phone", e.target.value)} />
         </Field>

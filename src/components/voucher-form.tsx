@@ -11,6 +11,7 @@ import { VOUCHER_INFO } from "@/lib/voucher-types";
 import type { ItemOpt, PartyOpt, VoucherFormData } from "@/server/form-data";
 import { Combobox } from "./combobox";
 import { Alert, Button, Checkbox, cx, Field, Input, Money, PartyBalance, Select, Textarea } from "./ui";
+import { saleRateFor } from "@/lib/pricing";
 
 interface Line {
   key: string;
@@ -117,6 +118,26 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const [addingParty, setAddingParty] = useState<string | null>(null);
 
   const party = partyId ? parties.find((p) => p.id === partyId) ?? null : null;
+  const priceParty = party ? { id: party.id, priceListId: party.priceListId } : null;
+
+  // On a new sale bill, switching the customer re-prices lines that still carry the previous customer's default price.
+  const prevParty = useRef(priceParty);
+  useEffect(() => {
+    const before = prevParty.current;
+    prevParty.current = priceParty;
+    if (info.priceSide !== "sale" || ex || (before?.id ?? null) === (priceParty?.id ?? null)) return;
+    setLines((ls) =>
+      ls.map((l) => {
+        const it = l.itemId ? itemMap.get(l.itemId) : undefined;
+        if (!it) return l;
+        const old = saleRateFor(it, before, data.pricing);
+        if (l.rate !== (rupees(old.paise) || "")) return l;
+        const next = saleRateFor(it, priceParty, data.pricing);
+        return { ...l, rate: rupees(next.paise) || "", rateIncl: next.incl };
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceParty?.id]);
   const pos = placeOfSupply || party?.stateCode || data.firm?.stateCode || "";
   const supply = supplyFor(data.firm?.country, data.firm?.stateCode, pos);
   const R = region();
@@ -177,13 +198,14 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
     }
     const sale = info.priceSide === "sale";
     const tax = item.taxRateId ? taxMap.get(item.taxRateId) : undefined;
+    const price = sale ? saleRateFor(item, priceParty, data.pricing) : { paise: item.purchasePricePaise, incl: item.purchaseIncl };
     updateLine(key, {
       itemId: item.id,
       description: item.name,
       hsn: item.hsn ?? "",
       unit: "base",
-      rate: rupees(sale ? item.salePricePaise : item.purchasePricePaise) || "",
-      rateIncl: sale ? item.saleIncl : item.purchaseIncl,
+      rate: rupees(price.paise) || "",
+      rateIncl: price.incl,
       taxRateId: item.taxRateId,
       gstBp: tax?.gstBp ?? 0,
       cessBp: tax?.cessBp ?? 0,
@@ -545,7 +567,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                             value={l.unit}
                             onChange={(e) => {
                               const unit = e.target.value as "base" | "alt";
-                              const baseRate = info.priceSide === "sale" ? item.salePricePaise : item.purchasePricePaise;
+                              const baseRate = info.priceSide === "sale" ? saleRateFor(item, priceParty, data.pricing).paise : item.purchasePricePaise;
                               const rate = unit === "alt" ? Math.round((baseRate * item.altFactorMilli!) / 1000) : baseRate;
                               updateLine(l.key, { unit, rate: rupees(rate) });
                             }}

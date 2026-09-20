@@ -12,6 +12,7 @@ import {
   parties,
   partyGroups,
   partyLedger,
+  priceLists,
   stockLedger,
   taxRates,
   units,
@@ -61,6 +62,7 @@ export const partySchema = z.object({
   shippingAddress: text(1000),
   stateCode: text(2),
   groupId: z.number().int().positive().nullish(),
+  priceListId: z.number().int().positive().nullish(),
   openingBalancePaise: z.number().int().default(0),
   openingDate: optDate,
   creditDays: z.number().int().min(0).max(3650).nullish(),
@@ -100,6 +102,10 @@ export async function saveParty(db: DB, firmId: number, raw: z.input<typeof part
     if (input.groupId) {
       const [g] = await tx.select({ id: partyGroups.id }).from(partyGroups).where(and(eq(partyGroups.id, input.groupId), eq(partyGroups.firmId, firmId)));
       if (!g) throw new MasterError("Choose a group from this company.", "groupId");
+    }
+    if (input.priceListId) {
+      const [pl] = await tx.select({ id: priceLists.id }).from(priceLists).where(and(eq(priceLists.id, input.priceListId), eq(priceLists.firmId, firmId)));
+      if (!pl) throw new MasterError("Choose a price list from this company.", "priceListId");
     }
     const values = { ...input, firmId, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
     delete (values as { id?: number }).id;

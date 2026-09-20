@@ -243,6 +243,18 @@ export const items = pgTable(
   ],
 );
 
+/** Named price lists (e.g. Retail, Wholesale). A party can be put on one; items carry a price per list. */
+export const priceLists = pgTable(
+  "price_lists",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    name: varchar("name", { length: 80 }).notNull(),
+    active: boolean("active").notNull().default(true),
+  },
+  (t) => [uniqueIndex("price_lists_firm_name_key").on(t.firmId, t.name)],
+);
+
 export const partyGroups = pgTable(
   "party_groups",
   {
@@ -268,6 +280,7 @@ export const parties = pgTable(
     shippingAddress: text("shipping_address"),
     stateCode: varchar("state_code", { length: 2 }),
     groupId: integer("group_id").references(() => partyGroups.id, { onDelete: "set null" }),
+    priceListId: integer("price_list_id").references(() => priceLists.id, { onDelete: "set null" }),
     /** Positive: they owe us (receivable). Negative: we owe them (payable). */
     openingBalancePaise: paise("opening_balance_paise").notNull().default(0),
     openingDate: date("opening_date"),
@@ -551,4 +564,27 @@ export const notifications = pgTable(
     index("notifications_status_idx").on(t.status, t.scheduledFor),
     index("notifications_firm_created_idx").on(t.firmId, t.createdAt),
   ],
+);
+
+export const itemPrices = pgTable(
+  "item_prices",
+  {
+    priceListId: integer("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
+    itemId: integer("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+    salePricePaise: paise("sale_price_paise").notNull(),
+    includesTax: boolean("includes_tax").notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.priceListId, t.itemId] })],
+);
+
+/** A special rate (or a percentage off the list price) for one party and one item. */
+export const partyRates = pgTable(
+  "party_rates",
+  {
+    partyId: integer("party_id").notNull().references(() => parties.id, { onDelete: "cascade" }),
+    itemId: integer("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+    ratePaise: paise("rate_paise"),
+    discountBp: integer("discount_bp"),
+  },
+  (t) => [primaryKey({ columns: [t.partyId, t.itemId] })],
 );
