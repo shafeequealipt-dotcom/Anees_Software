@@ -728,3 +728,15 @@ export const fixedAssets = pgTable(
   },
   (t) => [index("fixed_assets_firm_idx").on(t.firmId)],
 );
+
+/** "Back up now" requests from the Backups page. The server's backup job picks these up within a couple of minutes. */
+export const backupRequests = pgTable("backup_requests", {
+  id: serial("id").primaryKey(),
+  requestedBy: integer("requested_by").references(() => users.id, { onDelete: "set null" }),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+  /** pending, running, done, failed */
+  status: varchar("status", { length: 10 }).notNull().default("pending"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  message: text("message"),
+});

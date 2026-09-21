@@ -54,6 +54,7 @@ export const PERMISSION_GROUPS = [
       { key: "users.manage", label: "Manage users and roles" },
       { key: "companies.manage", label: "Add and hide companies", hint: "Each company has its own parties, items, bills and tax settings." },
       { key: "audit.view", label: "See the activity log (who changed what)" },
+      { key: "backups.manage", label: "See backups and start a backup now" },
     ],
   },
 ] as const;

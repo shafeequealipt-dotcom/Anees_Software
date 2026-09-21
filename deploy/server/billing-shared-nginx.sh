@@ -80,6 +80,20 @@ case "$cmd" in
   yearly)        backup_job yearly "${1:?financial year, e.g. 2025-26}" ;;
   backups)       backup_job list ;;
 
+  backup-requests)
+    # Run by a timer every couple of minutes: takes a backup when someone pressed "Back up now" in Settings > Backups.
+    req=$(psql_db "select id from backup_requests where status = 'pending' order by id limit 1" 2>/dev/null || true)
+    [ -n "$req" ] || exit 0
+    psql_db "update backup_requests set status = 'running', started_at = now() where id = $req" >/dev/null
+    if out=$(backup_job snapshot manual 2>&1); then
+      psql_db "update backup_requests set status = 'done', finished_at = now(), message = 'Backup completed.' where id = $req" >/dev/null
+    else
+      msg=$(printf '%s' "$out" | tail -n 3 | tr '\n' ' ' | tr -d "'" | cut -c1-300)
+      psql_db "update backup_requests set status = 'failed', finished_at = now(), message = '$msg' where id = $req" >/dev/null
+      exit 1
+    fi
+    ;;
+
   pitr)
     sub="${1:?setup|full|diff|info|check}"
     case "$sub" in setup|full|diff) tracked=1 ;; *) tracked=0 ;; esac

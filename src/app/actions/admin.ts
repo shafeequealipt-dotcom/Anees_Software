@@ -10,6 +10,8 @@ import { AuthError, assertUser, clientIp, currentUser, hashPassword, passwordPro
 import { createCompany, createUser, deleteRole, editUserSchema, firmSchema, newUserSchema, resetUserPassword, roleSchema, saveFirm, saveRole, setCompanyActive, updateUser } from "@/server/admin";
 import { MasterError } from "@/server/masters";
 import type { companySchema } from "@/server/setup";
+import { requestBackup } from "@/server/backups";
+import { type CategoryKind, deleteCategory, saveCategoryName } from "@/server/categories";
 import { type customFieldSchema, saveCustomField } from "@/server/custom-fields";
 import { type partyRatesSchema, type priceListSchema, savePriceList, setItemPrices, setPartyRates } from "@/server/pricing";
 import { type preferencesSchema, savePreferences } from "@/server/preferences";
@@ -228,6 +230,39 @@ export async function markServiceDoneAction(id: number): Promise<Result> {
     const user = await assertUser("masters.edit");
     await markServiceDone(await getDb(), user.firmId, id);
     revalidatePath("/services");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function saveCategoryNameAction(kind: CategoryKind, id: number | undefined, name: string): Promise<Result> {
+  try {
+    const user = await assertUser("settings.edit");
+    await saveCategoryName(await getDb(), user.firmId, kind, id, name, user.id);
+    revalidatePath("/settings/categories");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function deleteCategoryAction(kind: CategoryKind, id: number): Promise<Result> {
+  try {
+    const user = await assertUser("settings.edit");
+    await deleteCategory(await getDb(), user.firmId, kind, id, user.id);
+    revalidatePath("/settings/categories");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function requestBackupAction(): Promise<Result> {
+  try {
+    const user = await assertUser("backups.manage");
+    await requestBackup(await getDb(), user.id);
+    revalidatePath("/settings/backups");
     return { ok: true };
   } catch (e) {
     return fail(e);

@@ -11,6 +11,7 @@ case "${1:-}" in
   snapshot)    exec /usr/local/bin/billing snapshot nightly ;;
   verify)      pitr_configured || exit 0; exec /usr/local/bin/billing verify ;;
   healthcheck) exec /usr/local/bin/billing healthcheck ;;
+  backup-requests) exec /usr/local/bin/billing backup-requests ;;
   notify)
     # Sends waiting WhatsApp/email messages and prepares payment reminders. Needs CRON_SECRET in /opt/billing/.env.
     secret=$(grep -E '^CRON_SECRET=' "$ROOT/.env" | head -n1 | cut -d= -f2-)
