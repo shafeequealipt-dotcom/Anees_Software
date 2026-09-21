@@ -7,12 +7,15 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { CompanySwitcher } from "@/components/company-switcher";
+import { LanguageToggle } from "@/components/language-toggle";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const name = await businessName();
+  const lang = (await cookies()).get("lang")?.value === "ar" ? "ar" : "en";
 
   const groups: NavGroup[] = [
     { items: [{ href: "/", label: "Home" }] },
@@ -97,6 +100,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                     {user.email} · {user.roleName}
                   </div>
                 </div>
+                <LanguageToggle lang={lang} />
                 <Link href="/account" className="block px-3 py-2 text-sm hover:bg-ground">
                   My password & sign-in
                 </Link>
