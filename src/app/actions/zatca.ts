@@ -28,9 +28,21 @@ async function run<T extends object>(fn: (firmId: number, userId: number) => Pro
   }
 }
 
-export const saveProfileAction = (input: z.input<typeof profileSchema>) => run(async (f, u) => (await saveProfile(await getDb(), f, input, u), {}));
-export const startOnboardingAction = (otp: string) => run(async (f, u) => (await startOnboarding(await getDb(), f, otp, u), {}));
-export const runChecksAction = () => run(async (f, u) => ({ results: await runComplianceChecks(await getDb(), f, u) }));
-export const getProductionAction = () => run(async (f, u) => (await getProductionCertificate(await getDb(), f, u), {}));
-export const setEnabledAction = (on: boolean) => run(async (f, u) => (await setEnabled(await getDb(), f, on, u), {}));
-export const retryInvoiceAction = (id: number) => run(async (f) => ({ status: (await submitInvoice(await getDb(), f, id))?.status ?? "" }));
+export async function saveProfileAction(input: z.input<typeof profileSchema>) {
+  return run(async (f, u) => (await saveProfile(await getDb(), f, input, u), {}));
+}
+export async function startOnboardingAction(otp: string) {
+  return run(async (f, u) => (await startOnboarding(await getDb(), f, otp, u), {}));
+}
+export async function runChecksAction() {
+  return run(async (f, u) => ({ results: await runComplianceChecks(await getDb(), f, u) }));
+}
+export async function getProductionAction() {
+  return run(async (f, u) => (await getProductionCertificate(await getDb(), f, u), {}));
+}
+export async function setEnabledAction(on: boolean) {
+  return run(async (f, u) => (await setEnabled(await getDb(), f, on, u), {}));
+}
+export async function retryInvoiceAction(id: number) {
+  return run(async (f) => ({ status: (await submitInvoice(await getDb(), f, id))?.status ?? "" }));
+}
