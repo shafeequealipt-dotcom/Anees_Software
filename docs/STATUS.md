@@ -45,7 +45,7 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 ## Last updated
 
-2026-09-21 · session: full feature list built (119 tests pass). Settings, users, roles and multi-company are LIVE; the rest (PDF, Excel, accounting, messaging, price lists, etc.) is committed but NOT yet deployed
+2026-09-21 · session: first feature list DEPLOYED (live). Second batch (logo/signature, invoice styles, thermal, Arabic invoices and interface, categories, Backups page, ZATCA Phase 2) built, 146 tests pass; build+deploy in progress
 
 ---
 
@@ -243,12 +243,24 @@ for email `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`. Insta
 copy `deploy/server/systemd/billing-notify.timer` to `/etc/systemd/system/`, `systemctl enable --now billing-notify.timer`.
 Without WhatsApp keys, messages wait as "Tap to send" in Settings → Messages (wa.me links) — nothing is lost.
 
+### Built 2026-09-21 (second batch) — 146 tests pass
+| Feature | Where |
+|---|---|
+| Logo and signature upload (kept in the DB, so backups include them) | Settings → This company; `/api/company/image`; table `firm_images` |
+| Invoice styles Classic / Modern with accent colour; A4, A5, thermal 80 mm and 58 mm receipts | Settings → Billing; `?paper=t80` on the PDF URL; `src/server/pdf/invoice-pdf.tsx` |
+| Bilingual (English + Arabic) or Arabic-only invoices; Arabic names on company, parties and items; Arabic amount in words | `src/lib/invoice-labels.ts`, `src/lib/arabic.ts`; fonts Noto Sans + Tajawal in `assets/fonts` (Noto Sans Arabic was rejected: it drops letter dots in this PDF library) |
+| Arabic interface with right-to-left layout | header menu → العربية; `src/components/translator.tsx` swaps text using `src/lib/ui-ar.ts` (exact-match dictionary; extend it as needed); RTL CSS at the end of `globals.css` |
+| Item, expense and income category management | Settings → Categories |
+| Backups page with "Back up now" | Settings → Backups; table `backup_requests`; server job `billing backup-requests` + `deploy/server/systemd/billing-backup-requests.timer` (**must be installed on the server**) |
+| ZATCA Phase 2 e-invoicing | Settings → E-invoicing (Saudi companies); `src/lib/zatca/*`, `src/server/zatca.ts` |
+
+**ZATCA Phase 2 — read before use.** Implemented: device key (secp256k1, stored encrypted with APP_SECRET), certificate request (verified with OpenSSL), UBL 2.1 XML written in canonical form, invoice hash and chain (ICV/PIH), XAdES signature, Phase 2 QR (tags 1–9), onboarding (one-time code → compliance certificate → six sample checks → production certificate), reporting (consumer invoices) and clearance (business invoices) with retries, and locking of issued invoices (corrections by credit note). It is tested against a **pretend** ZATCA server only. It has **not** been run against ZATCA's real servers, so some details (digest formats, exemption reason codes, address rules) may need adjusting after the first Sandbox run; ZATCA's own validation messages are shown in the app. Debit notes (sales-side) are not created by the app yet. Buyers need the national address on the party for business invoices.
+
 ### Known limits of the new features
 - Accounting uses the periodic stock method: stock on hand is valued from stock records and added on the balance sheet, not held in a ledger account. Rounding differences go to a "Round off" account.
 - E-way bill: file for portal upload only; no direct GSP/API generation.
 - WhatsApp Business API needs a Meta-verified number; business-initiated messages need an approved template.
 - TDS is taken on the amount before tax; TCS on amount plus tax. Confirm with the accountant.
-- Arabic / bilingual invoice text and ZATCA Phase 2 are still not built.
 - Multi-company region race (see "Multiple companies") is avoided in PDFs/share pages (formatted in one synchronous block) but still exists for on-screen formatting.
 
 ## Not started

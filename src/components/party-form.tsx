@@ -14,6 +14,11 @@ export interface PartyFormValue {
   name: string;
   nameAr?: string | null;
   addressAr?: string | null;
+  saStreet?: string | null;
+  saBuilding?: string | null;
+  saDistrict?: string | null;
+  saCity?: string | null;
+  saPostal?: string | null;
   gstin: string | null;
   pan: string | null;
   phone: string | null;
@@ -52,6 +57,11 @@ export function PartyForm({
     name: initial?.name ?? "",
     nameAr: initial?.nameAr ?? "",
     addressAr: initial?.addressAr ?? "",
+    saStreet: initial?.saStreet ?? "",
+    saBuilding: initial?.saBuilding ?? "",
+    saDistrict: initial?.saDistrict ?? "",
+    saCity: initial?.saCity ?? "",
+    saPostal: initial?.saPostal ?? "",
     gstin: initial?.gstin ?? "",
     phone: initial?.phone ?? "",
     email: initial?.email ?? "",
@@ -85,6 +95,11 @@ export function PartyForm({
       name: v.name,
       nameAr: v.nameAr || null,
       addressAr: v.addressAr || null,
+      saStreet: v.saStreet || null,
+      saBuilding: v.saBuilding || null,
+      saDistrict: v.saDistrict || null,
+      saCity: v.saCity || null,
+      saPostal: v.saPostal || null,
       gstin: v.gstin || null,
       phone: v.phone || null,
       email: v.email || null,
@@ -127,6 +142,26 @@ export function PartyForm({
             </Field>
             <Field label="Arabic address (العنوان)">
               <Input value={v.addressAr} onChange={(e) => set("addressAr", e.target.value)} dir="rtl" />
+            </Field>
+          </>
+        )}
+        {region().country === "SA" && (
+          <>
+            <h3 className="text-xs font-semibold text-muted sm:col-span-2">National address (needed on e-invoices to businesses)</h3>
+            <Field label="Street" error={err("saStreet")}>
+              <Input value={v.saStreet} onChange={(e) => set("saStreet", e.target.value)} />
+            </Field>
+            <Field label="Building number (4 digits)" error={err("saBuilding")}>
+              <Input value={v.saBuilding} onChange={(e) => set("saBuilding", e.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" />
+            </Field>
+            <Field label="District" error={err("saDistrict")}>
+              <Input value={v.saDistrict} onChange={(e) => set("saDistrict", e.target.value)} />
+            </Field>
+            <Field label="City" error={err("saCity")}>
+              <Input value={v.saCity} onChange={(e) => set("saCity", e.target.value)} />
+            </Field>
+            <Field label="Postal code (5 digits)" error={err("saPostal")}>
+              <Input value={v.saPostal} onChange={(e) => set("saPostal", e.target.value.replace(/\D/g, "").slice(0, 5))} inputMode="numeric" />
             </Field>
           </>
         )}

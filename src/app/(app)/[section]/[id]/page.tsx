@@ -16,6 +16,7 @@ import { formatINR, formatPercent, formatQty } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { typeFromPath, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 import { voucherProfit } from "@/server/profit-reports";
+import { zatcaForVoucher } from "@/server/zatca";
 import { getVoucher, paymentStatus } from "@/server/vouchers";
 
 export async function generateMetadata({ params }: { params: Promise<{ section: string; id: string }> }) {
@@ -48,7 +49,10 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   const profit = can(user, "see.profit") ? await voucherProfit(db, user.firmId, v.id) : null;
   // Saudi Arabia: tax invoices and credit notes carry a ZATCA (Phase 1) QR code.
   const qrSource = R.country === "SA" && firm?.gstin && ["sale_invoice", "credit_note"].includes(v.type) && v.status === "active";
-  const zatcaQr = qrSource
+  const zrec = R.country === "SA" && ["sale_invoice", "credit_note"].includes(v.type) ? await zatcaForVoucher(db, v.id) : null;
+  const zatcaQr = zrec
+    ? await QRCode.toDataURL(zrec.qr, { margin: 1, width: 180 })
+    : qrSource
     ? await QRCode.toDataURL(
         zatcaQrBase64({
           sellerName: firm!.name,
@@ -349,6 +353,16 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                 <div className="flex justify-between"><dt className="text-muted">Cost of goods</dt><dd><Money paise={profit.costPaise} /></dd></div>
                 <div className="flex justify-between border-t border-line pt-1 font-semibold"><dt>Profit</dt><dd><Money paise={profit.profitPaise} className={profit.profitPaise < 0 ? "text-bad" : "text-good"} /> <span className="text-xs font-normal text-muted">({formatPercent(profit.marginBp)})</span></dd></div>
               </dl>
+            </Panel>
+          )}
+          {zrec && (
+            <Panel title="E-invoice (ZATCA)">
+              <dl className="flex flex-col gap-1 text-sm">
+                <div className="flex justify-between"><dt className="text-muted">Status</dt><dd className="font-medium">{{ pending: "Waiting to be sent", reported: "Reported to ZATCA", cleared: "Cleared by ZATCA", rejected: "Rejected by ZATCA" }[zrec.status] ?? zrec.status}</dd></div>
+                <div className="flex justify-between"><dt className="text-muted">Invoice counter</dt><dd className="num">{zrec.icv}</dd></div>
+              </dl>
+              {zrec.error && <p className="mt-2 whitespace-pre-line text-xs text-bad">{zrec.error}</p>}
+              <a href={`/api/vouchers/${v.id}/zatca`} className="mt-2 inline-flex h-8 items-center rounded-md border border-line bg-panel px-2.5 text-sm font-medium hover:bg-ground">Download signed XML</a>
             </Panel>
           )}
           {zatcaQr && (

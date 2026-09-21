@@ -15,6 +15,7 @@ import { VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 import { zatcaQrBase64 } from "@/lib/zatca";
 import { listCustomFields } from "./custom-fields";
 import { imageDataUrls } from "./company-images";
+import { zatcaForVoucher } from "./zatca";
 import { getVoucher } from "./vouchers";
 
 export type PaperKind = "A4" | "A5" | "T80" | "T58";
@@ -70,8 +71,11 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
   const images = await imageDataUrls(db, firmId);
   const [account] = v.accountId ? await db.select().from(accounts).where(eq(accounts.id, v.accountId)) : [];
 
+  const zrec = firm.country === "SA" ? await zatcaForVoucher(db, voucherId) : null;
   const hasQr = firm.country === "SA" && !!firm.gstin && ["sale_invoice", "credit_note"].includes(v.type) && v.status === "active";
-  const zatca = hasQr
+  const zatca = zrec
+    ? await QRCode.toDataURL(zrec.qr, { margin: 1, width: 220 })
+    : hasQr
     ? await QRCode.toDataURL(
         zatcaQrBase64({
           sellerName: firm.name,

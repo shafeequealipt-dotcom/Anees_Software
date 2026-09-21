@@ -28,6 +28,7 @@ import { formatMoney } from "@/lib/money";
 import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
 import { syncVoucherGl } from "./gl";
+import { isZatcaIssued, ZATCA_LOCKED_MESSAGE } from "./zatca-lock";
 import { syncServiceReminders } from "./notify/service";
 import { SETTLES, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 
@@ -151,6 +152,7 @@ export async function saveVoucher(
       [existing] = await tx.select().from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, firmId))).for("update");
       if (!existing) throw new VoucherError("This entry no longer exists.");
       if (existing.status === "deleted") throw new VoucherError("This entry was deleted. Restore it first.");
+      if (await isZatcaIssued(tx, existing.id)) throw new VoucherError(ZATCA_LOCKED_MESSAGE);
       if (existing.type !== input.type) throw new VoucherError("An entry can't change its type.");
       if (existing.status === "cancelled") throw new VoucherError("Cancelled entries can't be edited.");
     }
@@ -629,6 +631,7 @@ export async function cancelVoucher(db: DB, firmId: number, id: number, userId: 
     const [v] = await tx.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId))).for("update");
     if (!v || v.status === "deleted") throw new VoucherError("This entry no longer exists.");
     if (v.status === "cancelled") return;
+    if (await isZatcaIssued(tx, id)) throw new VoucherError(ZATCA_LOCKED_MESSAGE);
     await tx.update(vouchers).set({ status: "cancelled", updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, id));
     await clearPostings(tx, id);
     await tx.delete(allocations).where(sql`${allocations.fromVoucherId} = ${id} or ${allocations.toVoucherId} = ${id}`);
@@ -662,6 +665,7 @@ export async function deleteVoucher(db: DB, firmId: number, id: number, userId: 
   return db.transaction(async (tx) => {
     const [v] = await tx.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId))).for("update");
     if (!v || v.status === "deleted") return;
+    if (await isZatcaIssued(tx, id)) throw new VoucherError(ZATCA_LOCKED_MESSAGE);
     const snapshot: DeletedSnapshot = {
       fromStatus: v.status,
       party: without(await tx.select().from(partyLedger).where(eq(partyLedger.voucherId, id))),

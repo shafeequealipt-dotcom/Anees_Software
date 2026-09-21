@@ -299,6 +299,12 @@ export const parties = pgTable(
     name: varchar("name", { length: 200 }).notNull(),
     nameAr: varchar("name_ar", { length: 200 }),
     addressAr: text("address_ar"),
+    /** Saudi national address, needed on business-to-business e-invoices. */
+    saStreet: varchar("sa_street", { length: 120 }),
+    saBuilding: varchar("sa_building", { length: 10 }),
+    saDistrict: varchar("sa_district", { length: 80 }),
+    saCity: varchar("sa_city", { length: 80 }),
+    saPostal: varchar("sa_postal", { length: 10 }),
     gstin: varchar("gstin", { length: 15 }),
     pan: varchar("pan", { length: 10 }),
     phone: varchar("phone", { length: 30 }),
@@ -765,4 +771,62 @@ export const firmImages = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.firmId, t.kind] })],
+);
+
+// ─── ZATCA e-invoicing (Saudi Arabia, Phase 2) ───────────────────────────────
+
+/** One row per company. Keys and secrets are stored encrypted with the server's APP_SECRET. */
+export const zatcaSettings = pgTable("zatca_settings", {
+  firmId: integer("firm_id").primaryKey().references(() => firms.id, { onDelete: "cascade" }),
+  /** sandbox, simulation or production */
+  environment: varchar("environment", { length: 12 }).notNull().default("sandbox"),
+  /** not_started, csr_ready, compliance, production */
+  status: varchar("status", { length: 12 }).notNull().default("not_started"),
+  enabled: boolean("enabled").notNull().default(false),
+  crn: varchar("crn", { length: 20 }),
+  branchName: varchar("branch_name", { length: 100 }),
+  businessCategory: varchar("business_category", { length: 100 }),
+  shortAddress: varchar("short_address", { length: 12 }),
+  street: varchar("street", { length: 120 }),
+  building: varchar("building", { length: 10 }),
+  district: varchar("district", { length: 80 }),
+  city: varchar("city", { length: 80 }),
+  postal: varchar("postal", { length: 10 }),
+  egsSerial: varchar("egs_serial", { length: 80 }),
+  privateKeyEnc: text("private_key_enc"),
+  csr: text("csr"),
+  complianceCert: text("compliance_cert"),
+  complianceSecretEnc: text("compliance_secret_enc"),
+  complianceRequestId: varchar("compliance_request_id", { length: 40 }),
+  productionCert: text("production_cert"),
+  productionSecretEnc: text("production_secret_enc"),
+  /** The chain: how many invoices have been issued, and the hash of the last one. */
+  icv: integer("icv").notNull().default(0),
+  lastHash: text("last_hash"),
+  lastCheck: jsonb("last_check"),
+  updatedAt: updatedAt(),
+});
+
+export const zatcaInvoices = pgTable(
+  "zatca_invoices",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    voucherId: integer("voucher_id").notNull().references(() => vouchers.id, { onDelete: "cascade" }),
+    uuid: varchar("uuid", { length: 40 }).notNull(),
+    icv: integer("icv").notNull(),
+    kind: varchar("kind", { length: 12 }).notNull(),
+    invoiceHash: text("invoice_hash").notNull(),
+    qr: text("qr").notNull(),
+    xml: text("xml").notNull(),
+    clearedXml: text("cleared_xml"),
+    /** pending, reported, cleared, rejected */
+    status: varchar("status", { length: 10 }).notNull().default("pending"),
+    response: jsonb("response"),
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("zatca_invoices_voucher_key").on(t.voucherId), uniqueIndex("zatca_invoices_icv_key").on(t.firmId, t.icv), index("zatca_invoices_status_idx").on(t.firmId, t.status)],
 );

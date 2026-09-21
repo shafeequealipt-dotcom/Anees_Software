@@ -12,6 +12,7 @@ import { can } from "@/lib/permissions";
 import { SETTLES, VOUCHER_INFO } from "@/lib/voucher-types";
 import { MasterError, saveParty } from "@/server/masters";
 import { notifyTransaction } from "@/server/notify/hooks";
+import { issueForVoucher } from "@/server/zatca";
 import { channelStatus } from "@/server/notify/channels";
 import { enqueue, partyChannel, processOutbox } from "@/server/notify/outbox";
 import { formatDate } from "@/lib/dates";
@@ -43,6 +44,13 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
     }
     const res = await saveVoucher(db, user.firmId, input, user.id, await clientIp());
     await notifyTransaction(db, user.firmId, user.id, res.id, input.id ? "updated" : "created");
+    if (!input.id && user.firm.country === "SA") {
+      try {
+        await issueForVoucher(db, user.firmId, res.id);
+      } catch (e) {
+        console.error("e-invoice issue failed", e);
+      }
+    }
     revalidatePath(info.path);
     revalidatePath("/");
     return { ok: true, ...res };

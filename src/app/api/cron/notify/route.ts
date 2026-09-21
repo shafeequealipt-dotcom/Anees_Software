@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { getDb } from "@/db";
 import { activeFirms, processOutbox } from "@/server/notify/outbox";
 import { runPaymentReminders } from "@/server/notify/reminders";
+import { retryPending } from "@/server/zatca";
 import { runServiceReminders } from "@/server/notify/service";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ export async function POST(req: Request) {
     try {
       reminders[f.name] = await runPaymentReminders(db, f.id);
       await runServiceReminders(db, f.id);
+      if (f.country === "SA") await retryPending(db, f.id);
     } catch (e) {
       console.error("reminders failed for", f.name, e);
     }

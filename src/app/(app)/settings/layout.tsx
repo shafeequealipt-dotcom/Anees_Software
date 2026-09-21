@@ -11,6 +11,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     can(user, "companies.manage") && { href: "/settings/companies", label: "Companies" },
     can(user, "users.manage") && { href: "/settings/users", label: "Users" },
     can(user, "users.manage") && { href: "/settings/roles", label: "Roles & access" },
+    can(user, "settings.edit") && user.firm.country === "SA" && { href: "/settings/einvoicing", label: "E-invoicing" },
     can(user, "settings.edit") && { href: "/settings/preferences", label: "Billing" },
     can(user, "settings.edit") && { href: "/settings/price-lists", label: "Price lists" },
     can(user, "settings.edit") && { href: "/settings/custom-fields", label: "Item fields" },
