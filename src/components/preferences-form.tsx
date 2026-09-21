@@ -15,7 +15,10 @@ interface Values {
   billDiscount: boolean;
   defaultPriceIncludesTax: boolean;
   showMrp: boolean;
-  printPaperSize: "A4" | "A5";
+  printPaperSize: "A4" | "A5" | "thermal";
+  thermalWidthMm: 58 | 80;
+  invoiceLayout: "classic" | "modern";
+  invoiceAccentColor: string;
   showBankDetailsOnInvoice: boolean;
   showUpiQrOnInvoice: boolean;
   tdsTcsEnabled: boolean;
@@ -71,13 +74,31 @@ export function PreferencesForm({ initial, india }: { initial: Values; india: bo
 
       <Panel title="On printed invoices">
         <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
-          <Field label="Paper size">
-            <Select value={v.printPaperSize} onChange={(e) => set("printPaperSize", e.target.value as "A4" | "A5")}>
-              <option value="A4">A4</option>
+          <Field label="Paper" hint="Receipts suit a shop counter printer.">
+            <Select
+              value={v.printPaperSize === "thermal" ? `t${v.thermalWidthMm}` : v.printPaperSize}
+              onChange={(e) => {
+                const x = e.target.value;
+                setSaved(false);
+                if (x === "t80" || x === "t58") setV((p) => ({ ...p, printPaperSize: "thermal", thermalWidthMm: x === "t80" ? 80 : 58 }));
+                else setV((p) => ({ ...p, printPaperSize: x as "A4" | "A5" }));
+              }}
+            >
+              <option value="A4">A4 page</option>
               <option value="A5">A5 (half page)</option>
+              <option value="t80">Thermal receipt, 80 mm</option>
+              <option value="t58">Thermal receipt, 58 mm</option>
             </Select>
           </Field>
-          <div />
+          <Field label="Invoice style" hint="Applies to A4 and A5 pages.">
+            <Select value={v.invoiceLayout} onChange={(e) => set("invoiceLayout", e.target.value as "classic" | "modern")}>
+              <option value="classic">Classic (plain, black and white friendly)</option>
+              <option value="modern">Modern (coloured header and table)</option>
+            </Select>
+          </Field>
+          <Field label="Accent colour">
+            <input type="color" value={v.invoiceAccentColor} onChange={(e) => set("invoiceAccentColor", e.target.value)} className="h-9 w-20 cursor-pointer rounded-md border border-line bg-panel p-1" />
+          </Field>
           <Checkbox label="Show bank details" checked={v.showBankDetailsOnInvoice} onChange={(e) => set("showBankDetailsOnInvoice", e.target.checked)} />
           {india && <Checkbox label="Show a UPI payment QR code on unpaid invoices" checked={v.showUpiQrOnInvoice} onChange={(e) => set("showUpiQrOnInvoice", e.target.checked)} />}
           <Field label="Default terms on quotations" className="sm:col-span-2">

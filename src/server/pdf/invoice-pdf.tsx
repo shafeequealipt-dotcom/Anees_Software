@@ -1,38 +1,62 @@
-import { Document, Image, Page, renderToBuffer, StyleSheet, Text, View } from "@react-pdf/renderer";
+import path from "node:path";
+import { Document, Font, Image, Page, renderToBuffer, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { InvoiceModel } from "../invoice";
+
+const fontFile = (n: string) => path.join(process.cwd(), "assets", "fonts", n);
+Font.register({
+  family: "NotoSans",
+  fonts: [
+    { src: fontFile("NotoSans-Regular.ttf"), fontWeight: 400 },
+    { src: fontFile("NotoSans-Bold.ttf"), fontWeight: 700 },
+  ],
+});
+Font.registerHyphenationCallback((w) => [w]);
 
 const ink = "#1a2230";
 const muted = "#5b6675";
 const line = "#cfd6df";
-const accent = "#1f4e79";
 
-const s = StyleSheet.create({
-  page: { paddingTop: 28, paddingBottom: 46, paddingHorizontal: 30, fontFamily: "Helvetica", fontSize: 9, color: ink },
-  head: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1.5, borderBottomColor: accent, paddingBottom: 8, marginBottom: 10 },
-  sellerName: { fontSize: 15, fontFamily: "Helvetica-Bold", color: accent },
-  small: { fontSize: 8.5, color: muted, lineHeight: 1.35 },
-  title: { fontSize: 14, fontFamily: "Helvetica-Bold", textAlign: "right", color: accent },
-  cancelled: { color: "#b3261e" },
-  twoCol: { flexDirection: "row", gap: 12, marginBottom: 10 },
-  box: { flex: 1, borderWidth: 0.75, borderColor: line, borderRadius: 3, padding: 7 },
-  boxHead: { fontSize: 7.5, color: muted, textTransform: "uppercase", marginBottom: 3, fontFamily: "Helvetica-Bold" },
-  bold: { fontFamily: "Helvetica-Bold" },
-  metaRow: { flexDirection: "row", marginBottom: 1.5 },
-  metaK: { width: 88, color: muted },
-  thead: { flexDirection: "row", backgroundColor: "#eef2f7", borderTopWidth: 0.75, borderBottomWidth: 0.75, borderColor: line },
-  row: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: line },
-  cell: { paddingVertical: 4, paddingHorizontal: 3 },
-  th: { fontFamily: "Helvetica-Bold", fontSize: 8 },
-  right: { textAlign: "right" },
-  totalsWrap: { flexDirection: "row", justifyContent: "space-between", marginTop: 8, gap: 14 },
-  totals: { width: 210 },
-  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 2 },
-  grand: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: ink, paddingVertical: 4, marginVertical: 2 },
-  footer: { position: "absolute", bottom: 20, left: 30, right: 30, flexDirection: "row", justifyContent: "space-between", fontSize: 7.5, color: muted },
-  qr: { width: 82, height: 82 },
-});
+function makeStyles(accent: string, modern: boolean) {
+  return StyleSheet.create({
+    page: { paddingTop: 28, paddingBottom: 46, paddingHorizontal: 30, fontFamily: "NotoSans", fontSize: 9, color: ink },
+    head: modern
+      ? { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: accent, marginHorizontal: -30, marginTop: -28, paddingHorizontal: 30, paddingVertical: 16, marginBottom: 14 }
+      : { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1.5, borderBottomColor: accent, paddingBottom: 8, marginBottom: 10 },
+    sellerName: { fontSize: 15, fontWeight: 700, color: modern ? "#ffffff" : accent },
+    sellerText: { fontSize: 8.5, color: modern ? "#ffffffcc" : muted, lineHeight: 1.35 },
+    title: { fontSize: 14, fontWeight: 700, textAlign: "right", color: modern ? "#ffffff" : accent },
+    titleSub: { fontSize: 8.5, textAlign: "right", color: modern ? "#ffffffcc" : muted },
+    cancelled: { color: modern ? "#ffd7d3" : "#b3261e" },
+    small: { fontSize: 8.5, color: muted, lineHeight: 1.35 },
+    bold: { fontWeight: 700 },
+    twoCol: { flexDirection: "row", gap: 12, marginBottom: 10 },
+    box: { flex: 1, borderWidth: 0.75, borderColor: line, borderRadius: modern ? 6 : 3, padding: 7 },
+    boxHead: { fontSize: 7.5, color: modern ? accent : muted, textTransform: "uppercase", marginBottom: 3, fontWeight: 700 },
+    metaRow: { flexDirection: "row", marginBottom: 1.5 },
+    metaK: { width: 88, color: muted },
+    thead: modern
+      ? { flexDirection: "row", backgroundColor: accent }
+      : { flexDirection: "row", backgroundColor: "#eef2f7", borderTopWidth: 0.75, borderBottomWidth: 0.75, borderColor: line },
+    th: { fontWeight: 700, fontSize: 8, color: modern ? "#ffffff" : ink },
+    row: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: line },
+    rowAlt: { backgroundColor: modern ? "#f6f8fb" : "#ffffff" },
+    cell: { paddingVertical: 4, paddingHorizontal: 3 },
+    right: { textAlign: "right" },
+    totalsWrap: { flexDirection: "row", justifyContent: "space-between", marginTop: 8, gap: 14 },
+    totals: { width: 210 },
+    totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 2 },
+    grand: modern
+      ? { backgroundColor: accent, paddingHorizontal: 6, paddingVertical: 4, marginVertical: 2, borderRadius: 3 }
+      : { borderTopWidth: 1, borderBottomWidth: 1, borderColor: ink, paddingVertical: 4, marginVertical: 2 },
+    grandText: { fontWeight: 700, color: modern ? "#ffffff" : ink },
+    footer: { position: "absolute", bottom: 20, left: 30, right: 30, flexDirection: "row", justifyContent: "space-between", fontSize: 7.5, color: muted },
+    qr: { width: 82, height: 82 },
+    logo: { maxHeight: 44, maxWidth: 120, objectFit: "contain", marginRight: 10 },
+    sign: { maxHeight: 40, maxWidth: 110, objectFit: "contain", alignSelf: "flex-end", marginBottom: 2 },
+  });
+}
 
-function Cell({ w, children, right, bold }: { w: number | string; children?: React.ReactNode; right?: boolean; bold?: boolean }) {
+function Cell({ s, w, children, right, bold }: { s: ReturnType<typeof makeStyles>; w: number | string; children?: React.ReactNode; right?: boolean; bold?: boolean }) {
   return (
     <View style={[s.cell, { width: typeof w === "number" ? `${w}%` : w }]}>
       <Text style={[right ? s.right : {}, bold ? s.bold : {}]}>{children}</Text>
@@ -40,32 +64,42 @@ function Cell({ w, children, right, bold }: { w: number | string; children?: Rea
   );
 }
 
-function Invoice({ m }: { m: InvoiceModel }) {
+function Sheet({ m }: { m: InvoiceModel }) {
+  const modern = m.layout === "modern";
+  const s = makeStyles(m.accent, modern);
   const c = m.columns;
-  // column widths (percent) — description takes what's left
   const w = { no: 4, hsn: c.hsn ? 9 : 0, qty: 10, rate: 11, disc: c.discount ? 9 : 0, taxable: 12, taxrate: c.tax ? 7 : 0, tax: c.tax ? 10 : 0, total: 12 };
   const desc = 100 - Object.values(w).reduce((a, b) => a + b, 0);
+  const th = (t: string, ww: number | string, right?: boolean) => (
+    <Cell s={s} w={ww} right={right}>
+      <Text style={s.th}>{t}</Text>
+    </Cell>
+  );
 
   return (
     <Document title={m.title} author={m.seller.name}>
-      <Page size={m.paper} style={s.page} wrap>
+      <Page size={m.paper === "A5" ? "A5" : "A4"} style={s.page} wrap>
         <View style={s.head}>
-          <View style={{ maxWidth: "62%" }}>
-            <Text style={s.sellerName}>{m.seller.name}</Text>
-            {m.seller.lines.map((l, i) => (
-              <Text key={i} style={s.small}>
-                {l}
-              </Text>
-            ))}
-            {m.seller.taxId && (
-              <Text style={[s.small, s.bold]}>
-                {m.seller.taxIdLabel}: {m.seller.taxId}
-              </Text>
-            )}
+          <View style={{ flexDirection: "row", alignItems: "center", maxWidth: "64%" }}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt */}
+            {m.logo && <Image src={m.logo} style={s.logo} />}
+            <View>
+              <Text style={s.sellerName}>{m.seller.name}</Text>
+              {m.seller.lines.map((l, i) => (
+                <Text key={i} style={s.sellerText}>
+                  {l}
+                </Text>
+              ))}
+              {m.seller.taxId && (
+                <Text style={[s.sellerText, s.bold]}>
+                  {m.seller.taxIdLabel}: {m.seller.taxId}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={[s.title, m.cancelled ? s.cancelled : {}]}>{m.title}</Text>
-            <Text style={s.small}>Amounts in {m.currency}</Text>
+            <Text style={s.titleSub}>Amounts in {m.currency}</Text>
           </View>
         </View>
 
@@ -99,29 +133,29 @@ function Invoice({ m }: { m: InvoiceModel }) {
         {m.kind === "invoice" ? (
           <>
             <View style={s.thead} fixed>
-              <Cell w={w.no}><Text style={s.th}>#</Text></Cell>
-              <Cell w={desc}><Text style={s.th}>Item</Text></Cell>
-              {c.hsn && <Cell w={w.hsn}><Text style={s.th}>HSN</Text></Cell>}
-              <Cell w={w.qty} right><Text style={s.th}>Qty</Text></Cell>
-              <Cell w={w.rate} right><Text style={s.th}>Rate</Text></Cell>
-              {c.discount && <Cell w={w.disc} right><Text style={s.th}>Discount</Text></Cell>}
-              <Cell w={w.taxable} right><Text style={s.th}>Taxable</Text></Cell>
-              {c.tax && <Cell w={w.taxrate} right><Text style={s.th}>Tax %</Text></Cell>}
-              {c.tax && <Cell w={w.tax} right><Text style={s.th}>Tax</Text></Cell>}
-              <Cell w={w.total} right><Text style={s.th}>Amount</Text></Cell>
+              {th("#", w.no)}
+              {th("Item", desc)}
+              {c.hsn && th("HSN", w.hsn)}
+              {th("Qty", w.qty, true)}
+              {th("Rate", w.rate, true)}
+              {c.discount && th("Discount", w.disc, true)}
+              {th("Taxable", w.taxable, true)}
+              {c.tax && th("Tax %", w.taxrate, true)}
+              {c.tax && th("Tax", w.tax, true)}
+              {th("Amount", w.total, true)}
             </View>
-            {m.lines.map((l) => (
-              <View key={l.no} style={s.row} wrap={false}>
-                <Cell w={w.no}>{l.no}</Cell>
-                <Cell w={desc}>{l.desc}</Cell>
-                {c.hsn && <Cell w={w.hsn}>{l.hsn}</Cell>}
-                <Cell w={w.qty} right>{l.qty}</Cell>
-                <Cell w={w.rate} right>{l.rate}</Cell>
-                {c.discount && <Cell w={w.disc} right>{l.discount}</Cell>}
-                <Cell w={w.taxable} right>{l.taxable}</Cell>
-                {c.tax && <Cell w={w.taxrate} right>{l.taxRate}</Cell>}
-                {c.tax && <Cell w={w.tax} right>{l.tax}</Cell>}
-                <Cell w={w.total} right bold>{l.total}</Cell>
+            {m.lines.map((l, i) => (
+              <View key={l.no} style={[s.row, i % 2 ? s.rowAlt : {}]} wrap={false}>
+                <Cell s={s} w={w.no}>{l.no}</Cell>
+                <Cell s={s} w={desc}>{l.desc}</Cell>
+                {c.hsn && <Cell s={s} w={w.hsn}>{l.hsn}</Cell>}
+                <Cell s={s} w={w.qty} right>{l.qty}</Cell>
+                <Cell s={s} w={w.rate} right>{l.rate}</Cell>
+                {c.discount && <Cell s={s} w={w.disc} right>{l.discount}</Cell>}
+                <Cell s={s} w={w.taxable} right>{l.taxable}</Cell>
+                {c.tax && <Cell s={s} w={w.taxrate} right>{l.taxRate}</Cell>}
+                {c.tax && <Cell s={s} w={w.tax} right>{l.tax}</Cell>}
+                <Cell s={s} w={w.total} right bold>{l.total}</Cell>
               </View>
             ))}
 
@@ -132,21 +166,21 @@ function Invoice({ m }: { m: InvoiceModel }) {
                 {m.taxSummary.length > 0 && (
                   <View style={{ marginTop: 8 }}>
                     <View style={s.thead}>
-                      <Cell w="16%"><Text style={s.th}>Rate</Text></Cell>
-                      <Cell w="24%" right><Text style={s.th}>Taxable</Text></Cell>
-                      {m.split && <Cell w="20%" right><Text style={s.th}>{m.taxLabels.cgst}</Text></Cell>}
-                      {m.split && <Cell w="20%" right><Text style={s.th}>{m.taxLabels.sgst}</Text></Cell>}
-                      {!m.split && <Cell w={m.split ? "0%" : "40%"} right><Text style={s.th}>{m.taxLabels.igst}</Text></Cell>}
-                      <Cell w="20%" right><Text style={s.th}>Total tax</Text></Cell>
+                      {th("Rate", "16%")}
+                      {th("Taxable", "24%", true)}
+                      {m.split && th(m.taxLabels.cgst, "20%", true)}
+                      {m.split && th(m.taxLabels.sgst, "20%", true)}
+                      {!m.split && th(m.taxLabels.igst, "40%", true)}
+                      {th("Total tax", "20%", true)}
                     </View>
                     {m.taxSummary.map((t) => (
                       <View key={t.rate} style={s.row}>
-                        <Cell w="16%">{t.rate}</Cell>
-                        <Cell w="24%" right>{t.taxable}</Cell>
-                        {m.split && <Cell w="20%" right>{t.cgst}</Cell>}
-                        {m.split && <Cell w="20%" right>{t.sgst}</Cell>}
-                        {!m.split && <Cell w="40%" right>{t.igst}</Cell>}
-                        <Cell w="20%" right>{t.total}</Cell>
+                        <Cell s={s} w="16%">{t.rate}</Cell>
+                        <Cell s={s} w="24%" right>{t.taxable}</Cell>
+                        {m.split && <Cell s={s} w="20%" right>{t.cgst}</Cell>}
+                        {m.split && <Cell s={s} w="20%" right>{t.sgst}</Cell>}
+                        {!m.split && <Cell s={s} w="40%" right>{t.igst}</Cell>}
+                        <Cell s={s} w="20%" right>{t.total}</Cell>
                       </View>
                     ))}
                   </View>
@@ -155,8 +189,8 @@ function Invoice({ m }: { m: InvoiceModel }) {
               <View style={s.totals}>
                 {m.totals.map((t) => (
                   <View key={t.k} style={[s.totalRow, t.bold ? s.grand : {}]}>
-                    <Text style={t.bold ? s.bold : {}}>{t.k}</Text>
-                    <Text style={t.bold ? s.bold : {}}>{t.v}</Text>
+                    <Text style={t.bold ? s.grandText : {}}>{t.k}</Text>
+                    <Text style={t.bold ? s.grandText : {}}>{t.v}</Text>
                   </View>
                 ))}
               </View>
@@ -212,7 +246,9 @@ function Invoice({ m }: { m: InvoiceModel }) {
           )}
           <View style={[s.box, { justifyContent: "flex-end", alignItems: "flex-end", minHeight: 70 }]}>
             <Text style={s.small}>For {m.seller.name}</Text>
-            <Text style={[s.small, { marginTop: 26 }]}>Authorised signatory</Text>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt */}
+            {m.signature ? <Image src={m.signature} style={s.sign} /> : <View style={{ height: 26 }} />}
+            <Text style={s.small}>Authorised signatory</Text>
           </View>
         </View>
 
@@ -242,6 +278,135 @@ function Invoice({ m }: { m: InvoiceModel }) {
   );
 }
 
+// ─── Thermal receipt (58 mm / 80 mm) ─────────────────────────────────────────
+
+const MM = 72 / 25.4;
+
+function Receipt({ m }: { m: InvoiceModel }) {
+  const mm = m.paper === "T58" ? 58 : 80;
+  const wide = mm === 80;
+  const fs = wide ? 8.5 : 7.5;
+  const s = StyleSheet.create({
+    page: { padding: 8, fontFamily: "NotoSans", fontSize: fs, color: "#000000" },
+    center: { textAlign: "center" },
+    name: { fontSize: fs + 3, fontWeight: 700, textAlign: "center" },
+    bold: { fontWeight: 700 },
+    row: { flexDirection: "row", justifyContent: "space-between" },
+    rule: { borderBottomWidth: 0.7, borderBottomStyle: "dashed", borderBottomColor: "#000000", marginVertical: 4 },
+    item: { marginBottom: 3 },
+    logo: { maxHeight: 40, maxWidth: (mm - 4) * MM * 0.7, objectFit: "contain", alignSelf: "center", marginBottom: 3 },
+    qr: { width: wide ? 90 : 70, height: wide ? 90 : 70, alignSelf: "center", marginTop: 4 },
+  });
+  const height = 150 + m.lines.length * (wide ? 30 : 38) + m.totals.length * 13 + m.meta.length * 11 + (m.qr ? 110 : 0) + (m.terms ? 50 : 0) + m.seller.lines.length * 11 + (m.taxSummary.length ? 40 + m.taxSummary.length * 12 : 0) + (m.words.length / (wide ? 40 : 28)) * 11;
+
+  return (
+    <Document title={m.title} author={m.seller.name}>
+      <Page size={[mm * MM, Math.max(height, 200)]} style={s.page}>
+        {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt */}
+        {m.logo && <Image src={m.logo} style={s.logo} />}
+        <Text style={s.name}>{m.seller.name}</Text>
+        {m.seller.lines.map((l, i) => (
+          <Text key={i} style={s.center}>
+            {l}
+          </Text>
+        ))}
+        {m.seller.taxId && (
+          <Text style={[s.center, s.bold]}>
+            {m.seller.taxIdLabel}: {m.seller.taxId}
+          </Text>
+        )}
+        <View style={s.rule} />
+        <Text style={[s.center, s.bold, { fontSize: fs + 1.5 }]}>{m.title}</Text>
+        {m.meta.map((r) => (
+          <View key={r.k} style={s.row}>
+            <Text>{r.k}</Text>
+            <Text style={s.bold}>{r.v}</Text>
+          </View>
+        ))}
+        {m.party.name && (
+          <Text style={{ marginTop: 3 }}>
+            {m.party.heading}: <Text style={s.bold}>{m.party.name}</Text>
+            {m.party.taxId ? `  ${m.party.taxIdLabel}: ${m.party.taxId}` : ""}
+          </Text>
+        )}
+        <View style={s.rule} />
+
+        {m.kind === "invoice" ? (
+          m.lines.map((l) => (
+            <View key={l.no} style={s.item} wrap={false}>
+              <Text style={s.bold}>
+                {l.no}. {l.desc}
+              </Text>
+              <View style={s.row}>
+                <Text>
+                  {l.qty} × {l.rate}
+                  {l.taxRate ? `  (${l.taxRate})` : ""}
+                </Text>
+                <Text style={s.bold}>{l.total}</Text>
+              </View>
+            </View>
+          ))
+        ) : (
+          m.receipt && (
+            <View>
+              <View style={s.row}>
+                <Text style={s.bold}>Amount</Text>
+                <Text style={s.bold}>
+                  {m.currency} {m.receipt.amount}
+                </Text>
+              </View>
+              {m.receipt.mode && <Text>Mode: {m.receipt.mode}</Text>}
+              {m.receipt.ref && <Text>Ref: {m.receipt.ref}</Text>}
+              {m.receipt.settles.map((x) => (
+                <View key={x.no} style={s.row}>
+                  <Text>{x.no}</Text>
+                  <Text>{x.amount}</Text>
+                </View>
+              ))}
+            </View>
+          )
+        )}
+        <View style={s.rule} />
+
+        {m.totals.map((t) => (
+          <View key={t.k} style={s.row}>
+            <Text style={t.bold ? [s.bold, { fontSize: fs + 1.5 }] : {}}>{t.k}</Text>
+            <Text style={t.bold ? [s.bold, { fontSize: fs + 1.5 }] : {}}>{t.v}</Text>
+          </View>
+        ))}
+        <Text style={{ marginTop: 3, fontSize: fs - 0.5 }}>{m.words}</Text>
+        {m.taxSummary.length > 0 && (
+          <View style={{ marginTop: 3 }}>
+            <View style={s.rule} />
+            {m.taxSummary.map((t) => (
+              <View key={t.rate} style={s.row}>
+                <Text>
+                  {t.rate} on {t.taxable}
+                </Text>
+                <Text>{t.total}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+        {m.qr && (
+          <>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt */}
+            <Image src={m.qr.src} style={s.qr} />
+            <Text style={[s.center, { fontSize: fs - 1 }]}>{m.qr.caption}</Text>
+          </>
+        )}
+        {m.terms && (
+          <>
+            <View style={s.rule} />
+            <Text style={{ fontSize: fs - 1 }}>{m.terms}</Text>
+          </>
+        )}
+        <Text style={[s.center, { marginTop: 5 }]}>Thank you!</Text>
+      </Page>
+    </Document>
+  );
+}
+
 export async function renderInvoicePdf(model: InvoiceModel): Promise<Buffer> {
-  return renderToBuffer(<Invoice m={model} />);
+  return renderToBuffer(model.paper === "T80" || model.paper === "T58" ? <Receipt m={model} /> : <Sheet m={model} />);
 }

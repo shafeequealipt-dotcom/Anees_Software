@@ -19,7 +19,7 @@ export const DEFAULT_SETTINGS = {
   quantityDecimals: 2,
   invoiceLayout: "classic" as "classic" | "modern",
   invoiceAccentColor: "#1f4e79",
-  printPaperSize: "A4" as "A4" | "A5",
+  printPaperSize: "A4" as "A4" | "A5" | "thermal",
   showBankDetailsOnInvoice: true,
   showUpiQrOnInvoice: true,
   showSignatureBox: true,

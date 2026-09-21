@@ -90,6 +90,9 @@ export function VoucherActions({
             <a className={buttonClass("secondary", "sm")} href={`/api/vouchers/${id}/pdf`} target="_blank" rel="noopener">
               Print / PDF
             </a>
+            <a className={buttonClass("secondary", "sm")} href={`/api/vouchers/${id}/pdf?paper=t80`} target="_blank" rel="noopener" title="Narrow receipt for a thermal printer">
+              Receipt
+            </a>
             <a className={buttonClass("secondary", "sm")} href={`/api/vouchers/${id}/pdf?download=1`}>
               Download
             </a>

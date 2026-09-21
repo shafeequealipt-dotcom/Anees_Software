@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  customType,
   bigint,
   boolean,
   date,
@@ -740,3 +741,22 @@ export const backupRequests = pgTable("backup_requests", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   message: text("message"),
 });
+
+const bytea = customType<{ data: Buffer; driverData: Buffer | string }>({
+  dataType: () => "bytea",
+  toDriver: (v) => v,
+  fromDriver: (v) => (typeof v === "string" ? Buffer.from(v.replace(/^\\x/, ""), "hex") : Buffer.from(v)),
+});
+
+/** A company's logo and signature image, kept in the database so backups include them. */
+export const firmImages = pgTable(
+  "firm_images",
+  {
+    firmId: integer("firm_id").notNull().references(() => firms.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 10 }).notNull(),
+    mime: varchar("mime", { length: 30 }).notNull(),
+    data: bytea("data").notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.firmId, t.kind] })],
+);

@@ -12,12 +12,19 @@ import { getSettings } from "@/lib/settings";
 import { VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 import { zatcaQrBase64 } from "@/lib/zatca";
 import { listCustomFields } from "./custom-fields";
+import { imageDataUrls } from "./company-images";
 import { getVoucher } from "./vouchers";
+
+export type PaperKind = "A4" | "A5" | "T80" | "T58";
 
 /** Everything the printed invoice shows, already formatted as text so rendering can't pick up the wrong currency. */
 export interface InvoiceModel {
   kind: "invoice" | "receipt";
-  paper: "A4" | "A5";
+  paper: PaperKind;
+  layout: "classic" | "modern";
+  accent: string;
+  logo: string | null;
+  signature: string | null;
   currency: string;
   title: string;
   fileName: string;
@@ -41,7 +48,7 @@ export interface InvoiceModel {
 
 const clean = (a: (string | null | undefined)[]) => a.filter((x): x is string => !!x && x.trim() !== "").map((x) => x.trim());
 
-export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number): Promise<InvoiceModel | null> {
+export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number, opts: { paper?: PaperKind } = {}): Promise<InvoiceModel | null> {
   const data = await getVoucher(db, firmId, voucherId);
   if (!data) return null;
   const v = data.voucher;
@@ -53,6 +60,7 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
   const printFields = (await listCustomFields(db, firmId, { activeOnly: true })).filter((f) => f.showOnInvoice);
   const itemIds = [...new Set(data.lines.map((l) => l.itemId).filter((x): x is number => !!x))];
   const itemExtras = printFields.length && itemIds.length ? new Map((await db.select({ id: items.id, cv: items.customValues }).from(items).where(and(eq(items.firmId, firmId), inArray(items.id, itemIds)))).map((r) => [r.id, r.cv])) : new Map<number, Record<string, string>>();
+  const images = await imageDataUrls(db, firmId);
   const [account] = v.accountId ? await db.select().from(accounts).where(eq(accounts.id, v.accountId)) : [];
 
   const hasQr = firm.country === "SA" && !!firm.gstin && ["sale_invoice", "credit_note"].includes(v.type) && v.status === "active";
@@ -184,7 +192,11 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
 
   return {
     kind: info.hasLines ? "invoice" : "receipt",
-    paper: settings.printPaperSize === "A5" ? "A5" : "A4",
+    paper: opts.paper ?? (settings.printPaperSize === "thermal" ? (settings.thermalWidthMm === 58 ? "T58" : "T80") : settings.printPaperSize === "A5" ? "A5" : "A4"),
+    layout: settings.invoiceLayout,
+    accent: /^#[0-9a-fA-F]{6}$/.test(settings.invoiceAccentColor) ? settings.invoiceAccentColor : "#1f4e79",
+    logo: images.logo,
+    signature: images.signature,
     currency: R.currencyCode,
     title: v.status === "cancelled" ? `${title} (CANCELLED)` : title,
     fileName: `${title.replace(/[^A-Za-z0-9]+/g, "-")}-${number.replace(/[^A-Za-z0-9]+/g, "-")}.pdf`,
