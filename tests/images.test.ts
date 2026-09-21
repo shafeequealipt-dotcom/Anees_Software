@@ -66,7 +66,7 @@ async function currentPrefs() {
   const s = await getSettings(db, firmId);
   return {
     creditLimitMode: s.creditLimitMode, allowNegativeStock: s.allowNegativeStock, roundOff: s.roundOff, lineDiscount: s.lineDiscount, billDiscount: s.billDiscount,
-    defaultPriceIncludesTax: s.defaultPriceIncludesTax, showMrp: s.showMrp, printPaperSize: s.printPaperSize, thermalWidthMm: s.thermalWidthMm, invoiceLayout: s.invoiceLayout,
+    defaultPriceIncludesTax: s.defaultPriceIncludesTax, showMrp: s.showMrp, invoiceLanguage: s.invoiceLanguage, printPaperSize: s.printPaperSize, thermalWidthMm: s.thermalWidthMm, invoiceLayout: s.invoiceLayout,
     invoiceAccentColor: s.invoiceAccentColor, showBankDetailsOnInvoice: s.showBankDetailsOnInvoice, showUpiQrOnInvoice: s.showUpiQrOnInvoice, tdsTcsEnabled: s.tdsTcsEnabled,
     quotationTerms: s.quotationTerms, prefixes: s.prefixes,
   };

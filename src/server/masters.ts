@@ -56,6 +56,8 @@ export const partySchema = z.object({
   id: z.number().int().positive().optional(),
   kind: z.enum(["customer", "supplier", "both"]).default("customer"),
   name: z.string().trim().min(1, "Enter the party name.").max(200),
+  nameAr: text(200),
+  addressAr: text(1000),
   gstin: text(15),
   pan: text(10),
   phone: text(30),
@@ -179,6 +181,7 @@ export const itemSchema = z.object({
   id: z.number().int().positive().optional(),
   kind: z.enum(["goods", "service"]).default("goods"),
   name: z.string().trim().min(1, "Enter the item name.").max(200),
+  nameAr: text(200),
   code: text(60),
   hsn: z
     .string()

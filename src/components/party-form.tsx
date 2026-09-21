@@ -12,6 +12,8 @@ export interface PartyFormValue {
   id?: number;
   kind: "customer" | "supplier" | "both";
   name: string;
+  nameAr?: string | null;
+  addressAr?: string | null;
   gstin: string | null;
   pan: string | null;
   phone: string | null;
@@ -48,6 +50,8 @@ export function PartyForm({
   const [v, setV] = useState({
     kind: initial?.kind ?? "customer",
     name: initial?.name ?? "",
+    nameAr: initial?.nameAr ?? "",
+    addressAr: initial?.addressAr ?? "",
     gstin: initial?.gstin ?? "",
     phone: initial?.phone ?? "",
     email: initial?.email ?? "",
@@ -79,6 +83,8 @@ export function PartyForm({
       id: initial?.id,
       kind: v.kind as PartyFormValue["kind"],
       name: v.name,
+      nameAr: v.nameAr || null,
+      addressAr: v.addressAr || null,
       gstin: v.gstin || null,
       phone: v.phone || null,
       email: v.email || null,
@@ -114,6 +120,16 @@ export function PartyForm({
             <option value="both">Both customer and supplier</option>
           </Select>
         </Field>
+        {region().country === "SA" && (
+          <>
+            <Field label="Arabic name (الاسم)" hint="Printed on bilingual invoices.">
+              <Input value={v.nameAr} onChange={(e) => set("nameAr", e.target.value)} dir="rtl" />
+            </Field>
+            <Field label="Arabic address (العنوان)">
+              <Input value={v.addressAr} onChange={(e) => set("addressAr", e.target.value)} dir="rtl" />
+            </Field>
+          </>
+        )}
         <Field label="Group">
           <div className="flex gap-2">
             <Select value={v.groupId} onChange={(e) => set("groupId", e.target.value)}>

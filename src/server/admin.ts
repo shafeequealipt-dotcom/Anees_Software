@@ -202,6 +202,8 @@ const optText = (max: number) => z.string().trim().max(max).optional().transform
 export const firmSchema = z.object({
   name: z.string().trim().min(1, "Enter your business name.").max(200),
   legalName: optText(200),
+  nameAr: optText(200),
+  addressAr: optText(1000),
   taxId: z.string().trim().max(15).optional().transform((v) => (v ? v.toUpperCase() : null)),
   gstScheme: z.enum(["regular", "composition", "unregistered"]).default("regular"),
   stateCode: z.string().optional().transform((v) => v || null),
@@ -243,6 +245,8 @@ export async function saveFirm(db: DB, firmId: number, raw: z.input<typeof firmS
     .set({
       name: i.name,
       legalName: i.legalName,
+      nameAr: i.nameAr,
+      addressAr: i.addressAr,
       gstin: i.taxId,
       pan: r.country === "IN" && i.taxId ? i.taxId.slice(2, 12) : null,
       gstScheme: i.taxId ? i.gstScheme : "unregistered",

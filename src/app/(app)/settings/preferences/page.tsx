@@ -18,6 +18,7 @@ export default async function PreferencesPage() {
         billDiscount: s.billDiscount,
         defaultPriceIncludesTax: s.defaultPriceIncludesTax,
         showMrp: s.showMrp,
+        invoiceLanguage: s.invoiceLanguage,
         printPaperSize: s.printPaperSize,
         thermalWidthMm: s.thermalWidthMm,
         invoiceLayout: s.invoiceLayout,

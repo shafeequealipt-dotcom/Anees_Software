@@ -10,6 +10,8 @@ import { Alert, Button, Field, Input, Select, Textarea } from "./ui";
 export interface FirmValue {
   name: string;
   legalName: string | null;
+  nameAr: string | null;
+  addressAr: string | null;
   gstin: string | null;
   gstScheme: "regular" | "composition" | "unregistered";
   stateCode: string | null;
@@ -47,6 +49,8 @@ export function BusinessForm({ initial }: { initial: FirmValue }) {
     const res = await saveFirmAction({
       name: v.name,
       legalName: v.legalName,
+      nameAr: v.nameAr,
+      addressAr: v.addressAr,
       taxId: v.gstin,
       gstScheme: v.gstScheme as FirmValue["gstScheme"],
       stateCode: v.stateCode,
@@ -82,6 +86,16 @@ export function BusinessForm({ initial }: { initial: FirmValue }) {
         <Field label="Legal name" hint="If different. Printed on invoices.">
           <Input value={v.legalName} onChange={(e) => set("legalName", e.target.value)} />
         </Field>
+        {sa && (
+          <>
+            <Field label="Arabic name (اسم المنشأة)" hint="Printed on bilingual invoices.">
+              <Input value={v.nameAr} onChange={(e) => set("nameAr", e.target.value)} dir="rtl" />
+            </Field>
+            <Field label="Arabic address (العنوان)">
+              <Input value={v.addressAr} onChange={(e) => set("addressAr", e.target.value)} dir="rtl" />
+            </Field>
+          </>
+        )}
         <Field label={`${r.taxIdLabel} (optional)`} error={err("taxId")} hint={r.taxIdHint}>
           <Input value={v.gstin} onChange={(e) => set("gstin", e.target.value.toUpperCase())} className="font-mono uppercase" maxLength={15} />
         </Field>

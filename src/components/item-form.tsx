@@ -11,6 +11,7 @@ export interface ItemFormValue {
   id?: number;
   kind: "goods" | "service";
   name: string;
+  nameAr?: string | null;
   code: string | null;
   hsn: string | null;
   description: string | null;
@@ -59,6 +60,7 @@ export function ItemForm({
   const [v, setV] = useState({
     kind: initial?.kind ?? "goods",
     name: initial?.name ?? "",
+    nameAr: initial?.nameAr ?? "",
     code: initial?.code ?? "",
     hsn: initial?.hsn ?? "",
     description: initial?.description ?? "",
@@ -110,6 +112,7 @@ export function ItemForm({
       id: initial?.id,
       kind: v.kind as ItemFormValue["kind"],
       name: v.name,
+      nameAr: v.nameAr || null,
       code: v.code || null,
       hsn: v.hsn || null,
       description: v.description || null,
@@ -157,6 +160,11 @@ export function ItemForm({
         <Field label="Name" error={err("name")} className="sm:col-span-2">
           <Input value={v.name} onChange={(e) => set("name", e.target.value)} autoFocus={!initial} />
         </Field>
+        {region().country === "SA" && (
+          <Field label="Arabic name (الاسم بالعربية)" hint="Printed under the name on bilingual invoices." className="sm:col-span-2">
+            <Input value={v.nameAr} onChange={(e) => set("nameAr", e.target.value)} dir="rtl" />
+          </Field>
+        )}
         <Field label="Item code" error={err("code")} hint="Optional. Must be unique.">
           <Input value={v.code} onChange={(e) => set("code", e.target.value)} />
         </Field>

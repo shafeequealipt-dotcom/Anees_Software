@@ -15,6 +15,7 @@ interface Values {
   billDiscount: boolean;
   defaultPriceIncludesTax: boolean;
   showMrp: boolean;
+  invoiceLanguage: "auto" | "en" | "bilingual" | "ar";
   printPaperSize: "A4" | "A5" | "thermal";
   thermalWidthMm: 58 | 80;
   invoiceLayout: "classic" | "modern";
@@ -88,6 +89,14 @@ export function PreferencesForm({ initial, india }: { initial: Values; india: bo
               <option value="A5">A5 (half page)</option>
               <option value="t80">Thermal receipt, 80 mm</option>
               <option value="t58">Thermal receipt, 58 mm</option>
+            </Select>
+          </Field>
+          <Field label="Invoice language" hint="Arabic needs the Arabic names filled in on your company, parties and items.">
+            <Select value={v.invoiceLanguage} onChange={(e) => set("invoiceLanguage", e.target.value as Values["invoiceLanguage"])}>
+              <option value="auto">Automatic (English and Arabic for Saudi Arabia, English for India)</option>
+              <option value="en">English only</option>
+              <option value="bilingual">English and Arabic</option>
+              <option value="ar">Arabic only</option>
             </Select>
           </Field>
           <Field label="Invoice style" hint="Applies to A4 and A5 pages.">

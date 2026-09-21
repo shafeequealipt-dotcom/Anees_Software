@@ -62,6 +62,9 @@ export const voucherType = pgEnum("voucher_type", VOUCHER_TYPES);
 export const firms = pgTable("firms", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 200 }).notNull(),
+  /** Arabic name and address, printed on bilingual invoices. */
+  nameAr: varchar("name_ar", { length: 200 }),
+  addressAr: text("address_ar"),
   legalName: varchar("legal_name", { length: 200 }),
   gstin: varchar("gstin", { length: 15 }),
   pan: varchar("pan", { length: 10 }),
@@ -213,6 +216,7 @@ export const items = pgTable(
     firmId: integer("firm_id").notNull().references(() => firms.id),
     kind: itemKind("kind").notNull().default("goods"),
     name: varchar("name", { length: 200 }).notNull(),
+    nameAr: varchar("name_ar", { length: 200 }),
     code: varchar("code", { length: 60 }),
     hsn: varchar("hsn", { length: 10 }),
     description: text("description"),
@@ -293,6 +297,8 @@ export const parties = pgTable(
     firmId: integer("firm_id").notNull().references(() => firms.id),
     kind: partyKind("kind").notNull().default("customer"),
     name: varchar("name", { length: 200 }).notNull(),
+    nameAr: varchar("name_ar", { length: 200 }),
+    addressAr: text("address_ar"),
     gstin: varchar("gstin", { length: 15 }),
     pan: varchar("pan", { length: 10 }),
     phone: varchar("phone", { length: 30 }),

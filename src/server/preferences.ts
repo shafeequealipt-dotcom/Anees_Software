@@ -14,6 +14,7 @@ export const preferencesSchema = z.object({
   billDiscount: z.boolean(),
   defaultPriceIncludesTax: z.boolean(),
   showMrp: z.boolean(),
+  invoiceLanguage: z.enum(["auto", "en", "bilingual", "ar"]),
   printPaperSize: z.enum(["A4", "A5", "thermal"]),
   thermalWidthMm: z.union([z.literal(58), z.literal(80)]),
   invoiceLayout: z.enum(["classic", "modern"]),

@@ -10,7 +10,16 @@ Font.register({
     { src: fontFile("NotoSans-Bold.ttf"), fontWeight: 700 },
   ],
 });
+Font.register({
+  family: "Tajawal",
+  fonts: [
+    { src: fontFile("Tajawal-Regular.ttf"), fontWeight: 400 },
+    { src: fontFile("Tajawal-Bold.ttf"), fontWeight: 700 },
+  ],
+});
 Font.registerHyphenationCallback((w) => [w]);
+/** Latin text uses Noto Sans; anything Arabic falls through to Tajawal. */
+const FAMILY = ["NotoSans", "Tajawal"] as unknown as string;
 
 const ink = "#1a2230";
 const muted = "#5b6675";
@@ -18,7 +27,7 @@ const line = "#cfd6df";
 
 function makeStyles(accent: string, modern: boolean) {
   return StyleSheet.create({
-    page: { paddingTop: 28, paddingBottom: 46, paddingHorizontal: 30, fontFamily: "NotoSans", fontSize: 9, color: ink },
+    page: { paddingTop: 28, paddingBottom: 46, paddingHorizontal: 30, fontFamily: FAMILY, fontSize: 9, color: ink },
     head: modern
       ? { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: accent, marginHorizontal: -30, marginTop: -28, paddingHorizontal: 30, paddingVertical: 16, marginBottom: 14 }
       : { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1.5, borderBottomColor: accent, paddingBottom: 8, marginBottom: 10 },
@@ -52,6 +61,7 @@ function makeStyles(accent: string, modern: boolean) {
     footer: { position: "absolute", bottom: 20, left: 30, right: 30, flexDirection: "row", justifyContent: "space-between", fontSize: 7.5, color: muted },
     qr: { width: 82, height: 82 },
     logo: { maxHeight: 44, maxWidth: 120, objectFit: "contain", marginRight: 10 },
+    ar: { textAlign: "right", fontFamily: FAMILY },
     sign: { maxHeight: 40, maxWidth: 110, objectFit: "contain", alignSelf: "flex-end", marginBottom: 2 },
   });
 }
@@ -85,8 +95,14 @@ function Sheet({ m }: { m: InvoiceModel }) {
             {m.logo && <Image src={m.logo} style={s.logo} />}
             <View>
               <Text style={s.sellerName}>{m.seller.name}</Text>
+              {m.seller.nameAr && <Text style={[s.sellerName, s.ar, { fontSize: 13 }]}>{m.seller.nameAr}</Text>}
               {m.seller.lines.map((l, i) => (
                 <Text key={i} style={s.sellerText}>
+                  {l}
+                </Text>
+              ))}
+              {m.seller.linesAr.map((l, i) => (
+                <Text key={`a${i}`} style={[s.sellerText, s.ar]}>
                   {l}
                 </Text>
               ))}
@@ -99,7 +115,7 @@ function Sheet({ m }: { m: InvoiceModel }) {
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={[s.title, m.cancelled ? s.cancelled : {}]}>{m.title}</Text>
-            <Text style={s.titleSub}>Amounts in {m.currency}</Text>
+            <Text style={s.titleSub}>{m.ui["Amounts in"]} {m.currency}</Text>
           </View>
         </View>
 
@@ -108,8 +124,14 @@ function Sheet({ m }: { m: InvoiceModel }) {
             <View style={s.box}>
               <Text style={s.boxHead}>{m.party.heading}</Text>
               <Text style={s.bold}>{m.party.name}</Text>
+              {m.party.nameAr && <Text style={[s.bold, s.ar]}>{m.party.nameAr}</Text>}
               {m.party.lines.map((l, i) => (
                 <Text key={i} style={s.small}>
+                  {l}
+                </Text>
+              ))}
+              {m.party.linesAr.map((l, i) => (
+                <Text key={`a${i}`} style={[s.small, s.ar]}>
                   {l}
                 </Text>
               ))}
@@ -134,20 +156,23 @@ function Sheet({ m }: { m: InvoiceModel }) {
           <>
             <View style={s.thead} fixed>
               {th("#", w.no)}
-              {th("Item", desc)}
-              {c.hsn && th("HSN", w.hsn)}
-              {th("Qty", w.qty, true)}
-              {th("Rate", w.rate, true)}
-              {c.discount && th("Discount", w.disc, true)}
-              {th("Taxable", w.taxable, true)}
-              {c.tax && th("Tax %", w.taxrate, true)}
-              {c.tax && th("Tax", w.tax, true)}
-              {th("Amount", w.total, true)}
+              {th(m.ui.Item, desc)}
+              {c.hsn && th(m.ui.HSN, w.hsn)}
+              {th(m.ui.Qty, w.qty, true)}
+              {th(m.ui.Rate, w.rate, true)}
+              {c.discount && th(m.ui.Discount, w.disc, true)}
+              {th(m.ui.Taxable, w.taxable, true)}
+              {c.tax && th(m.ui["Tax %"], w.taxrate, true)}
+              {c.tax && th(m.ui.Tax, w.tax, true)}
+              {th(m.ui.Amount, w.total, true)}
             </View>
             {m.lines.map((l, i) => (
               <View key={l.no} style={[s.row, i % 2 ? s.rowAlt : {}]} wrap={false}>
                 <Cell s={s} w={w.no}>{l.no}</Cell>
-                <Cell s={s} w={desc}>{l.desc}</Cell>
+                <View style={[s.cell, { width: `${desc}%` }]}>
+                  <Text>{l.desc}</Text>
+                  {l.descAr && <Text style={s.ar}>{l.descAr}</Text>}
+                </View>
                 {c.hsn && <Cell s={s} w={w.hsn}>{l.hsn}</Cell>}
                 <Cell s={s} w={w.qty} right>{l.qty}</Cell>
                 <Cell s={s} w={w.rate} right>{l.rate}</Cell>
@@ -161,17 +186,18 @@ function Sheet({ m }: { m: InvoiceModel }) {
 
             <View style={s.totalsWrap} wrap={false}>
               <View style={{ flex: 1 }}>
-                <Text style={s.boxHead}>Amount in words</Text>
+                <Text style={s.boxHead}>{m.ui["Amount in words"]}</Text>
                 <Text style={s.bold}>{m.words}</Text>
+                {m.wordsAr && <Text style={[s.bold, s.ar]}>{m.wordsAr}</Text>}
                 {m.taxSummary.length > 0 && (
                   <View style={{ marginTop: 8 }}>
                     <View style={s.thead}>
-                      {th("Rate", "16%")}
-                      {th("Taxable", "24%", true)}
+                      {th(m.ui.Rate, "16%")}
+                      {th(m.ui.Taxable, "24%", true)}
                       {m.split && th(m.taxLabels.cgst, "20%", true)}
                       {m.split && th(m.taxLabels.sgst, "20%", true)}
                       {!m.split && th(m.taxLabels.igst, "40%", true)}
-                      {th("Total tax", "20%", true)}
+                      {th(m.ui["Total tax"], "20%", true)}
                     </View>
                     {m.taxSummary.map((t) => (
                       <View key={t.rate} style={s.row}>
@@ -200,17 +226,18 @@ function Sheet({ m }: { m: InvoiceModel }) {
           m.receipt && (
             <View style={[s.box, { flex: 0 }]}>
               <View style={s.totalRow}>
-                <Text style={s.bold}>Amount</Text>
+                <Text style={s.bold}>{m.ui.Amount}</Text>
                 <Text style={s.bold}>
                   {m.currency} {m.receipt.amount}
                 </Text>
               </View>
-              {m.receipt.mode && <Text style={s.small}>Mode: {m.receipt.mode}</Text>}
-              {m.receipt.ref && <Text style={s.small}>Reference: {m.receipt.ref}</Text>}
+              {m.receipt.mode && <Text style={s.small}>{m.ui.Mode}: {m.receipt.mode}</Text>}
+              {m.receipt.ref && <Text style={s.small}>{m.ui.Reference}: {m.receipt.ref}</Text>}
               <Text style={[s.bold, { marginTop: 6 }]}>{m.words}</Text>
+              {m.wordsAr && <Text style={[s.bold, s.ar]}>{m.wordsAr}</Text>}
               {m.receipt.settles.length > 0 && (
                 <View style={{ marginTop: 8 }}>
-                  <Text style={s.boxHead}>Against bills</Text>
+                  <Text style={s.boxHead}>{m.ui["Against bills"]}</Text>
                   {m.receipt.settles.map((x) => (
                     <View key={x.no} style={s.totalRow}>
                       <Text>
@@ -228,7 +255,7 @@ function Sheet({ m }: { m: InvoiceModel }) {
         <View style={[s.twoCol, { marginTop: 12 }]} wrap={false}>
           {m.bank.length > 0 && (
             <View style={s.box}>
-              <Text style={s.boxHead}>Bank details</Text>
+              <Text style={s.boxHead}>{m.ui["Bank details"]}</Text>
               {m.bank.map((b) => (
                 <View key={b.k} style={s.metaRow}>
                   <Text style={s.metaK}>{b.k}</Text>
@@ -248,7 +275,7 @@ function Sheet({ m }: { m: InvoiceModel }) {
             <Text style={s.small}>For {m.seller.name}</Text>
             {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt */}
             {m.signature ? <Image src={m.signature} style={s.sign} /> : <View style={{ height: 26 }} />}
-            <Text style={s.small}>Authorised signatory</Text>
+            <Text style={s.small}>{m.ui["Authorised signatory"]}</Text>
           </View>
         </View>
 
@@ -256,13 +283,13 @@ function Sheet({ m }: { m: InvoiceModel }) {
           <View wrap={false}>
             {m.notes && (
               <>
-                <Text style={s.boxHead}>Notes</Text>
+                <Text style={s.boxHead}>{m.ui.Notes}</Text>
                 <Text style={s.small}>{m.notes}</Text>
               </>
             )}
             {m.terms && (
               <>
-                <Text style={[s.boxHead, { marginTop: 5 }]}>Terms and conditions</Text>
+                <Text style={[s.boxHead, { marginTop: 5 }]}>{m.ui["Terms and conditions"]}</Text>
                 <Text style={s.small}>{m.terms}</Text>
               </>
             )}
@@ -271,7 +298,7 @@ function Sheet({ m }: { m: InvoiceModel }) {
 
         <View style={s.footer} fixed>
           <Text>{m.seller.name}</Text>
-          <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
+          <Text render={({ pageNumber, totalPages }) => `${m.ui.Page} ${pageNumber} ${m.ui.of} ${totalPages}`} />
         </View>
       </Page>
     </Document>
@@ -287,7 +314,7 @@ function Receipt({ m }: { m: InvoiceModel }) {
   const wide = mm === 80;
   const fs = wide ? 8.5 : 7.5;
   const s = StyleSheet.create({
-    page: { padding: 8, fontFamily: "NotoSans", fontSize: fs, color: "#000000" },
+    page: { padding: 8, fontFamily: FAMILY, fontSize: fs, color: "#000000" },
     center: { textAlign: "center" },
     name: { fontSize: fs + 3, fontWeight: 700, textAlign: "center" },
     bold: { fontWeight: 700 },
@@ -305,6 +332,7 @@ function Receipt({ m }: { m: InvoiceModel }) {
         {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt */}
         {m.logo && <Image src={m.logo} style={s.logo} />}
         <Text style={s.name}>{m.seller.name}</Text>
+        {m.seller.nameAr && <Text style={s.name}>{m.seller.nameAr}</Text>}
         {m.seller.lines.map((l, i) => (
           <Text key={i} style={s.center}>
             {l}
@@ -337,6 +365,7 @@ function Receipt({ m }: { m: InvoiceModel }) {
               <Text style={s.bold}>
                 {l.no}. {l.desc}
               </Text>
+              {l.descAr && <Text style={{ textAlign: "right" }}>{l.descAr}</Text>}
               <View style={s.row}>
                 <Text>
                   {l.qty} × {l.rate}
@@ -350,13 +379,13 @@ function Receipt({ m }: { m: InvoiceModel }) {
           m.receipt && (
             <View>
               <View style={s.row}>
-                <Text style={s.bold}>Amount</Text>
+                <Text style={s.bold}>{m.ui.Amount}</Text>
                 <Text style={s.bold}>
                   {m.currency} {m.receipt.amount}
                 </Text>
               </View>
-              {m.receipt.mode && <Text>Mode: {m.receipt.mode}</Text>}
-              {m.receipt.ref && <Text>Ref: {m.receipt.ref}</Text>}
+              {m.receipt.mode && <Text>{m.ui.Mode}: {m.receipt.mode}</Text>}
+              {m.receipt.ref && <Text>{m.ui.Reference}: {m.receipt.ref}</Text>}
               {m.receipt.settles.map((x) => (
                 <View key={x.no} style={s.row}>
                   <Text>{x.no}</Text>
@@ -375,6 +404,7 @@ function Receipt({ m }: { m: InvoiceModel }) {
           </View>
         ))}
         <Text style={{ marginTop: 3, fontSize: fs - 0.5 }}>{m.words}</Text>
+        {m.wordsAr && <Text style={{ fontSize: fs - 0.5, textAlign: "right" }}>{m.wordsAr}</Text>}
         {m.taxSummary.length > 0 && (
           <View style={{ marginTop: 3 }}>
             <View style={s.rule} />
@@ -401,7 +431,7 @@ function Receipt({ m }: { m: InvoiceModel }) {
             <Text style={{ fontSize: fs - 1 }}>{m.terms}</Text>
           </>
         )}
-        <Text style={[s.center, { marginTop: 5 }]}>Thank you!</Text>
+        <Text style={[s.center, { marginTop: 5 }]}>{m.ui["Thank you!"]}</Text>
       </Page>
     </Document>
   );
