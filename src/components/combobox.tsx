@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx, inputClass } from "./ui";
 
 export interface ComboOption<T> {
@@ -14,6 +15,12 @@ export interface ComboOption<T> {
 /**
  * Type-to-search picker. Arrow keys move, Enter picks, Escape closes.
  * When `allowFreeText` is set, typing text that matches nothing keeps the text (onFreeText).
+ *
+ * The dropdown is rendered in a portal (not as a normal DOM child) and positioned to line up
+ * with the input. It has to be a portal: this picker is often used inside a horizontally
+ * scrolling table (line items on a bill), and that table's `overflow-x-auto` clips anything
+ * that would otherwise extend below it — including a plain absolutely-positioned dropdown,
+ * which would still exist and work, just be invisible.
  */
 export function Combobox<T>({
   options,
@@ -48,8 +55,11 @@ export function Combobox<T>({
   const [query, setQuery] = useState<string>(selected?.label ?? freeText ?? "");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number; openUp: boolean } | null>(null);
   const listId = useId();
   const wrap = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
@@ -71,9 +81,33 @@ export function Combobox<T>({
 
   useEffect(() => setActive(0), [query]);
 
+  // Recompute the dropdown's position (viewport coordinates) whenever it opens, and keep it
+  // aligned with the input while scrolling or resizing — including scrolling of an ancestor
+  // like the line-items table, which is why this uses capture:true.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = inputRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const spaceBelow = window.innerHeight - r.bottom;
+      const openUp = spaceBelow < 280 && r.top > spaceBelow;
+      setCoords({ top: openUp ? r.top : r.bottom, left: r.left, width: r.width, openUp });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) close();
+      const t = e.target as Node;
+      if (wrap.current?.contains(t)) return;
+      if (panelRef.current?.contains(t)) return;
+      close();
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -99,6 +133,7 @@ export function Combobox<T>({
   return (
     <div ref={wrap} className={cx("relative", className)}>
       <input
+        ref={inputRef}
         id={id}
         role="combobox"
         aria-expanded={open}
@@ -141,32 +176,39 @@ export function Combobox<T>({
           }
         }}
       />
-      {open && (
-        <div className="absolute left-0 z-40 mt-1 w-full min-w-72 overflow-hidden rounded-lg border border-line bg-panel shadow-lg">
-          <ul ref={listRef} id={listId} role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {matches.length === 0 && (
-              <li className="px-3 py-2 text-sm text-muted">{allowFreeText && query.trim() ? `Use “${query.trim()}” as written` : "No matches"}</li>
-            )}
-            {matches.map((o, i) => (
-              <li
-                key={String(o.value)}
-                data-index={i}
-                role="option"
-                aria-selected={i === active}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  pick(o);
-                }}
-                onMouseEnter={() => setActive(i)}
-                className={cx("cursor-pointer px-3 py-1.5 text-sm", i === active ? "bg-brand-50" : "")}
-              >
-                {o.render ?? o.label}
-              </li>
-            ))}
-          </ul>
-          {footer && <div className="border-t border-line">{footer(query, () => setOpen(false))}</div>}
-        </div>
-      )}
+      {open &&
+        coords &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{ position: "fixed", left: coords.left, width: coords.width, ...(coords.openUp ? { bottom: window.innerHeight - coords.top + 4 } : { top: coords.top + 4 }) }}
+            className="z-50 overflow-hidden rounded-lg border border-line bg-panel shadow-lg"
+          >
+            <ul ref={listRef} id={listId} role="listbox" className="max-h-72 overflow-y-auto py-1">
+              {matches.length === 0 && (
+                <li className="px-3 py-2 text-sm text-muted">{allowFreeText && query.trim() ? `Use “${query.trim()}” as written` : "No matches"}</li>
+              )}
+              {matches.map((o, i) => (
+                <li
+                  key={String(o.value)}
+                  data-index={i}
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pick(o);
+                  }}
+                  onMouseEnter={() => setActive(i)}
+                  className={cx("cursor-pointer px-3 py-1.5 text-sm", i === active ? "bg-brand-50" : "")}
+                >
+                  {o.render ?? o.label}
+                </li>
+              ))}
+            </ul>
+            {footer && <div className="border-t border-line">{footer(query, () => setOpen(false))}</div>}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
