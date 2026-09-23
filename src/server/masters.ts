@@ -6,6 +6,7 @@ import type { DB, Tx } from "@/db";
 import {
   accounts,
   itemCategories,
+  itemOpenings,
   items,
   ledgerCategories,
   moneyLedger,
@@ -26,6 +27,7 @@ import { checkTrn } from "@/lib/gst/trn";
 import { region } from "@/lib/region";
 import { cleanCustomValues } from "./custom-fields";
 import { removeOpening, syncAccountOpening, syncItemOpening, syncPartyOpening } from "./gl";
+import { defaultLocationId } from "./locations";
 import { isValidStateCode } from "@/lib/gst/states";
 
 /** Opening balances default to the first day of the current financial year. */
@@ -273,13 +275,24 @@ export async function saveItem(db: DB, firmId: number, raw: z.input<typeof itemS
       [{ id }] = await tx.insert(items).values(values).returning({ id: items.id });
     }
     await tx.delete(stockLedger).where(and(eq(stockLedger.itemId, id!), eq(stockLedger.source, "opening")));
+    await tx.delete(itemOpenings).where(eq(itemOpenings.itemId, id!));
     if (values.kind === "goods" && values.openingQtyMilli !== 0) {
+      const openingLocationId = await defaultLocationId(tx, firmId, "warehouse");
+      if (!openingLocationId) throw new MasterError("Set up a warehouse or shop first (Settings › Shops & warehouse).", "openingQtyMilli");
       await tx.insert(stockLedger).values({
         source: "opening",
         itemId: id!,
+        locationId: openingLocationId,
         date: values.openingDate,
         qtyMilli: values.openingQtyMilli,
         valuePaise: Math.round((values.openingQtyMilli * values.openingRatePaise) / 1000),
+      });
+      await tx.insert(itemOpenings).values({
+        itemId: id!,
+        locationId: openingLocationId,
+        qtyMilli: values.openingQtyMilli,
+        ratePaise: values.openingRatePaise,
+        date: values.openingDate,
       });
     }
     await syncItemOpening(tx, firmId, id!);

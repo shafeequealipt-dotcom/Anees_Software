@@ -37,6 +37,7 @@ export const VOUCHER_INFO: Record<VoucherType, VoucherTypeInfo> = {
   expense: T({ type: "expense", label: "Expense", plural: "Expenses", path: "/expenses", hasLines: true, partySide: "supplier", priceSide: "purchase", takesPayment: true, posts: true, convertsTo: [], outward: false }),
   other_income: T({ type: "other_income", label: "Other income", plural: "Other income", path: "/other-income", hasLines: true, partySide: "customer", priceSide: "sale", takesPayment: true, posts: true, convertsTo: [], outward: true }),
   stock_adjustment: T({ type: "stock_adjustment", label: "Stock adjustment", plural: "Stock adjustments", path: "/stock-adjustments", hasLines: true, partySide: "none", priceSide: "purchase", takesPayment: false, posts: true, convertsTo: [], outward: false }),
+  stock_transfer: T({ type: "stock_transfer", label: "Stock transfer", plural: "Stock transfers", path: "/stock-transfers", hasLines: true, partySide: "none", priceSide: "purchase", takesPayment: false, posts: true, convertsTo: [], outward: false }),
   money_adjustment: T({ type: "money_adjustment", label: "Cash/bank adjustment", plural: "Cash/bank adjustments", path: "/cash-adjustments", hasLines: false, partySide: "none", priceSide: "sale", takesPayment: false, posts: true, convertsTo: [], outward: false }),
   money_transfer: T({ type: "money_transfer", label: "Transfer", plural: "Transfers", path: "/transfers", hasLines: false, partySide: "none", priceSide: "sale", takesPayment: false, posts: true, convertsTo: [], outward: false }),
 };

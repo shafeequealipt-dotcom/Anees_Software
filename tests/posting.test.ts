@@ -13,6 +13,7 @@ const base: PostingVoucher = {
   accountId: null,
   toAccountId: null,
   direction: null,
+  locationId: 1,
   lines: [{ itemId: 3, isGoods: true, qtyMilli: 2000, unitFactorMilli: 1000, taxablePaise: 100000 }],
 };
 
@@ -75,6 +76,26 @@ describe("buildPostings", () => {
 
   it("quotations touch nothing", () => {
     expect(buildPostings({ ...base, type: "quotation" })).toEqual({ party: [], money: [], stock: [] });
+  });
+
+  it("a sale without a location is rejected", () => {
+    expect(() => buildPostings({ ...base, locationId: null })).toThrow(PostingError);
+  });
+
+  it("stock transfer moves qty out of one location and into another at zero net value", () => {
+    const p = buildPostings({ ...base, type: "stock_transfer", partyId: null, locationId: 1, toLocationId: 2 });
+    expect(p.party).toEqual([]);
+    expect(p.money).toEqual([]);
+    expect(p.stock).toEqual([
+      { lineId: undefined, itemId: 3, locationId: 1, date: "2026-09-16", qtyMilli: -2000, valuePaise: -100000, batchNo: undefined, expiryDate: undefined },
+      { lineId: undefined, itemId: 3, locationId: 2, date: "2026-09-16", qtyMilli: 2000, valuePaise: 100000, batchNo: undefined, expiryDate: undefined },
+    ]);
+    expect(p.stock.reduce((s, e) => s + e.valuePaise, 0)).toBe(0);
+  });
+
+  it("stock transfer needs two different locations", () => {
+    expect(() => buildPostings({ ...base, type: "stock_transfer", locationId: 1, toLocationId: 1 })).toThrow(PostingError);
+    expect(() => buildPostings({ ...base, type: "stock_transfer", locationId: 1, toLocationId: null })).toThrow(PostingError);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   firms,
   items,
   ledgerCategories,
+  locations,
   moneyLedger,
   parties,
   partyLedger,
@@ -23,11 +24,12 @@ import {
 import { audit } from "@/lib/audit";
 import { isIsoDate, todayIST } from "@/lib/dates";
 import { calculateVoucher, supplyFor } from "@/lib/gst/engine";
-import { buildPostings, PostingError } from "@/lib/posting";
+import { buildPostings, needsLocation, PostingError } from "@/lib/posting";
 import { formatMoney } from "@/lib/money";
 import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
 import { syncVoucherGl } from "./gl";
+import { defaultLocationId } from "./locations";
 import { isZatcaIssued, ZATCA_LOCKED_MESSAGE } from "./zatca-lock";
 import { syncServiceReminders } from "./notify/service";
 import { SETTLES, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
@@ -89,6 +91,10 @@ export const voucherSchema = z.object({
   paidPaise: nonNeg.default(0),
   accountId: int.positive().nullish(),
   toAccountId: int.positive().nullish(),
+  /** Shop/warehouse this bill is from, or the source of a stock transfer. */
+  locationId: int.positive().nullish(),
+  /** Stock transfers only: the destination location. */
+  toLocationId: int.positive().nullish(),
   paymentMode: optText(30),
   paymentRef: optText(100),
   direction: z.union([z.literal(1), z.literal(-1)]).nullish(),
@@ -187,7 +193,7 @@ export async function saveVoucher(
     const placeOfSupply = firm.country === "SA" ? null : input.placeOfSupply || party?.stateCode || firm.stateCode;
     const composition = firm.gstScheme !== "regular" && info.outward;
     const withoutTax =
-      input.type === "stock_adjustment" || input.type === "delivery_challan" ? true : input.withoutTax || composition;
+      ["stock_adjustment", "stock_transfer", "delivery_challan"].includes(input.type) ? true : input.withoutTax || composition;
 
     const normalizedLines = lineInputs.map((l) => {
       const t = l.taxRateId ? taxMap.get(l.taxRateId) : undefined;
@@ -201,7 +207,7 @@ export async function saveVoucher(
 
     const calc = calculateVoucher({
       supply: supplyFor(firm.country, firm.stateCode, placeOfSupply),
-      roundOff: info.hasLines && input.type !== "stock_adjustment" ? input.roundOff : false,
+      roundOff: info.hasLines && !["stock_adjustment", "stock_transfer"].includes(input.type) ? input.roundOff : false,
       withoutTax,
       billDiscountBp: input.billDiscountBp || undefined,
       billDiscountPaise: input.billDiscountBp ? undefined : input.billDiscountPaise,
@@ -223,7 +229,7 @@ export async function saveVoucher(
     const tdsPaise = Math.round((calc.taxablePaise * tdsBp) / 10000);
     const totalPaise = info.hasLines ? calc.totalPaise + tcsPaise : input.amountPaise;
     if (!info.hasLines && totalPaise <= 0) throw new VoucherError("Enter an amount more than zero.", "amountPaise");
-    if (info.hasLines && input.type !== "stock_adjustment" && totalPaise < 0) {
+    if (info.hasLines && !["stock_adjustment", "stock_transfer"].includes(input.type) && totalPaise < 0) {
       throw new VoucherError("The bill total can't be negative.");
     }
 
@@ -256,6 +262,25 @@ export async function saveVoucher(
       if (party && srcs.some((s) => s.partyId && s.partyId !== party.id)) throw new VoucherError("All the documents combined into one bill must be for the same party.");
     }
     if (input.type === "money_transfer" && !input.toAccountId) throw new VoucherError("Choose the account to move money into.", "toAccountId");
+
+    // ── Location (shop/warehouse). Falls back to a sensible default (e.g. for older clients or a
+    // single-location company) except for transfers, which always need both ends picked explicitly.
+    if (input.type === "stock_transfer" && !input.toLocationId) throw new VoucherError("Choose the shop to transfer into.", "toLocationId");
+    if (input.type === "stock_transfer" && input.locationId && input.locationId === input.toLocationId) {
+      throw new VoucherError("Choose two different shops for the transfer.", "toLocationId");
+    }
+    // Same single default for every type when none is given, so a company that hasn't set up
+    // multiple shops yet keeps behaving like one stock pool.
+    let resolvedLocationId: number | null = input.locationId ?? null;
+    if (!resolvedLocationId && needsLocation(input.type)) {
+      resolvedLocationId = await defaultLocationId(tx, firmId, "warehouse");
+      if (!resolvedLocationId) throw new VoucherError("Set up a warehouse or shop first (Settings › Shops & warehouse).", "locationId");
+    }
+    const locationIds = [resolvedLocationId, input.type === "stock_transfer" ? input.toLocationId : null].filter((x): x is number => !!x);
+    if (locationIds.length) {
+      const own = await tx.select({ id: locations.id }).from(locations).where(and(inArray(locations.id, locationIds), eq(locations.firmId, firmId)));
+      if (own.length !== new Set(locationIds).size) throw new VoucherError("Choose a shop from this company.", "locationId");
+    }
 
     // ── Number
     const prefix = existing ? existing.prefix : (cfg.prefixes[input.type] ?? "");
@@ -320,6 +345,8 @@ export async function saveVoucher(
       paidPaise,
       accountId,
       toAccountId: input.type === "money_transfer" ? (input.toAccountId ?? null) : null,
+      locationId: resolvedLocationId,
+      toLocationId: input.type === "stock_transfer" ? (input.toLocationId ?? null) : null,
       paymentMode: input.paymentMode,
       paymentRef: input.paymentRef,
       direction: ["stock_adjustment", "money_adjustment"].includes(input.type) ? (input.direction ?? 1) : null,
@@ -419,6 +446,8 @@ export async function saveVoucher(
         accountId,
         toAccountId: values.toAccountId,
         direction: values.direction,
+        locationId: values.locationId,
+        toLocationId: values.toLocationId,
         lines: normalizedLines.map((l, i) => {
           const item = l.itemId ? itemMap.get(l.itemId) : undefined;
           // Stock value for sales is the item's cost, not the selling price.
@@ -465,23 +494,27 @@ export async function saveVoucher(
       }
     }
 
-    // ── Stock warnings
-    if (info.posts && ["sale_invoice", "debit_note"].includes(input.type) || (input.type === "stock_adjustment" && values.direction === -1)) {
+    // ── Stock warnings (checked at the shop/warehouse stock actually left from)
+    const reducesStock =
+      (info.posts && ["sale_invoice", "debit_note"].includes(input.type)) ||
+      (input.type === "stock_adjustment" && values.direction === -1) ||
+      input.type === "stock_transfer";
+    if (reducesStock && values.locationId) {
       const goodsIds = itemIds.filter((iid) => itemMap.get(iid)?.kind === "goods");
       if (goodsIds.length) {
         const stock = await tx
           .select({ itemId: stockLedger.itemId, qty: sql<number>`sum(${stockLedger.qtyMilli})::bigint` })
           .from(stockLedger)
-          .where(inArray(stockLedger.itemId, goodsIds))
+          .where(and(inArray(stockLedger.itemId, goodsIds), eq(stockLedger.locationId, values.locationId)))
           .groupBy(stockLedger.itemId);
         for (const s of stock) {
           const qty = Number(s.qty);
           if (qty < 0) {
             const item = itemMap.get(s.itemId)!;
             if (!cfg.allowNegativeStock) {
-              throw new VoucherError(`Not enough stock of "${item.name}". Stock would go to ${qty / 1000}.`);
+              throw new VoucherError(`Not enough stock of "${item.name}" at this shop. Stock would go to ${qty / 1000}.`);
             }
-            warnings.push(`Stock of "${item.name}" is now ${qty / 1000} (below zero).`);
+            warnings.push(`Stock of "${item.name}" at this shop is now ${qty / 1000} (below zero).`);
           }
         }
       }
@@ -536,6 +569,7 @@ async function insertPostings(tx: Tx, voucherId: number, p: ReturnType<typeof bu
         voucherId,
         lineId: e.lineId ?? null,
         itemId: e.itemId,
+        locationId: e.locationId,
         date: e.date,
         qtyMilli: e.qtyMilli,
         valuePaise: e.valuePaise,

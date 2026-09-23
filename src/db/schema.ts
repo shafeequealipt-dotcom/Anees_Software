@@ -34,6 +34,7 @@ export const itemKind = pgEnum("item_kind", ["goods", "service"]);
 export const accountKind = pgEnum("account_kind", ["cash", "bank"]);
 export const gstScheme = pgEnum("gst_scheme", ["regular", "composition", "unregistered"]);
 export const categoryKind = pgEnum("category_kind", ["expense", "income"]);
+export const locationKind = pgEnum("location_kind", ["warehouse", "shop"]);
 export const voucherStatus = pgEnum("voucher_status", ["active", "cancelled", "deleted"]);
 export const ledgerSource = pgEnum("ledger_source", ["voucher", "opening"]);
 
@@ -51,6 +52,7 @@ export const VOUCHER_TYPES = [
   "expense",
   "other_income",
   "stock_adjustment",
+  "stock_transfer",
   "money_adjustment",
   "money_transfer",
 ] as const;
@@ -91,6 +93,25 @@ export const firms = pgTable("firms", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/** A shop or the common warehouse/godown. Stock is tracked per location. */
+export const locations = pgTable(
+  "locations",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    kind: locationKind("kind").notNull().default("shop"),
+    /** Short code printed on bills from this location. */
+    code: varchar("code", { length: 20 }),
+    address: text("address"),
+    phone: varchar("phone", { length: 30 }),
+    active: boolean("active").notNull().default(true),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("locations_firm_name_key").on(t.firmId, t.name)],
+);
 
 /** A named set of permissions. The owner role has every permission and cannot be edited. */
 export const roles = pgTable("roles", {
@@ -134,6 +155,16 @@ export const userFirms = pgTable(
     firmId: integer("firm_id").notNull().references(() => firms.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.userId, t.firmId] })],
+);
+
+/** Which shops/warehouse a non-owner user may bill from. Owners and holders of `locations.all` see every location. */
+export const userLocations = pgTable(
+  "user_locations",
+  {
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    locationId: integer("location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.locationId] })],
 );
 
 export const sessions = pgTable(
@@ -252,6 +283,30 @@ export const items = pgTable(
   ],
 );
 
+/** Per-location low-stock level. Falls back to items.minStockMilli when no row exists. */
+export const itemLocationLevels = pgTable(
+  "item_location_levels",
+  {
+    itemId: integer("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+    locationId: integer("location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+    minStockMilli: milli("min_stock_milli").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.locationId] })],
+);
+
+/** Per-location opening stock. items.openingQtyMilli/openingRatePaise remain the totals used on exports. */
+export const itemOpenings = pgTable(
+  "item_openings",
+  {
+    itemId: integer("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+    locationId: integer("location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+    qtyMilli: milli("qty_milli").notNull().default(0),
+    ratePaise: paise("rate_paise").notNull().default(0),
+    date: date("date"),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.locationId] })],
+);
+
 /** Extra fields the owner adds to items (e.g. Brand, Warranty, Shelf life). */
 export const customFields = pgTable(
   "custom_fields",
@@ -363,6 +418,11 @@ export const vouchers = pgTable(
     date: date("date").notNull(),
     dueDate: date("due_date"),
     status: voucherStatus("status").notNull().default("active"),
+
+    /** Shop/warehouse this bill is from, or the source of a stock transfer. */
+    locationId: integer("location_id").references(() => locations.id),
+    /** Stock transfers only: the destination location. */
+    toLocationId: integer("to_location_id").references(() => locations.id),
 
     partyId: integer("party_id").references(() => parties.id),
     partyName: varchar("party_name", { length: 200 }),
@@ -526,6 +586,7 @@ export const stockLedger = pgTable(
     voucherId: integer("voucher_id").references(() => vouchers.id, { onDelete: "cascade" }),
     lineId: integer("line_id").references(() => voucherLines.id, { onDelete: "cascade" }),
     itemId: integer("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+    locationId: integer("location_id").notNull().references(() => locations.id),
     date: date("date").notNull(),
     /** Positive is stock coming in, in base units (thousandths). */
     qtyMilli: milli("qty_milli").notNull(),
@@ -534,7 +595,11 @@ export const stockLedger = pgTable(
     batchNo: varchar("batch_no", { length: 60 }),
     expiryDate: date("expiry_date"),
   },
-  (t) => [index("stock_ledger_item_date_idx").on(t.itemId, t.date), index("stock_ledger_voucher_idx").on(t.voucherId)],
+  (t) => [
+    index("stock_ledger_item_date_idx").on(t.itemId, t.date),
+    index("stock_ledger_item_location_idx").on(t.itemId, t.locationId),
+    index("stock_ledger_voucher_idx").on(t.voucherId),
+  ],
 );
 
 // ─── Operations ───────────────────────────────────────────────────────────────

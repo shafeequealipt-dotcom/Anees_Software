@@ -50,6 +50,7 @@ export const PERMISSION_GROUPS = [
   {
     title: "Administration",
     items: [
+      { key: "locations.all", label: "See and use every shop and the warehouse", hint: "Without this, a user only sees and bills from the shops they're assigned to." },
       { key: "settings.edit", label: "Change business settings", hint: "Business details, tax rates, units." },
       { key: "users.manage", label: "Manage users and roles" },
       { key: "companies.manage", label: "Add and hide companies", hint: "Each company has its own parties, items, bills and tax settings." },

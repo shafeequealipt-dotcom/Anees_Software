@@ -44,9 +44,10 @@ export const DEFAULT_SETTINGS = {
     expense: "EXP-",
     other_income: "INC-",
     stock_adjustment: "ADJ-",
+    stock_transfer: "STXR-",
     money_adjustment: "CADJ-",
     money_transfer: "TRF-",
-  } as Record<VoucherType, string>,
+  } satisfies Record<VoucherType, string>,
   documentTitles: {
     sale_invoice: "Tax Invoice",
     credit_note: "Credit Note",
@@ -61,9 +62,10 @@ export const DEFAULT_SETTINGS = {
     expense: "Expense",
     other_income: "Other Income",
     stock_adjustment: "Stock Adjustment",
+    stock_transfer: "Stock Transfer",
     money_adjustment: "Cash/Bank Adjustment",
     money_transfer: "Money Transfer",
-  } as Record<VoucherType, string>,
+  } satisfies Record<VoucherType, string>,
   quotationTerms: "This quotation is valid for 15 days.",
   reminderMessage:
     "Dear {party}, a payment of {amount} is pending with {business}. Kindly pay at the earliest. Thank you.",

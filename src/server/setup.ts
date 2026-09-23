@@ -2,7 +2,7 @@ import "server-only";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
-import { accounts, firms, ledgerCategories, roles, taxRates, units, users } from "@/db/schema";
+import { accounts, firms, ledgerCategories, locations, roles, taxRates, units, users } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { hashPassword, passwordProblem } from "@/lib/auth";
 import { checkGstin } from "@/lib/gst/gstin";
@@ -153,5 +153,12 @@ export async function seedDefaults(db: DB, firmId: number, country: Country = "I
   const [hasAccounts] = await db.select({ n: sql<number>`count(*)::int` }).from(accounts).where(eq(accounts.firmId, firmId));
   if (hasAccounts.n === 0) {
     await db.insert(accounts).values({ firmId, kind: "cash", name: "Cash in hand", isDefault: true });
+  }
+  const [hasLocations] = await db.select({ n: sql<number>`count(*)::int` }).from(locations).where(eq(locations.firmId, firmId));
+  if (hasLocations.n === 0) {
+    await db.insert(locations).values([
+      { firmId, name: "Warehouse", kind: "warehouse", sort: 0 },
+      { firmId, name: "Main shop", kind: "shop", sort: 1 },
+    ]);
   }
 }

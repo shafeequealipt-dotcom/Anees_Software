@@ -22,6 +22,10 @@ export interface PostingVoucher {
   accountId: number | null;
   toAccountId: number | null;
   direction: number | null;
+  /** Shop/warehouse this voucher is at (or the source, for a stock transfer). Required whenever the voucher moves stock. */
+  locationId: number | null;
+  /** Stock transfers only: the destination location. */
+  toLocationId?: number | null;
   lines: {
     lineId?: number;
     itemId: number | null;
@@ -40,6 +44,7 @@ export interface Postings {
   stock: {
     lineId?: number;
     itemId: number;
+    locationId: number;
     date: string;
     qtyMilli: number;
     valuePaise: number;
@@ -61,6 +66,7 @@ const RULES: Record<VoucherType, { party: number; money: number; stock: number }
   expense: { party: -1, money: -1, stock: 0 },
   other_income: { party: +1, money: +1, stock: 0 },
   stock_adjustment: { party: 0, money: 0, stock: 0 },
+  stock_transfer: { party: 0, money: 0, stock: 0 },
   money_adjustment: { party: 0, money: 0, stock: 0 },
   money_transfer: { party: 0, money: 0, stock: 0 },
   quotation: { party: 0, money: 0, stock: 0 },
@@ -68,6 +74,11 @@ const RULES: Record<VoucherType, { party: number; money: number; stock: number }
   purchase_order: { party: 0, money: 0, stock: 0 },
   delivery_challan: { party: 0, money: 0, stock: 0 },
 };
+
+/** Which shop/warehouse a voucher of this type must record (it posts a stock movement there). */
+export function needsLocation(type: VoucherType): boolean {
+  return type === "stock_adjustment" || type === "stock_transfer" || RULES[type].stock !== 0;
+}
 
 export function affectsLedgers(type: VoucherType): boolean {
   return !["quotation", "sales_order", "purchase_order", "delivery_challan"].includes(type);
@@ -94,18 +105,32 @@ export function buildPostings(v: PostingVoucher): Postings {
   }
 
   if (v.type === "stock_adjustment") {
+    if (!v.locationId) throw new PostingError("Choose the shop or warehouse for this adjustment.");
     const dir = v.direction === -1 ? -1 : 1;
     for (const l of v.lines) {
       if (!l.itemId || !l.isGoods) continue;
       out.stock.push({
         lineId: l.lineId,
         itemId: l.itemId,
+        locationId: v.locationId,
         date,
         qtyMilli: dir * baseQty(l),
         valuePaise: dir * l.taxablePaise,
         batchNo: l.batchNo,
         expiryDate: l.expiryDate,
       });
+    }
+    return out;
+  }
+
+  if (v.type === "stock_transfer") {
+    if (!v.locationId || !v.toLocationId) throw new PostingError("Choose both the from and to locations for the transfer.");
+    if (v.locationId === v.toLocationId) throw new PostingError("Transfer needs two different locations.");
+    for (const l of v.lines) {
+      if (!l.itemId || !l.isGoods) continue;
+      const qty = baseQty(l);
+      out.stock.push({ lineId: l.lineId, itemId: l.itemId, locationId: v.locationId, date, qtyMilli: -qty, valuePaise: -l.taxablePaise, batchNo: l.batchNo, expiryDate: l.expiryDate });
+      out.stock.push({ lineId: l.lineId, itemId: l.itemId, locationId: v.toLocationId, date, qtyMilli: qty, valuePaise: l.taxablePaise, batchNo: l.batchNo, expiryDate: l.expiryDate });
     }
     return out;
   }
@@ -137,11 +162,13 @@ export function buildPostings(v: PostingVoucher): Postings {
   if (paid > 0 && v.accountId) out.money.push({ accountId: v.accountId, date, amountPaise: rule.money * paid });
 
   if (rule.stock !== 0) {
+    if (!v.locationId) throw new PostingError("Choose the shop this bill is from.");
     for (const l of v.lines) {
       if (!l.itemId || !l.isGoods) continue;
       out.stock.push({
         lineId: l.lineId,
         itemId: l.itemId,
+        locationId: v.locationId,
         date,
         qtyMilli: rule.stock * baseQty(l),
         valuePaise: rule.stock * l.taxablePaise,
