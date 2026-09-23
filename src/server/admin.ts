@@ -2,13 +2,13 @@ import "server-only";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
-import { firms, roles, sessions, userFirms, users } from "@/db/schema";
+import { firms, locations, roles, sessions, userFirms, userLocations, users } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { hashPassword, passwordProblem } from "@/lib/auth";
 import { checkGstin } from "@/lib/gst/gstin";
 import { isValidStateCode } from "@/lib/gst/states";
 import { checkTrn } from "@/lib/gst/trn";
-import { isPermission } from "@/lib/permissions";
+import { can, isPermission } from "@/lib/permissions";
 import { region } from "@/lib/region";
 import { MasterError } from "./masters";
 import { companySchema, insertCompany } from "./setup";
@@ -28,6 +28,16 @@ export async function listRoles(db: DB) {
     })
     .from(roles)
     .orderBy(sql`${roles.isOwner} desc`, asc(roles.id));
+}
+
+/** Every active shop/warehouse across every company, for the "which shops can this person use" picker. */
+export async function listAllLocations(db: DB) {
+  return db
+    .select({ id: locations.id, firmId: locations.firmId, firmName: firms.name, name: locations.name, kind: locations.kind })
+    .from(locations)
+    .innerJoin(firms, eq(firms.id, locations.firmId))
+    .where(eq(locations.active, true))
+    .orderBy(asc(firms.name), asc(locations.sort), asc(locations.id));
 }
 
 export const roleSchema = z.object({
@@ -75,6 +85,7 @@ export async function deleteRole(db: DB, id: number, actorId: number) {
 
 export async function listUsers(db: DB) {
   const access = await db.select().from(userFirms);
+  const locAccess = await db.select().from(userLocations);
   const list = await db
     .select({
       id: users.id,
@@ -85,6 +96,7 @@ export async function listUsers(db: DB) {
       roleId: users.roleId,
       roleName: roles.name,
       isOwner: roles.isOwner,
+      permissions: roles.permissions,
       mustChangePassword: users.mustChangePassword,
       totpEnabled: users.totpEnabled,
       lastLoginAt: users.lastLoginAt,
@@ -92,7 +104,11 @@ export async function listUsers(db: DB) {
     .from(users)
     .innerJoin(roles, eq(roles.id, users.roleId))
     .orderBy(sql`${roles.isOwner} desc`, sql`lower(${users.name})`);
-  return list.map((u) => ({ ...u, firmIds: access.filter((a) => a.userId === u.id).map((a) => a.firmId) }));
+  return list.map((u) => ({
+    ...u,
+    firmIds: access.filter((a) => a.userId === u.id).map((a) => a.firmId),
+    locationIds: locAccess.filter((a) => a.userId === u.id).map((a) => a.locationId),
+  }));
 }
 
 /** Replace the list of companies a user may open. Owners always see every company, so nothing is stored for them. */
@@ -107,8 +123,24 @@ async function setUserFirms(db: DB, userId: number, roleIsOwner: boolean, firmId
   if (!roleIsOwner) await db.insert(userFirms).values(ids.map((firmId) => ({ userId, firmId })));
 }
 
+/**
+ * Replace the list of shops/warehouse a user is restricted to. Unlike companies, this is opt-in:
+ * an empty list means "not restricted" (sees every shop of the companies they can open), same as
+ * before this feature existed. Owners and holders of `locations.all` are never restricted.
+ */
+async function setUserLocations(db: DB, userId: number, roleSeesAllLocations: boolean, locationIds: number[]) {
+  const ids = [...new Set(locationIds)];
+  if (!roleSeesAllLocations && ids.length) {
+    const found = await db.select({ id: locations.id }).from(locations).where(inArray(locations.id, ids));
+    if (found.length !== ids.length) throw new MasterError("One of the chosen shops no longer exists.", "locationIds");
+  }
+  await db.delete(userLocations).where(eq(userLocations.userId, userId));
+  if (!roleSeesAllLocations && ids.length) await db.insert(userLocations).values(ids.map((locationId) => ({ userId, locationId })));
+}
+
 const userFields = {
   firmIds: z.array(z.number().int().positive()).default([]),
+  locationIds: z.array(z.number().int().positive()).default([]),
   name: z.string().trim().min(1, "Enter the person's name.").max(120),
   phone: z.string().trim().max(30).optional().transform((v) => v || null),
   roleId: z.number().int().positive("Choose a role."),
@@ -137,7 +169,7 @@ export async function createUser(db: DB, raw: z.input<typeof newUserSchema>, act
   const i = p.data;
   const weak = passwordProblem(i.password);
   if (weak) throw new MasterError(weak, "password");
-  const [role] = await db.select({ id: roles.id, isOwner: roles.isOwner }).from(roles).where(eq(roles.id, i.roleId));
+  const [role] = await db.select({ id: roles.id, isOwner: roles.isOwner, permissions: roles.permissions }).from(roles).where(eq(roles.id, i.roleId));
   if (!role) throw new MasterError("Choose a role.", "roleId");
   if (!role.isOwner && i.firmIds.length === 0) throw new MasterError("Choose at least one company this person can open.", "firmIds");
   const [dup] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${i.email}`);
@@ -147,6 +179,7 @@ export async function createUser(db: DB, raw: z.input<typeof newUserSchema>, act
     .values({ name: i.name, email: i.email, phone: i.phone, roleId: i.roleId, passwordHash: await hashPassword(i.password), mustChangePassword: true })
     .returning({ id: users.id });
   await setUserFirms(db, row.id, role.isOwner, i.firmIds);
+  await setUserLocations(db, row.id, can(role, "locations.all"), i.locationIds);
   await audit(db, { userId: actorId, action: "create", entity: "user", entityId: row.id, summary: `Added user ${i.name} (${i.email})` });
   return row.id;
 }
@@ -168,6 +201,7 @@ export async function updateUser(db: DB, raw: z.input<typeof editUserSchema>, ac
     throw new MasterError("There must always be at least one active owner.");
   }
   await setUserFirms(db, i.id, role.isOwner, i.firmIds);
+  await setUserLocations(db, i.id, can(role, "locations.all"), i.locationIds);
   await db.update(users).set({ name: i.name, phone: i.phone, roleId: i.roleId, active: i.active, updatedAt: new Date() }).where(eq(users.id, i.id));
   if (!i.active) await db.delete(sessions).where(eq(sessions.userId, i.id));
   await audit(db, {

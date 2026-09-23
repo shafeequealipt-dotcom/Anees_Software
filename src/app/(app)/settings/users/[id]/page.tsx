@@ -3,7 +3,8 @@ import { getDb } from "@/db";
 import { ResetPasswordPanel, UserForm } from "@/components/user-form";
 import { PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { listCompanies, listRoles, listUsers } from "@/server/admin";
+import { can } from "@/lib/permissions";
+import { listAllLocations, listCompanies, listRoles, listUsers } from "@/server/admin";
 
 export const metadata = { title: "Edit user" };
 
@@ -13,16 +14,17 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   const db = await getDb();
   const [u] = (await listUsers(db)).filter((x) => x.id === id);
   if (!u) notFound();
-  const [roles, companies] = await Promise.all([listRoles(db), listCompanies(db)]);
+  const [roles, companies, locations] = await Promise.all([listRoles(db), listCompanies(db), listAllLocations(db)]);
   return (
     <>
       <PageHeader title={u.name} subtitle={u.email} back={{ href: "/settings/users", label: "Users" }} />
       <div className="flex flex-col gap-6">
         <UserForm
-          roles={roles.map((r) => ({ id: r.id, name: r.name, description: r.description, isOwner: r.isOwner }))}
+          roles={roles.map((r) => ({ id: r.id, name: r.name, description: r.description, isOwner: r.isOwner, allLocations: can(r, "locations.all") }))}
           companies={companies.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name }))}
+          locations={locations}
           isSelf={u.id === me.id}
-          initial={{ id: u.id, name: u.name, email: u.email, phone: u.phone ?? "", roleId: u.roleId, active: u.active, firmIds: u.firmIds }}
+          initial={{ id: u.id, name: u.name, email: u.email, phone: u.phone ?? "", roleId: u.roleId, active: u.active, firmIds: u.firmIds, locationIds: u.locationIds }}
         />
         {u.id !== me.id && <ResetPasswordPanel userId={u.id} name={u.name} />}
       </div>

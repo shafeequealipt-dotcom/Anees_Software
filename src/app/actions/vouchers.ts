@@ -36,6 +36,12 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
     if (["money_adjustment", "money_transfer", "other_income"].includes(input.type) && !can(user, "money.edit")) {
       throw new AuthError("You don't have permission to record this.");
     }
+    if (!user.allLocations) {
+      const mine = new Set(user.locations.map((l) => l.id));
+      if (input.locationId && !mine.has(input.locationId)) throw new AuthError("You don't have access to that shop.");
+      if (input.toLocationId && !mine.has(input.toLocationId)) throw new AuthError("You don't have access to that shop.");
+      if (!input.locationId && user.locations[0]) input.locationId = user.locations[0].id;
+    }
     const db = await getDb();
     if (input.id && !can(user, "vouchers.editOld")) {
       const [v] = await db.select({ createdAt: vouchers.createdAt }).from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, user.firmId)));

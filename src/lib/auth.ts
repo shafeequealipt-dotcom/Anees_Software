@@ -6,7 +6,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import * as OTPAuth from "otpauth";
 import { getDb } from "@/db";
-import { firms, loginAttempts, roles, sessions, userFirms, users } from "@/db/schema";
+import { firms, loginAttempts, locations, roles, sessions, userFirms, userLocations, users } from "@/db/schema";
 import { can, type Permission } from "./permissions";
 import { setRegion, type Country } from "./region";
 
@@ -23,6 +23,12 @@ export interface CompanyRef {
   country: Country;
 }
 
+export interface LocationRef {
+  id: number;
+  name: string;
+  kind: "warehouse" | "shop";
+}
+
 export interface CurrentUser {
   id: number;
   name: string;
@@ -36,6 +42,10 @@ export interface CurrentUser {
   firm: CompanyRef;
   /** Every company this user may open. */
   firms: CompanyRef[];
+  /** Shops/warehouse this user may bill from, in the current company. */
+  locations: LocationRef[];
+  /** Owner or holds `locations.all`: sees and can use every shop, not just the assigned ones. */
+  allLocations: boolean;
   totpEnabled: boolean;
   mustChangePassword: boolean;
   sessionId: string;
@@ -182,12 +192,32 @@ async function loadSession(): Promise<{ user: CurrentUser; mfaPassed: boolean } 
   ).map((f) => ({ ...f, country: (f.country === "SA" ? "SA" : "IN") as Country }));
   const current = accessible.find((f) => f.id === row.s.firmId) ?? accessible[0] ?? { id: 0, name: "", country: "IN" as Country };
   if (current.id && current.id !== row.s.firmId) await db.update(sessions).set({ firmId: current.id }).where(eq(sessions.id, id));
+  // Location access is opt-in: a user with no explicit shop assignment for this company isn't
+  // restricted at all (matches how things worked before shops existed). Ticking at least one shop
+  // for them in Settings › Users switches them to "only these shops".
+  const locationCols = { id: locations.id, name: locations.name, kind: locations.kind };
+  const explicitLocations: LocationRef[] = current.id
+    ? await db
+        .select(locationCols)
+        .from(userLocations)
+        .innerJoin(locations, eq(locations.id, userLocations.locationId))
+        .where(and(eq(userLocations.userId, row.u.id), eq(locations.firmId, current.id), eq(locations.active, true)))
+        .orderBy(asc(locations.sort), asc(locations.id))
+    : [];
+  const allLocations = row.r.isOwner || (row.r.permissions as string[]).includes("locations.all") || explicitLocations.length === 0;
+  const myLocations: LocationRef[] = current.id
+    ? allLocations
+      ? await db.select(locationCols).from(locations).where(and(eq(locations.firmId, current.id), eq(locations.active, true))).orderBy(asc(locations.sort), asc(locations.id))
+      : explicitLocations
+    : [];
   return {
     mfaPassed: row.s.mfaPassed,
     user: {
       firmId: current.id,
       firm: current,
       firms: accessible,
+      locations: myLocations,
+      allLocations,
       id: row.u.id,
       name: row.u.name,
       email: row.u.email,

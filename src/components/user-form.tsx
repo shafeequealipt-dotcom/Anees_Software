@@ -17,6 +17,8 @@ interface RoleOpt {
   name: string;
   description: string | null;
   isOwner: boolean;
+  /** Owner or holds `locations.all`: sees every shop, so the shop picker is hidden for this role. */
+  allLocations: boolean;
 }
 
 interface CompanyOpt {
@@ -24,15 +26,25 @@ interface CompanyOpt {
   name: string;
 }
 
+interface LocationOpt {
+  id: number;
+  firmId: number;
+  firmName: string;
+  name: string;
+  kind: "warehouse" | "shop";
+}
+
 export function UserForm({
   roles,
   companies,
+  locations,
   initial,
   isSelf,
 }: {
   roles: RoleOpt[];
   companies: CompanyOpt[];
-  initial?: { id: number; name: string; email: string; phone: string; roleId: number; active: boolean; firmIds: number[] };
+  locations: LocationOpt[];
+  initial?: { id: number; name: string; email: string; phone: string; roleId: number; active: boolean; firmIds: number[]; locationIds: number[] };
   isSelf?: boolean;
 }) {
   const router = useRouter();
@@ -43,6 +55,7 @@ export function UserForm({
     roleId: initial?.roleId ?? roles.find((r) => /staff/i.test(r.name))?.id ?? roles[0]?.id ?? 0,
     active: initial?.active ?? true,
     firmIds: initial?.firmIds ?? (companies.length === 1 ? [companies[0].id] : []),
+    locationIds: initial?.locationIds ?? [],
     password: "",
   });
   const [error, setError] = useState<{ msg: string; field?: string } | null>(null);
@@ -55,13 +68,15 @@ export function UserForm({
   const err = (f: string) => (error?.field === f ? error.msg : null);
   const role = roles.find((r) => r.id === v.roleId);
   const toggleFirm = (id: number) => set("firmIds", v.firmIds.includes(id) ? v.firmIds.filter((x) => x !== id) : [...v.firmIds, id]);
+  const toggleLocation = (id: number) => set("locationIds", v.locationIds.includes(id) ? v.locationIds.filter((x) => x !== id) : [...v.locationIds, id]);
+  const visibleLocations = locations.filter((l) => v.firmIds.includes(l.firmId));
 
   async function save() {
     setSaving(true);
     setError(null);
     const res = initial
-      ? await updateUserAction({ id: initial.id, name: v.name, phone: v.phone, roleId: v.roleId, active: v.active, firmIds: v.firmIds })
-      : await createUserAction({ name: v.name, email: v.email, phone: v.phone, roleId: v.roleId, password: v.password, firmIds: v.firmIds });
+      ? await updateUserAction({ id: initial.id, name: v.name, phone: v.phone, roleId: v.roleId, active: v.active, firmIds: v.firmIds, locationIds: v.locationIds })
+      : await createUserAction({ name: v.name, email: v.email, phone: v.phone, roleId: v.roleId, password: v.password, firmIds: v.firmIds, locationIds: v.locationIds });
     setSaving(false);
     if (!res.ok) return setError({ msg: res.error, field: res.field });
     if (initial) {
@@ -110,6 +125,34 @@ export function UserForm({
                   {c.name}
                 </label>
               ))}
+            </div>
+          )}
+        </Field>
+        <Field label="Restrict to specific shops" error={err("locationIds")} hint="Leave all unticked to let this person bill from every shop and the warehouse. Tick specific shops to limit them to just those." className="sm:col-span-2">
+          {role?.allLocations ? (
+            <p className="text-sm text-muted">This role sees and can use every shop and the warehouse.</p>
+          ) : visibleLocations.length === 0 ? (
+            <p className="text-sm text-muted">Choose a company above first.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {companies
+                .filter((c) => v.firmIds.includes(c.id))
+                .map((c) => (
+                  <div key={c.id}>
+                    {v.firmIds.length > 1 && <p className="mb-1 text-xs font-medium text-faint">{c.name}</p>}
+                    <div className="flex flex-col gap-1.5">
+                      {visibleLocations
+                        .filter((l) => l.firmId === c.id)
+                        .map((l) => (
+                          <label key={l.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                            <input type="checkbox" className="size-4 accent-brand-600" checked={v.locationIds.includes(l.id)} onChange={() => toggleLocation(l.id)} />
+                            {l.name}
+                            {l.kind === "warehouse" && <span className="text-xs text-faint">(warehouse)</span>}
+                          </label>
+                        ))}
+                    </div>
+                  </div>
+                ))}
             </div>
           )}
         </Field>
