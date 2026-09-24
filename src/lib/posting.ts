@@ -80,6 +80,11 @@ export function needsLocation(type: VoucherType): boolean {
   return type === "stock_adjustment" || type === "stock_transfer" || RULES[type].stock !== 0;
 }
 
+/** Types where a shop is optional but worth offering (best-effort): it lets the daily sales report attribute cash to the right shop. */
+export function wantsLocation(type: VoucherType): boolean {
+  return needsLocation(type) || ["payment_in", "payment_out", "expense", "other_income"].includes(type);
+}
+
 export function affectsLedgers(type: VoucherType): boolean {
   return !["quotation", "sales_order", "purchase_order", "delivery_challan"].includes(type);
 }

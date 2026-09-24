@@ -54,6 +54,19 @@ export function voucherNumber(v: { prefix: string | null; number: number }): str
   return `${v.prefix ?? ""}${v.number}`;
 }
 
+/** Why goods came back on a sale/purchase return. */
+export const RETURN_REASONS: { value: string; label: string }[] = [
+  { value: "damaged", label: "Damaged" },
+  { value: "wrong_item", label: "Wrong item sent" },
+  { value: "changed_mind", label: "Customer changed their mind" },
+  { value: "quality", label: "Quality issue" },
+  { value: "other", label: "Other" },
+];
+
+export function returnReasonLabel(reason: string | null | undefined): string | null {
+  return reason ? (RETURN_REASONS.find((r) => r.value === reason)?.label ?? reason) : null;
+}
+
 export function typeFromPath(section: string): VoucherType | null {
   const hit = Object.values(VOUCHER_INFO).find((i) => i.path === `/${section}`);
   return hit ? hit.type : null;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Alert, Money, PageHeader, Panel, StatusBadge, Table, td, th } from "@/components/ui";
+import { Alert, Badge, Money, PageHeader, Panel, StatusBadge, Table, td, th } from "@/components/ui";
 import { VoucherActions } from "@/components/voucher-actions";
 import { getDb } from "@/db";
 import { accounts, firms, ledgerCategories, users } from "@/db/schema";
@@ -14,10 +14,10 @@ import { region, taxColumnLabels } from "@/lib/region";
 import { zatcaQrBase64 } from "@/lib/zatca";
 import { formatINR, formatPercent, formatQty } from "@/lib/money";
 import { can } from "@/lib/permissions";
-import { typeFromPath, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
+import { returnReasonLabel, typeFromPath, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 import { voucherProfit } from "@/server/profit-reports";
 import { zatcaForVoucher } from "@/server/zatca";
-import { getVoucher, paymentStatus } from "@/server/vouchers";
+import { getVoucher, paymentStatus, returnStatus } from "@/server/vouchers";
 
 export async function generateMetadata({ params }: { params: Promise<{ section: string; id: string }> }) {
   const { section } = await params;
@@ -68,11 +68,14 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   const status = info.takesPayment && v.partyId ? paymentStatus(v, data.balancePaise) : v.status === "cancelled" ? "cancelled" : null;
   const hasTax = v.cgstPaise + v.sgstPaise + v.igstPaise + v.cessPaise > 0;
   const intra = v.igstPaise === 0;
+  const retStatus = ["sale_invoice", "purchase_bill"].includes(v.type) && v.status === "active" ? await returnStatus(db, v.id) : "none";
 
-  const convert = info.convertsTo.map((t) => ({
-    href: `${VOUCHER_INFO[t].path}/new?from=${v.id}`,
-    label: ["credit_note", "debit_note"].includes(t) ? `Make ${VOUCHER_INFO[t].label.toLowerCase()}` : `Convert to ${VOUCHER_INFO[t].label.toLowerCase()}`,
-  }));
+  const convert = info.convertsTo
+    .filter((t) => !(["credit_note", "debit_note"].includes(t) && retStatus === "full"))
+    .map((t) => ({
+      href: `${VOUCHER_INFO[t].path}/new?from=${v.id}`,
+      label: ["credit_note", "debit_note"].includes(t) ? `Make ${VOUCHER_INFO[t].label.toLowerCase()}${retStatus === "partial" ? " (remaining)" : ""}` : `Convert to ${VOUCHER_INFO[t].label.toLowerCase()}`,
+    }));
   const receivePayment =
     info.takesPayment && v.partyId && data.balancePaise > 0
       ? {
@@ -90,6 +93,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
         title={
           <span className="flex flex-wrap items-center gap-2">
             {info.label} {number} {status && <StatusBadge status={status} />}
+            {retStatus !== "none" && <Badge tone={retStatus === "full" ? "bad" : "warn"}>{retStatus === "full" ? "Fully returned" : "Partly returned"}</Badge>}
           </span>
         }
         subtitle={`${formatDate(v.date)}${v.partyName ? ` · ${v.partyName}` : ""}`}
@@ -146,6 +150,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   {v.dueDate && <Pair k={v.type === "quotation" ? "Valid until" : "Due date"} v={formatDate(v.dueDate)} />}
                   {v.supplierInvoiceNo && <Pair k="Supplier bill no." v={v.supplierInvoiceNo} />}
                   {v.originalInvoiceNo && <Pair k="Against bill" v={`${v.originalInvoiceNo}${v.originalInvoiceDate ? `, ${formatDate(v.originalInvoiceDate)}` : ""}`} />}
+                  {v.returnReason && <Pair k="Reason for return" v={returnReasonLabel(v.returnReason)} />}
                   {v.poNumber && <Pair k="PO number" v={v.poNumber} />}
                   {v.ewayBillNo && <Pair k="E-way bill" v={v.ewayBillNo} />}
                   {v.vehicleNo && <Pair k="Vehicle" v={v.vehicleNo} />}
@@ -327,11 +332,12 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   </li>
                 )}
                 {data.converted.map((c) => (
-                  <li key={c.id}>
-                    Converted to{" "}
+                  <li key={c.id} className={["credit_note", "debit_note"].includes(c.type) ? "flex justify-between gap-2" : ""}>
+                    {["credit_note", "debit_note"].includes(c.type) ? "Returned via " : "Converted to "}
                     <Link className="text-brand-600 hover:underline" href={`${VOUCHER_INFO[c.type].path}/${c.id}`}>
                       {VOUCHER_INFO[c.type].label.toLowerCase()} {voucherNumber(c)}
                     </Link>
+                    {["credit_note", "debit_note"].includes(c.type) && <Money paise={c.totalPaise} />}
                   </li>
                 ))}
               </ul>

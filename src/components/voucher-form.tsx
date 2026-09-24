@@ -7,8 +7,8 @@ import { calculateVoucher, supplyFor } from "@/lib/gst/engine";
 import { region, taxColumnLabels } from "@/lib/region";
 import { GST_STATES, stateName } from "@/lib/gst/states";
 import { formatINR, formatQty, toBasisPoints, toMilli, toPaise } from "@/lib/money";
-import { needsLocation } from "@/lib/posting";
-import { VOUCHER_INFO } from "@/lib/voucher-types";
+import { wantsLocation } from "@/lib/posting";
+import { RETURN_REASONS, VOUCHER_INFO } from "@/lib/voucher-types";
 import type { ItemOpt, PartyOpt, VoucherFormData } from "@/server/form-data";
 import { Combobox } from "./combobox";
 import { Alert, Button, Checkbox, cx, Field, Input, Money, PartyBalance, Select, Textarea } from "./ui";
@@ -37,6 +37,8 @@ const PAYMENT_MODES = ["Cash", "UPI", "Bank transfer", "Card", "Cheque"];
 // browser render identical HTML; lines added later use a random suffix.
 const newKey = () => `n${Math.random().toString(36).slice(2, 10)}`;
 const rupees = (p: number | null | undefined) => (p ? (p / 100).toFixed(2).replace(/\.00$/, "") : "");
+/** Stock at the selected shop, falling back to the company-wide total when no shop is chosen (or for a single-location company). */
+const stockAt = (item: ItemOpt, locationId: number | null) => (locationId != null && item.stockByLocation[locationId] != null ? item.stockByLocation[locationId] : item.stockMilli);
 
 function blankLine(defaultIncl: boolean, key = newKey()): Line {
   return { key, itemId: null, description: "", hsn: "", qty: "1", unit: "base", rate: "", rateIncl: defaultIncl, discPct: "", taxRateId: null, gstBp: 0, cessBp: 0, mrp: "", batchNo: "", expiryDate: "" };
@@ -83,6 +85,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState(ex?.supplierInvoiceNo ?? "");
   const [originalInvoiceNo, setOriginalInvoiceNo] = useState(ex?.originalInvoiceNo ?? (src && ["credit_note", "debit_note"].includes(data.type) ? `${src.voucher.prefix}${src.voucher.number}` : ""));
   const [originalInvoiceDate, setOriginalInvoiceDate] = useState(ex?.originalInvoiceDate ?? (src && ["credit_note", "debit_note"].includes(data.type) ? src.voucher.date : ""));
+  const [returnReason, setReturnReason] = useState(ex?.returnReason ?? "");
   const [poNumber, setPoNumber] = useState(base?.poNumber ?? "");
   const [ewayBillNo, setEwayBillNo] = useState(ex?.ewayBillNo ?? "");
   const [vehicleNo, setVehicleNo] = useState(ex?.vehicleNo ?? "");
@@ -277,6 +280,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         sourceVoucherIds: data.sourceRefs.length > 1 ? data.sourceRefs.map((r) => r.id) : undefined,
         originalInvoiceNo: originalInvoiceNo || null,
         originalInvoiceDate: originalInvoiceDate || null,
+        returnReason: (returnReason || undefined) as "damaged" | "wrong_item" | "changed_mind" | "quality" | "other" | undefined,
         supplierInvoiceNo: supplierInvoiceNo || null,
         poNumber: poNumber || null,
         ewayBillNo: ewayBillNo || null,
@@ -372,15 +376,15 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
             <span className="shrink-0 text-xs text-muted">
               {formatINR(info.priceSide === "sale" ? i.salePricePaise : i.purchasePricePaise)}
               {i.kind === "goods" && (
-                <span className={cx("ml-2", i.stockMilli <= 0 ? "text-bad" : "text-good")}>
-                  {formatQty(i.stockMilli)} {i.unitCode ?? ""}
+                <span className={cx("ml-2", stockAt(i, locationId) <= 0 ? "text-bad" : "text-good")}>
+                  {formatQty(stockAt(i, locationId))} {i.unitCode ?? ""}
                 </span>
               )}
             </span>
           </div>
         ),
       })),
-    [data.items, info.priceSide],
+    [data.items, info.priceSide, locationId],
   );
 
   const showPartyBlock = info.partySide !== "none";
@@ -491,7 +495,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
           <Field label="Date">
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} max="2100-12-31" />
           </Field>
-          {needsLocation(data.type) && data.locations.length > 1 && (
+          {wantsLocation(data.type) && data.locations.length > 1 && (
             <Field label={data.type === "stock_transfer" ? "From" : "Shop"} className={data.type === "stock_transfer" ? "col-span-1" : "col-span-2"}>
               <Select value={locationId ?? ""} onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">Choose…</option>
@@ -534,6 +538,16 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               </Field>
               <Field label="Bill date">
                 <Input type="date" value={originalInvoiceDate} onChange={(e) => setOriginalInvoiceDate(e.target.value)} />
+              </Field>
+              <Field label="Reason for return" className="col-span-2">
+                <Select value={returnReason} onChange={(e) => setReturnReason(e.target.value)}>
+                  <option value="">Not specified</option>
+                  {RETURN_REASONS.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </>
           )}
@@ -593,8 +607,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-faint">
                           {R.usesHsn && (item?.hsn || l.hsn) && <span>HSN {l.hsn || item?.hsn}</span>}
                           {item?.kind === "goods" && (
-                            <span className={item.stockMilli <= 0 ? "text-bad" : ""}>
-                              In stock: {formatQty(item.stockMilli)} {item.unitCode}
+                            <span className={stockAt(item, locationId) <= 0 ? "text-bad" : ""}>
+                              In stock: {formatQty(stockAt(item, locationId))} {item.unitCode}
                             </span>
                           )}
                           {data.settings.batchTracking && item?.kind === "goods" && (

@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import { seal, unseal } from "@/lib/secret-box";
 import { buildCsr, generateEgsKeys, type ZatcaEnvironment } from "@/lib/zatca/csr";
 import { certificateFromToken, checkComplianceInvoice, clearInvoice, reportInvoice, requestComplianceCsid, requestProductionCsid, type ZatcaAuth, type ZatcaResult } from "@/lib/zatca/client";
+import { returnReasonLabel } from "@/lib/voucher-types";
 import type { TaxCategory, ZatcaInvoice, ZatcaLine } from "@/lib/zatca/invoice";
 import { FIRST_PIH, signInvoice } from "@/lib/zatca/sign";
 import { getVoucher } from "./vouchers";
@@ -211,7 +212,7 @@ export function buildZatcaInvoice(
     icv: ctx.icv,
     pih: ctx.pih,
     paymentMeans: balance > 0 ? "30" : /card|mada|visa|master/.test(mode) ? "48" : /bank|transfer|cheque|check/.test(mode) ? "42" : "10",
-    ...(b.type === "credit_note" ? { billingRef: v.originalNumber ?? b.originalInvoiceNo ?? "", reason: b.notes || "Return of goods" } : {}),
+    ...(b.type === "credit_note" ? { billingRef: v.originalNumber ?? b.originalInvoiceNo ?? "", reason: returnReasonLabel(b.returnReason) || b.notes || "Return of goods" } : {}),
     roundingPaise: b.roundOffPaise || undefined,
   };
 }

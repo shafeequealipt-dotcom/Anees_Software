@@ -7,7 +7,7 @@ import { emptyPricing } from "@/lib/pricing";
 import { getSettings } from "@/lib/settings";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { loadPricing } from "./pricing";
-import { getVoucher } from "./vouchers";
+import { getVoucher, returnableQtyByItem } from "./vouchers";
 
 export interface PartyOpt {
   id: number;
@@ -38,7 +38,10 @@ export interface ItemOpt {
   purchaseIncl: boolean;
   mrpPaise: number | null;
   taxRateId: number | null;
+  /** Company-wide total. */
   stockMilli: number;
+  /** Per shop/warehouse (location id → qty), so the form can show stock at whichever shop is selected. */
+  stockByLocation: Record<number, number>;
 }
 
 export async function loadPartyOptions(db: DB, firmId: number): Promise<PartyOpt[]> {
@@ -55,19 +58,26 @@ export async function loadPartyOptions(db: DB, firmId: number): Promise<PartyOpt
 }
 
 export async function loadItemOptions(db: DB, firmId: number): Promise<ItemOpt[]> {
-  return nums(
+  const list = nums(
     await rows<ItemOpt>(
       db,
       sql`select i.id, i.name, i.code, i.hsn, i.kind, u.code as "unitCode", au.code as "altUnitCode", i.alt_unit_factor_milli as "altFactorMilli",
             i.sale_price_paise as "salePricePaise", i.sale_price_includes_tax as "saleIncl",
             i.purchase_price_paise as "purchasePricePaise", i.purchase_price_includes_tax as "purchaseIncl",
             i.mrp_paise as "mrpPaise", i.tax_rate_id as "taxRateId",
-            coalesce((select sum(s.qty_milli) from stock_ledger s where s.item_id = i.id), 0) as "stockMilli"
+            coalesce((select sum(s.qty_milli) from stock_ledger s where s.item_id = i.id), 0) as "stockMilli",
+            coalesce((select jsonb_object_agg(t.location_id, t.qty) from (select location_id, sum(qty_milli) as qty from stock_ledger where item_id = i.id group by location_id) t), '{}'::jsonb) as "stockByLocation"
           from items i left join units u on u.id = i.unit_id left join units au on au.id = i.alt_unit_id
           where i.firm_id = ${firmId} and i.active order by lower(i.name)`,
     ),
     ["salePricePaise", "purchasePricePaise", "mrpPaise", "altFactorMilli", "stockMilli"],
   );
+  // jsonb comes back already parsed on most drivers, but not all — normalize defensively.
+  for (const r of list) {
+    const raw = r.stockByLocation as unknown;
+    r.stockByLocation = typeof raw === "string" ? JSON.parse(raw) : (raw ?? {});
+  }
+  return list;
 }
 
 export interface Visibility {
@@ -80,6 +90,30 @@ export interface LocationOpt {
   id: number;
   name: string;
   kind: "warehouse" | "shop";
+}
+
+/**
+ * Pre-fills a return with only what's still returnable: caps (or drops) each line so the form
+ * never opens already over the limit. The server re-checks this authoritatively on save, since
+ * another return could be made between opening this form and saving it.
+ */
+async function capReturnLines<T extends { itemId: number | null; qtyMilli: number; unitFactorMilli: number }>(db: DB, sourceVoucherId: number, lines: T[]): Promise<T[]> {
+  const remaining = await returnableQtyByItem(db, sourceVoucherId);
+  const out: T[] = [];
+  for (const l of lines) {
+    if (!l.itemId) {
+      out.push(l);
+      continue;
+    }
+    const left = remaining.get(l.itemId) ?? 0;
+    const originalBase = Math.round((l.qtyMilli * (l.unitFactorMilli || 1000)) / 1000);
+    const capped = Math.min(originalBase, left);
+    if (capped <= 0) continue;
+    remaining.set(l.itemId, left - capped);
+    const cappedLineQty = Math.round((capped * 1000) / (l.unitFactorMilli || 1000));
+    out.push(cappedLineQty === l.qtyMilli ? l : { ...l, qtyMilli: cappedLineQty });
+  }
+  return out;
 }
 
 export async function loadVoucherFormData(
@@ -108,7 +142,9 @@ export async function loadVoucherFormData(
   const found = existing ? [] : (await Promise.all(fromIds.map((sid) => getVoucher(db, firmId, sid)))).filter((x): x is NonNullable<typeof x> => !!x);
   // Combined documents must be for the same party as the first one.
   const sources = found.filter((s) => !s.voucher.partyId || !found[0].voucher.partyId || s.voucher.partyId === found[0].voucher.partyId);
-  const source = sources.length ? { ...sources[0], lines: sources.flatMap((s) => s.lines) } : null;
+  const isReturn = type === "credit_note" || type === "debit_note";
+  const sourceLines = isReturn && sources.length ? await capReturnLines(db, sources[0].voucher.id, sources.flatMap((s) => s.lines)) : sources.flatMap((s) => s.lines);
+  const source = sources.length ? { ...sources[0], lines: sourceLines } : null;
   const sourceRefs = sources.map((s) => ({ id: s.voucher.id, label: `${s.voucher.prefix}${s.voucher.number}` }));
 
   const [next] = await db

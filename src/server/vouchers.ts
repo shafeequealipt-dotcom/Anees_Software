@@ -24,8 +24,8 @@ import {
 import { audit } from "@/lib/audit";
 import { isIsoDate, todayIST } from "@/lib/dates";
 import { calculateVoucher, supplyFor } from "@/lib/gst/engine";
-import { buildPostings, needsLocation, PostingError } from "@/lib/posting";
-import { formatMoney } from "@/lib/money";
+import { baseQty, buildPostings, needsLocation, PostingError } from "@/lib/posting";
+import { formatMoney, formatQty } from "@/lib/money";
 import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
 import { syncVoucherGl } from "./gl";
@@ -109,6 +109,8 @@ export const voucherSchema = z.object({
   sourceVoucherIds: z.array(int.positive()).max(50).optional(),
   originalInvoiceNo: optText(60),
   originalInvoiceDate: optDate,
+  /** Sale/purchase returns: why the goods came back. */
+  returnReason: z.enum(["damaged", "wrong_item", "changed_mind", "quality", "other"]).nullish(),
   supplierInvoiceNo: optText(60),
   poNumber: optText(60),
   poDate: optDate,
@@ -256,12 +258,36 @@ export async function saveVoucher(
       if (!cat) throw new VoucherError("Choose a category from this company.", "categoryId");
     }
     const sourceIds = [...new Set(input.sourceVoucherIds?.length ? input.sourceVoucherIds : input.sourceVoucherId ? [input.sourceVoucherId] : [])];
+    let srcs: { id: number; partyId: number | null; status: string; locationId: number | null }[] = [];
     if (sourceIds.length) {
-      const srcs = await tx.select({ id: vouchers.id, partyId: vouchers.partyId, status: vouchers.status }).from(vouchers).where(and(inArray(vouchers.id, sourceIds), eq(vouchers.firmId, firmId)));
+      srcs = await tx.select({ id: vouchers.id, partyId: vouchers.partyId, status: vouchers.status, locationId: vouchers.locationId }).from(vouchers).where(and(inArray(vouchers.id, sourceIds), eq(vouchers.firmId, firmId)));
       if (srcs.length !== sourceIds.length || srcs.some((s) => s.status === "deleted")) throw new VoucherError("The source document no longer exists.");
       if (party && srcs.some((s) => s.partyId && s.partyId !== party.id)) throw new VoucherError("All the documents combined into one bill must be for the same party.");
     }
     if (input.type === "money_transfer" && !input.toAccountId) throw new VoucherError("Choose the account to move money into.", "toAccountId");
+
+    // ── Returns: cap each line at what's left to return (sold minus already returned).
+    if (["credit_note", "debit_note"].includes(input.type) && sourceIds.length) {
+      const sourceId = sourceIds[0];
+      const [sold, alreadyReturned] = await Promise.all([
+        soldQtyByItem(tx, sourceId),
+        returnedQtyByItem(tx, sourceId, input.id),
+      ]);
+      for (const l of normalizedLines) {
+        if (!l.itemId) continue;
+        const remaining = (sold.get(l.itemId) ?? 0) - (alreadyReturned.get(l.itemId) ?? 0);
+        const wanted = baseQty(l);
+        if (wanted > remaining) {
+          const name = itemMap.get(l.itemId)?.name ?? "item";
+          const already = alreadyReturned.get(l.itemId) ?? 0;
+          throw new VoucherError(
+            remaining <= 0
+              ? `"${name}" has already been fully returned against this bill.`
+              : `Only ${formatQty(remaining)} of "${name}" can still be returned (${formatQty(already)} already returned).`,
+          );
+        }
+      }
+    }
 
     // ── Location (shop/warehouse). Falls back to a sensible default (e.g. for older clients or a
     // single-location company) except for transfers, which always need both ends picked explicitly.
@@ -270,11 +296,18 @@ export async function saveVoucher(
       throw new VoucherError("Choose two different shops for the transfer.", "toLocationId");
     }
     // Same single default for every type when none is given, so a company that hasn't set up
-    // multiple shops yet keeps behaving like one stock pool.
+    // multiple shops yet keeps behaving like one stock pool. Returns default to the shop the
+    // original bill was from; payments/expenses get a shop too (best-effort) so the daily report
+    // can attribute cash to the right shop.
     let resolvedLocationId: number | null = input.locationId ?? null;
-    if (!resolvedLocationId && needsLocation(input.type)) {
-      resolvedLocationId = await defaultLocationId(tx, firmId, "warehouse");
-      if (!resolvedLocationId) throw new VoucherError("Set up a warehouse or shop first (Settings › Shops & warehouse).", "locationId");
+    if (!resolvedLocationId) {
+      const required = needsLocation(input.type);
+      const optional = !required && ["payment_in", "payment_out", "expense", "other_income"].includes(input.type);
+      if (required || optional) {
+        const srcLocationId = ["credit_note", "debit_note"].includes(input.type) && sourceIds.length ? srcs.find((s) => s.id === sourceIds[0])?.locationId ?? null : null;
+        resolvedLocationId = srcLocationId ?? (await defaultLocationId(tx, firmId, "warehouse"));
+        if (required && !resolvedLocationId) throw new VoucherError("Set up a warehouse or shop first (Settings › Shops & warehouse).", "locationId");
+      }
     }
     const locationIds = [resolvedLocationId, input.type === "stock_transfer" ? input.toLocationId : null].filter((x): x is number => !!x);
     if (locationIds.length) {
@@ -359,6 +392,7 @@ export async function saveVoucher(
       tdsPaise,
       originalInvoiceNo: input.originalInvoiceNo,
       originalInvoiceDate: input.originalInvoiceDate,
+      returnReason: ["credit_note", "debit_note"].includes(input.type) ? (input.returnReason ?? null) : null,
       supplierInvoiceNo: input.supplierInvoiceNo,
       poNumber: input.poNumber,
       poDate: input.poDate,
@@ -547,6 +581,57 @@ export async function saveVoucher(
 
     return { id, number: voucherNumber({ prefix, number }), warnings };
   });
+}
+
+/** Base-unit quantity sold per item on the original bill. */
+async function soldQtyByItem(db: DB | Tx, voucherId: number): Promise<Map<number, number>> {
+  const rows = await db
+    .select({ itemId: voucherLines.itemId, qty: sql<number>`coalesce(sum(${voucherLines.qtyMilli} * ${voucherLines.unitFactorMilli} / 1000), 0)::bigint` })
+    .from(voucherLines)
+    .where(eq(voucherLines.voucherId, voucherId))
+    .groupBy(voucherLines.itemId);
+  return new Map(rows.filter((r): r is { itemId: number; qty: number } => r.itemId != null).map((r) => [r.itemId, Number(r.qty)]));
+}
+
+/** Base-unit quantity already returned against the original bill, across other active credit/debit notes. */
+async function returnedQtyByItem(db: DB | Tx, sourceVoucherId: number, excludeVoucherId?: number): Promise<Map<number, number>> {
+  const rows = await db
+    .select({ itemId: voucherLines.itemId, qty: sql<number>`coalesce(sum(${voucherLines.qtyMilli} * ${voucherLines.unitFactorMilli} / 1000), 0)::bigint` })
+    .from(voucherLines)
+    .innerJoin(vouchers, eq(vouchers.id, voucherLines.voucherId))
+    .where(
+      and(
+        eq(vouchers.sourceVoucherId, sourceVoucherId),
+        eq(vouchers.status, "active"),
+        inArray(vouchers.type, ["credit_note", "debit_note"]),
+        excludeVoucherId ? ne(vouchers.id, excludeVoucherId) : sql`true`,
+      ),
+    )
+    .groupBy(voucherLines.itemId);
+  return new Map(rows.filter((r): r is { itemId: number; qty: number } => r.itemId != null).map((r) => [r.itemId, Number(r.qty)]));
+}
+
+/** Whether a sale/purchase bill has been partly or fully returned (by quantity, per item). */
+export async function returnStatus(db: DB, voucherId: number): Promise<"none" | "partial" | "full"> {
+  const [sold, returned] = await Promise.all([soldQtyByItem(db, voucherId), returnedQtyByItem(db, voucherId)]);
+  if (sold.size === 0) return "none";
+  let anyReturned = false;
+  let allFull = true;
+  for (const [itemId, qty] of sold) {
+    const ret = returned.get(itemId) ?? 0;
+    if (ret > 0) anyReturned = true;
+    if (ret < qty) allFull = false;
+  }
+  if (!anyReturned) return "none";
+  return allFull ? "full" : "partial";
+}
+
+/** How much of each item on a bill can still be returned (base units). Used to cap and pre-fill a return form. */
+export async function returnableQtyByItem(db: DB, voucherId: number): Promise<Map<number, number>> {
+  const [sold, returned] = await Promise.all([soldQtyByItem(db, voucherId), returnedQtyByItem(db, voucherId)]);
+  const out = new Map<number, number>();
+  for (const [itemId, qty] of sold) out.set(itemId, Math.max(0, qty - (returned.get(itemId) ?? 0)));
+  return out;
 }
 
 async function clearPostings(tx: Tx, voucherId: number) {
@@ -807,7 +892,7 @@ export async function getVoucher(db: DB | Tx, firmId: number, id: number) {
     .from(allocations)
     .innerJoin(vouchers, eq(vouchers.id, allocations.toVoucherId))
     .where(eq(allocations.fromVoucherId, id));
-  const pick = { id: vouchers.id, type: vouchers.type, prefix: vouchers.prefix, number: vouchers.number, date: vouchers.date };
+  const pick = { id: vouchers.id, type: vouchers.type, prefix: vouchers.prefix, number: vouchers.number, date: vouchers.date, totalPaise: vouchers.totalPaise };
   const convertedRows = await db.select(pick).from(vouchers).where(and(eq(vouchers.sourceVoucherId, id), eq(vouchers.status, "active")));
   const viaLinks = await db.select(pick).from(voucherSources).innerJoin(vouchers, eq(vouchers.id, voucherSources.voucherId)).where(and(eq(voucherSources.sourceId, id), eq(vouchers.status, "active")));
   const converted = [...new Map([...convertedRows, ...viaLinks].map((c) => [c.id, c])).values()];

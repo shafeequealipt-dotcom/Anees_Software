@@ -32,6 +32,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
   const [mode, setMode] = useState(ex?.paymentMode ?? "Cash");
   const [ref, setRef] = useState(ex?.paymentRef ?? "");
   const [notes, setNotes] = useState(ex?.notes ?? "");
+  const [locationId, setLocationId] = useState<number | null>(ex?.locationId ?? data.defaultLocationId);
   const [bills, setBills] = useState<Bill[]>([]);
   const [balance, setBalance] = useState(0);
   const [alloc, setAlloc] = useState<Record<number, string>>(() =>
@@ -97,6 +98,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
       paymentMode: mode,
       paymentRef: ref || null,
       notes: notes || null,
+      locationId,
       allocations: manual ? Object.entries(allocation).filter(([, v]) => v > 0).map(([k, v]) => ({ toVoucherId: Number(k), amountPaise: v })) : undefined,
     });
     setSaving(false);
@@ -169,6 +171,18 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
         <Field label="Receipt number" hint={ex ? undefined : `Leave empty for ${data.settings.prefix}${data.nextNumber}`}>
           <Input value={number} onChange={(e) => setNumber(e.target.value.replace(/\D/g, ""))} placeholder={String(data.nextNumber)} inputMode="numeric" />
         </Field>
+        {data.locations.length > 1 && (
+          <Field label="Shop">
+            <Select value={locationId ?? ""} onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Choose…</option>
+              {data.locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <Field label="Note" className="sm:col-span-2">
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>

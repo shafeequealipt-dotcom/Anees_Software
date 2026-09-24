@@ -459,6 +459,8 @@ export const vouchers = pgTable(
     sourceVoucherId: integer("source_voucher_id"),
     originalInvoiceNo: varchar("original_invoice_no", { length: 60 }),
     originalInvoiceDate: date("original_invoice_date"),
+    /** Sale/purchase returns: why the goods came back (e.g. "damaged", "wrong_item", "changed_mind", "other"). */
+    returnReason: varchar("return_reason", { length: 30 }),
     supplierInvoiceNo: varchar("supplier_invoice_no", { length: 60 }),
     poNumber: varchar("po_number", { length: 60 }),
     poDate: date("po_date"),

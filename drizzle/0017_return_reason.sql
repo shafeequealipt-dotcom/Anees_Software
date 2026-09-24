@@ -1,0 +1,1 @@
+ALTER TABLE "vouchers" ADD COLUMN "return_reason" varchar(30);
