@@ -179,7 +179,8 @@ export async function loadVoucherFormData(
     sourceRefs,
     presetPartyId: opts.partyId ?? null,
     locations: myLocations,
-    defaultLocationId: existing?.voucher.locationId ?? myLocations[0]?.id ?? null,
+    // Returns default to the shop the original bill was at, same as the server falls back to on save.
+    defaultLocationId: existing?.voucher.locationId ?? (isReturn ? sources[0]?.voucher.locationId : null) ?? myLocations[0]?.id ?? null,
   };
 }
 
