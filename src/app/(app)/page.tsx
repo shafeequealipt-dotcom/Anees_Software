@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { MonthBars } from "@/components/bar-chart";
+import { ShareFileButton } from "@/components/share-file-button";
 import { Alert, LinkButton, Money, PageHeader, Panel, Stat, Table, td, th } from "@/components/ui";
 import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
-import { addDays, formatDate, todayIST } from "@/lib/dates";
+import { addDays, formatDate, nowTimeInZone, todayIST } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { region } from "@/lib/region";
+import { getSettings } from "@/lib/settings";
 import { dashboard } from "@/server/reports";
 
 export const metadata = { title: "Home" };
@@ -18,6 +20,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const d = await dashboard(db, user.firmId);
   const seeMoney = can(user, "money.view");
   const today = todayIST();
+  const cfg = await getSettings(db, user.firmId);
+  const reportReady = can(user, "reports.all") && cfg.dailyReportEnabled && nowTimeInZone() >= cfg.dailyReportTime;
 
   // Fill 12 months so the chart has no gaps
   const months: { month: string; a: number; b: number }[] = [];
@@ -56,6 +60,18 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {sp.denied && (
         <div className="mb-4">
           <Alert tone="warn">Your role doesn&apos;t have access to that page. Ask the owner if you need it.</Alert>
+        </div>
+      )}
+      {reportReady && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">Today&apos;s sales report is ready.</p>
+            <p className="text-xs text-muted">
+              <Link href="/reports/daily-sales" className="text-brand-600 hover:underline">Open it</Link>
+              {cfg.notifyOwnerEmail && " · also emailed to you, once it's sent"}
+            </p>
+          </div>
+          <ShareFileButton url={`/api/reports/daily-sales/pdf?date=${today}&paper=a4&download=1`} filename={`daily-sales-${today}.pdf`} title="Daily sales report" text={`${user.firm.name}: Daily sales, ${formatDate(today)}.`} />
         </div>
       )}
 

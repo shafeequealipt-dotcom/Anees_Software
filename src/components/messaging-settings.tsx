@@ -20,6 +20,8 @@ interface Values {
   serviceReminders: boolean;
   serviceLeadDays: number;
   serviceMessage: string;
+  dailyReportEnabled: boolean;
+  dailyReportTime: string;
 }
 
 interface Message {
@@ -142,6 +144,21 @@ export function MessagingSettings({
             <Textarea rows={2} value={v.serviceMessage} onChange={(e) => set("serviceMessage", e.target.value)} />
           </Field>
         </div>
+      </Panel>
+
+      <Panel title="Daily report">
+        <div className="grid max-w-2xl gap-4 sm:grid-cols-3">
+          <Checkbox className="sm:col-span-3" label="Send me the day's sales report automatically" checked={v.dailyReportEnabled} onChange={(e) => set("dailyReportEnabled", e.target.checked)} />
+          <Field label="At (closing time)">
+            <Input type="time" value={v.dailyReportTime} onChange={(e) => set("dailyReportTime", e.target.value)} />
+          </Field>
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          {channels.email
+            ? "Emailed to your email address above, with the PDF attached."
+            : "Email isn't set up on this server, so it can't be emailed automatically. Instead, once it's ready, your Home page shows a one-tap Share button (WhatsApp, etc.)."}{" "}
+          Covers the whole company for the day; open Reports &rsaquo; Daily sales for a single shop.
+        </p>
       </Panel>
 
       <div>

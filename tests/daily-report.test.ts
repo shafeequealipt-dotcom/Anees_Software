@@ -4,8 +4,10 @@ import type { DB } from "@/db";
 import { firms, locations } from "@/db/schema";
 import { saveItem, saveParty } from "@/server/masters";
 import { loadDailyReportModel } from "@/server/daily-report";
+import { runDailyReportEmail } from "@/server/notify/daily-report-job";
 import { renderDailyReportPdf } from "@/server/pdf/daily-report-pdf";
 import { dailySalesReport, staffSales } from "@/server/reports";
+import { getSettings, saveSettings } from "@/lib/settings";
 import { runFirstSetup } from "@/server/setup";
 import { saveVoucher } from "@/server/vouchers";
 import { testDb } from "./helpers/db";
@@ -114,5 +116,19 @@ describe("daily report PDF", () => {
   it("shows 'All shops' when no location is chosen", async () => {
     const model = await loadDailyReportModel(db, firmId, "2026-09-10", undefined, { paper: "A4" });
     expect(model!.locationLabel).toBe("All shops");
+  });
+});
+
+describe("automatic daily report email", () => {
+  it("does nothing when turned off, or when no owner email is set, and never marks the day as sent", async () => {
+    await saveSettings(db, firmId, { dailyReportEnabled: false });
+    expect((await runDailyReportEmail(db, firmId)).sent).toBe(false);
+
+    await saveSettings(db, firmId, { dailyReportEnabled: true, notifyOwnerEmail: "" });
+    expect((await runDailyReportEmail(db, firmId)).sent).toBe(false);
+
+    // Neither attempt should have touched the "already sent" marker (no real SMTP server here).
+    const s = await getSettings(db, firmId);
+    expect(s.dailyReportLastSentDate).toBe("");
   });
 });

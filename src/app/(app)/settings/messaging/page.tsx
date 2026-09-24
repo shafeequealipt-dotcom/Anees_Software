@@ -29,6 +29,8 @@ export default async function MessagingPage() {
         serviceReminders: s.serviceReminders,
         serviceLeadDays: s.serviceLeadDays,
         serviceMessage: s.serviceMessage,
+        dailyReportEnabled: s.dailyReportEnabled,
+        dailyReportTime: s.dailyReportTime,
       }}
       messages={list.map((m) => ({ id: m.id, kind: m.kind, channel: m.channel, toAddress: m.toAddress, toName: m.toName, body: m.body, status: m.status, lastError: m.lastError, createdAt: m.createdAt.toISOString() }))}
       country={user.firm.country}

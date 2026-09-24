@@ -11,6 +11,11 @@ export function todayIST(): string {
   );
 }
 
+/** Current time of day ("HH:MM", 24-hour) in the business's own time zone — for "has it passed 9:30 pm yet" checks. */
+export function nowTimeInZone(): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: tz(), hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+}
+
 export function isIsoDate(s: unknown): s is string {
   if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const d = new Date(s + "T00:00:00Z");

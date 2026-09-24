@@ -83,6 +83,12 @@ export const DEFAULT_SETTINGS = {
   serviceReminders: false,
   serviceLeadDays: 3,
   serviceMessage: "Dear {party}, your {item} is due for service on {date}. Please contact {business} to book a visit. Thank you.",
+  // Automatic end-of-day report to the owner.
+  dailyReportEnabled: false,
+  /** "HH:MM", 24-hour, in the business's own time zone. */
+  dailyReportTime: "21:30",
+  /** "YYYY-MM-DD" — the last day the automatic report was sent, so it isn't sent twice. */
+  dailyReportLastSentDate: "",
   // Set once the double-entry books have been built from existing bills.
   glBuiltAt: "",
 };

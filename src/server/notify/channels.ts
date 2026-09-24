@@ -55,7 +55,7 @@ export async function sendWhatsApp(to: string, body: string): Promise<SendResult
   }
 }
 
-export async function sendEmail(to: string, subject: string, body: string): Promise<SendResult> {
+export async function sendEmail(to: string, subject: string, body: string, attachment?: { filename: string; content: Buffer }): Promise<SendResult> {
   const e = process.env;
   if (!e.SMTP_HOST || !e.SMTP_FROM) return { ok: false, error: "Email is not set up." };
   try {
@@ -66,7 +66,7 @@ export async function sendEmail(to: string, subject: string, body: string): Prom
       auth: e.SMTP_USER ? { user: e.SMTP_USER, pass: e.SMTP_PASS ?? "" } : undefined,
       connectionTimeout: 15_000,
     });
-    await transport.sendMail({ from: e.SMTP_FROM, to, subject, text: body });
+    await transport.sendMail({ from: e.SMTP_FROM, to, subject, text: body, attachments: attachment ? [attachment] : undefined });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: `Email failed: ${err instanceof Error ? err.message : "unknown error"}` };

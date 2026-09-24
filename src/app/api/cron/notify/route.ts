@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { getDb } from "@/db";
 import { activeFirms, processOutbox } from "@/server/notify/outbox";
+import { runDailyReportEmail } from "@/server/notify/daily-report-job";
 import { runPaymentReminders } from "@/server/notify/reminders";
 import { retryPending } from "@/server/zatca";
 import { runServiceReminders } from "@/server/notify/service";
@@ -18,15 +19,17 @@ export async function POST(req: Request) {
 
   const db = await getDb();
   const reminders: Record<string, { queued: number }> = {};
+  let dailyReportsSent = 0;
   for (const f of await activeFirms(db)) {
     try {
       reminders[f.name] = await runPaymentReminders(db, f.id);
       await runServiceReminders(db, f.id);
       if (f.country === "SA") await retryPending(db, f.id);
+      if ((await runDailyReportEmail(db, f.id)).sent) dailyReportsSent++;
     } catch (e) {
       console.error("reminders failed for", f.name, e);
     }
   }
   const sent = await processOutbox(db);
-  return Response.json({ reminders, ...sent });
+  return Response.json({ reminders, dailyReportsSent, ...sent });
 }

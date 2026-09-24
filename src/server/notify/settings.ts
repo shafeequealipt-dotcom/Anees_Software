@@ -18,6 +18,8 @@ export const messagingSchema = z.object({
   serviceReminders: z.boolean().default(false),
   serviceLeadDays: z.number().int().min(0).max(60).default(3),
   serviceMessage: z.string().trim().min(5, "Write the service reminder message.").max(500),
+  dailyReportEnabled: z.boolean().default(false),
+  dailyReportTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a time as HH:MM.").default("21:30"),
 });
 
 export async function saveMessagingSettings(db: DB, firmId: number, raw: z.input<typeof messagingSchema>, userId: number) {
