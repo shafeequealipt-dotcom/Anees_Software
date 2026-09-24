@@ -359,13 +359,13 @@ export async function itemMovements(db: DB, itemId: number, from: string, to: st
 /** Current stock of one item, broken down by shop/warehouse. Only every active location, even ones with zero of this item. */
 export async function stockByLocation(db: DB, firmId: number, itemId: number) {
   const list = nums(
-    await rows<{ id: number; name: string; kind: "warehouse" | "shop"; qty_milli: number }>(
+    await rows<{ id: number; name: string; kind: "warehouse" | "shop" | "transit" | "damaged"; qty_milli: number }>(
       db,
       sql`select l.id, l.name, l.kind,
             coalesce((select sum(s.qty_milli) from stock_ledger s where s.item_id = ${itemId} and s.location_id = l.id), 0) as qty_milli
           from locations l
           where l.firm_id = ${firmId} and l.active
-          order by (l.kind <> 'warehouse'), l.sort, l.id`,
+          order by case l.kind when 'warehouse' then 0 when 'shop' then 1 when 'transit' then 2 else 3 end, l.sort, l.id`,
     ),
     ["qty_milli"],
   );

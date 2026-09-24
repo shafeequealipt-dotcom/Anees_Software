@@ -14,14 +14,40 @@ export async function defaultLocationId(tx: Tx, firmId: number, prefer: "shop" |
   const [loc] = await tx
     .select({ id: locations.id })
     .from(locations)
-    .where(and(eq(locations.firmId, firmId), eq(locations.active, true)))
+    .where(and(eq(locations.firmId, firmId), eq(locations.active, true), sql`${locations.kind} in ('warehouse', 'shop')`))
     .orderBy(sql`(${locations.kind} <> ${prefer})`, asc(locations.sort), asc(locations.id))
     .limit(1);
   return loc?.id ?? null;
 }
 
+/** Shops and the warehouse only — not the system-managed transit/damaged locations, which the owner doesn't manage here. */
 export async function listLocations(db: DB, firmId: number) {
-  return db.select().from(locations).where(eq(locations.firmId, firmId)).orderBy(asc(locations.sort), asc(locations.id));
+  return db
+    .select({
+      id: locations.id,
+      firmId: locations.firmId,
+      name: locations.name,
+      kind: sql<"warehouse" | "shop">`${locations.kind}`,
+      code: locations.code,
+      address: locations.address,
+      phone: locations.phone,
+      active: locations.active,
+      sort: locations.sort,
+      createdAt: locations.createdAt,
+    })
+    .from(locations)
+    .where(and(eq(locations.firmId, firmId), sql`${locations.kind} in ('warehouse', 'shop')`))
+    .orderBy(asc(locations.sort), asc(locations.id));
+}
+
+/** The firm's one system-managed "in transit" or "damaged goods" location (see schema.ts). */
+export async function systemLocationId(db: DB | Tx, firmId: number, kind: "transit" | "damaged"): Promise<number | null> {
+  const [loc] = await db
+    .select({ id: locations.id })
+    .from(locations)
+    .where(and(eq(locations.firmId, firmId), eq(locations.kind, kind), eq(locations.active, true)))
+    .limit(1);
+  return loc?.id ?? null;
 }
 
 const text = (max: number) =>
@@ -57,7 +83,10 @@ export async function saveLocation(db: DB, firmId: number, raw: z.input<typeof l
 /** Hides a location. Refuses if it's the last active one — a firm always needs somewhere to keep stock. */
 export async function setLocationActive(db: DB, firmId: number, id: number, active: boolean) {
   if (!active) {
-    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(locations).where(and(eq(locations.firmId, firmId), eq(locations.active, true), ne(locations.id, id)));
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(locations)
+      .where(and(eq(locations.firmId, firmId), eq(locations.active, true), ne(locations.id, id), sql`${locations.kind} in ('warehouse', 'shop')`));
     if (n === 0) throw new MasterError("A company always needs at least one shop or warehouse.");
   }
   await db.update(locations).set({ active }).where(and(eq(locations.id, id), eq(locations.firmId, firmId)));

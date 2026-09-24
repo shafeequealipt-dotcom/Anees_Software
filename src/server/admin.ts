@@ -33,10 +33,10 @@ export async function listRoles(db: DB) {
 /** Every active shop/warehouse across every company, for the "which shops can this person use" picker. */
 export async function listAllLocations(db: DB) {
   return db
-    .select({ id: locations.id, firmId: locations.firmId, firmName: firms.name, name: locations.name, kind: locations.kind })
+    .select({ id: locations.id, firmId: locations.firmId, firmName: firms.name, name: locations.name, kind: sql<"warehouse" | "shop">`${locations.kind}` })
     .from(locations)
     .innerJoin(firms, eq(firms.id, locations.firmId))
-    .where(eq(locations.active, true))
+    .where(and(eq(locations.active, true), sql`${locations.kind} in ('warehouse', 'shop')`))
     .orderBy(asc(firms.name), asc(locations.sort), asc(locations.id));
 }
 

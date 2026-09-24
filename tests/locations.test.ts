@@ -32,9 +32,11 @@ async function stockAt(itemId: number, locationId: number): Promise<number> {
 }
 
 describe("new company setup", () => {
-  it("seeds a Warehouse and a Main shop", async () => {
+  it("seeds a Warehouse, a Main shop, and the system In transit / Damaged goods locations", async () => {
     const locs = await db.select().from(locations).where(eq(locations.firmId, firmId));
     expect(locs.map((l) => [l.name, l.kind]).sort()).toEqual([
+      ["Damaged goods", "damaged"],
+      ["In transit", "transit"],
       ["Main shop", "shop"],
       ["Warehouse", "warehouse"],
     ]);

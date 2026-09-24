@@ -31,6 +31,8 @@ function shopUser(): CurrentUser {
     firms: [],
     locations: [], // filled in per test
     allLocations: false,
+    transitLocationId: null,
+    damagedLocationId: null,
     totpEnabled: false,
     mustChangePassword: false,
     sessionId: "x",

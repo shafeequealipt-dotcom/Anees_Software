@@ -127,6 +127,20 @@
       "when": 1790268057198,
       "tag": "0017_return_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790285177000,
+      "tag": "0018_location_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790285177001,
+      "tag": "0019_transfer_receive",
+      "breakpoints": true
     }
   ]
 }

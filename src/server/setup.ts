@@ -159,6 +159,9 @@ export async function seedDefaults(db: DB, firmId: number, country: Country = "I
     await db.insert(locations).values([
       { firmId, name: "Warehouse", kind: "warehouse", sort: 0 },
       { firmId, name: "Main shop", kind: "shop", sort: 1 },
+      // System-managed: never shown as a shop to bill from (see schema.ts on locationKind).
+      { firmId, name: "In transit", kind: "transit", sort: 900 },
+      { firmId, name: "Damaged goods", kind: "damaged", sort: 901 },
     ]);
   }
 }

@@ -46,6 +46,10 @@ export interface CurrentUser {
   locations: LocationRef[];
   /** Owner or holds `locations.all`: sees and can use every shop, not just the assigned ones. */
   allLocations: boolean;
+  /** The firm's one system-managed "in transit" location (stock between send and receive on a transfer). */
+  transitLocationId: number | null;
+  /** The firm's one system-managed "damaged goods" location. Usable on a purchase return or write-off regardless of shop assignment. */
+  damagedLocationId: number | null;
   totpEnabled: boolean;
   mustChangePassword: boolean;
   sessionId: string;
@@ -206,21 +210,30 @@ async function loadSession(): Promise<{ user: CurrentUser; mfaPassed: boolean } 
   // Location access is opt-in: a user with no explicit shop assignment for this company isn't
   // restricted at all (matches how things worked before shops existed). Ticking at least one shop
   // for them in Settings › Users switches them to "only these shops".
-  const locationCols = { id: locations.id, name: locations.name, kind: locations.kind };
+  // "transit" and "damaged" are system-managed (see schema.ts): never a shop a person bills from
+  // or is assigned to.
+  const billableKind = sql`${locations.kind} in ('warehouse', 'shop')`;
+  const locationCols = { id: locations.id, name: locations.name, kind: sql<"warehouse" | "shop">`${locations.kind}` };
   const explicitLocations: LocationRef[] = current.id
     ? await db
         .select(locationCols)
         .from(userLocations)
         .innerJoin(locations, eq(locations.id, userLocations.locationId))
-        .where(and(eq(userLocations.userId, row.u.id), eq(locations.firmId, current.id), eq(locations.active, true)))
+        .where(and(eq(userLocations.userId, row.u.id), eq(locations.firmId, current.id), eq(locations.active, true), billableKind))
         .orderBy(asc(locations.sort), asc(locations.id))
     : [];
   const allLocations = row.r.isOwner || (row.r.permissions as string[]).includes("locations.all") || explicitLocations.length === 0;
   const myLocations: LocationRef[] = current.id
     ? allLocations
-      ? await db.select(locationCols).from(locations).where(and(eq(locations.firmId, current.id), eq(locations.active, true))).orderBy(asc(locations.sort), asc(locations.id))
+      ? await db.select(locationCols).from(locations).where(and(eq(locations.firmId, current.id), eq(locations.active, true), billableKind)).orderBy(asc(locations.sort), asc(locations.id))
       : explicitLocations
     : [];
+  const [systemLocs] = current.id
+    ? await db
+        .select({ transitId: sql<number | null>`max(${locations.id}) filter (where ${locations.kind} = 'transit')`, damagedId: sql<number | null>`max(${locations.id}) filter (where ${locations.kind} = 'damaged')` })
+        .from(locations)
+        .where(and(eq(locations.firmId, current.id), eq(locations.active, true)))
+    : [{ transitId: null, damagedId: null }];
   return {
     mfaPassed: row.s.mfaPassed,
     user: {
@@ -229,6 +242,8 @@ async function loadSession(): Promise<{ user: CurrentUser; mfaPassed: boolean } 
       firms: accessible,
       locations: myLocations,
       allLocations,
+      transitLocationId: systemLocs?.transitId ?? null,
+      damagedLocationId: systemLocs?.damagedId ?? null,
       id: row.u.id,
       name: row.u.name,
       email: row.u.email,

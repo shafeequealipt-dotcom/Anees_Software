@@ -34,7 +34,14 @@ export const itemKind = pgEnum("item_kind", ["goods", "service"]);
 export const accountKind = pgEnum("account_kind", ["cash", "bank"]);
 export const gstScheme = pgEnum("gst_scheme", ["regular", "composition", "unregistered"]);
 export const categoryKind = pgEnum("category_kind", ["expense", "income"]);
-export const locationKind = pgEnum("location_kind", ["warehouse", "shop"]);
+/**
+ * "transit" and "damaged" are system-managed holding locations (one of each per firm, created
+ * automatically): stock sits in "transit" between a transfer being sent and received, and in
+ * "damaged" once marked damaged on receipt, until it's returned to a supplier or written off.
+ * Neither is ever offered as a shop to bill from, shown to the owner as a location to manage, or
+ * assigned to a user.
+ */
+export const locationKind = pgEnum("location_kind", ["warehouse", "shop", "transit", "damaged"]);
 export const voucherStatus = pgEnum("voucher_status", ["active", "cancelled", "deleted"]);
 export const ledgerSource = pgEnum("ledger_source", ["voucher", "opening"]);
 
@@ -459,8 +466,15 @@ export const vouchers = pgTable(
     sourceVoucherId: integer("source_voucher_id"),
     originalInvoiceNo: varchar("original_invoice_no", { length: 60 }),
     originalInvoiceDate: date("original_invoice_date"),
-    /** Sale/purchase returns: why the goods came back (e.g. "damaged", "wrong_item", "changed_mind", "other"). */
+    /**
+     * Why the goods moved: for a sale/purchase return, "damaged" | "wrong_item" | "changed_mind" |
+     * "quality" | "other"; for a stock transfer that's really a return to the warehouse,
+     * "unsold" | "damaged" | "expired" | "excess" (a plain shop-to-shop transfer leaves this null).
+     */
     returnReason: varchar("return_reason", { length: 30 }),
+    /** Stock transfers only: when the destination confirmed what arrived (null = still in transit). */
+    receivedAt: timestamp("received_at", { withTimezone: true }),
+    receivedBy: integer("received_by").references(() => users.id),
     supplierInvoiceNo: varchar("supplier_invoice_no", { length: 60 }),
     poNumber: varchar("po_number", { length: 60 }),
     poDate: date("po_date"),
@@ -532,6 +546,9 @@ export const voucherLines = pgTable(
     modelNo: varchar("model_no", { length: 60 }),
     /** For stock adjustments on purchase-type vouchers: cost value of the movement. */
     costPaise: paise("cost_paise"),
+    /** Stock transfers only: how much of this line the destination confirmed as received / damaged, in the line's own unit. Null until received. */
+    receivedQtyMilli: milli("received_qty_milli"),
+    damagedQtyMilli: milli("damaged_qty_milli"),
   },
   (t) => [index("voucher_lines_voucher_idx").on(t.voucherId), index("voucher_lines_item_idx").on(t.itemId)],
 );
