@@ -20,6 +20,7 @@ const GROUPS: { title: string; items: { href: string; label: string; hint: strin
     title: "Sales & purchases",
     items: [
       { href: "/reports/daily-sales", label: "Daily sales", hint: "One day, one or all shops — totals, payment modes, top items" },
+      { href: "/reports/staff-sales", label: "Staff sales", hint: "Who sold what, per shop and date range" },
       { href: "/sales", label: "Sale invoices", hint: "Filter, search, export" },
       { href: "/purchases", label: "Purchase bills", hint: "Filter, search, export" },
       { href: "/reports/item-sales?side=sale", label: "Item-wise sales", hint: "Best-selling items" },

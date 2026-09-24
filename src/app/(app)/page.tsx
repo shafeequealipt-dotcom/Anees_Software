@@ -29,6 +29,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     months.push({ month: key, a: hit?.sales ?? 0, b: hit?.purchases ?? 0 });
   }
   const cashTotal = d.money.reduce((s, m) => s + m.balance, 0);
+  const todayByShop = user.allLocations ? d.todayByShop : d.todayByShop.filter((s) => user.locations.some((l) => l.id === s.locationId));
 
   return (
     <>
@@ -88,6 +89,41 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           </dl>
         </Panel>
       </div>
+
+      {todayByShop.length > 1 && (
+        <Panel title="Today by shop" padded={false} className="mt-4" actions={<Link href="/reports/daily-sales" className="text-xs text-brand-600">Daily sales report</Link>}>
+          <Table>
+            <thead>
+              <tr>
+                <th className={th}>Shop</th>
+                <th className={th + " text-right"}>Bills</th>
+                <th className={th + " text-right"}>Sales</th>
+                <th className={th + " text-right"}>Returns</th>
+                <th className={th + " text-right"}>Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {todayByShop.map((s) => (
+                <tr key={s.locationId} className="hover:bg-ground/60">
+                  <td className={td}>
+                    <Link href={`/reports/daily-sales?location=${s.locationId}`} className="text-brand-600 hover:underline">
+                      {s.locationName}
+                    </Link>
+                  </td>
+                  <td className={td + " text-right"}>{s.bills}</td>
+                  <td className={td + " text-right"}>
+                    <Money paise={s.salesPaise} />
+                  </td>
+                  <td className={td + " text-right"}>{s.returnsPaise > 0 ? <Money paise={s.returnsPaise} /> : "—"}</td>
+                  <td className={td + " text-right font-medium"}>
+                    <Money paise={s.netPaise} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Panel>
+      )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Panel title="Overdue invoices" padded={false} actions={<Link href="/sales?status=overdue" className="text-xs text-brand-600">See all</Link>}>

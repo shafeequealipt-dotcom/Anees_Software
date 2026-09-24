@@ -5,7 +5,7 @@ import { firms, locations } from "@/db/schema";
 import { saveItem, saveParty } from "@/server/masters";
 import { loadDailyReportModel } from "@/server/daily-report";
 import { renderDailyReportPdf } from "@/server/pdf/daily-report-pdf";
-import { dailySalesReport } from "@/server/reports";
+import { dailySalesReport, staffSales } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
 import { saveVoucher } from "@/server/vouchers";
 import { testDb } from "./helpers/db";
@@ -82,6 +82,22 @@ describe("daily sales report", () => {
     expect(r.grossSalesPaise).toBe(0);
     expect(r.topItems).toEqual([]);
     expect(r.byStaff).toEqual([]);
+  });
+});
+
+describe("staff sales", () => {
+  it("aggregates one staff member's sales and returns over the period, per shop", async () => {
+    const shopRows = await staffSales(db, firmId, "2026-09-01", "2026-09-30", shopId);
+    expect(shopRows).toHaveLength(1);
+    expect(shopRows[0].name).toBe("Owner");
+    expect(shopRows[0].bills).toBe(3);
+    expect(shopRows[0].salesPaise).toBe(10_000);
+    expect(shopRows[0].returnsPaise).toBe(1_000);
+    expect(shopRows[0].netPaise).toBe(9_000);
+
+    const allRows = await staffSales(db, firmId, "2026-09-01", "2026-09-30");
+    expect(allRows[0].bills).toBe(4);
+    expect(allRows[0].salesPaise).toBe(20_000);
   });
 });
 

@@ -146,6 +146,21 @@ export async function dashboard(db: DB, firmId: number) {
     ),
     ["balance_paise"],
   );
+  const todayByShop = nums(
+    await rows<{ location_id: number | null; location_name: string; bills: number; sales: number; returns: number }>(
+      db,
+      sql`select l.id as location_id, l.name as location_name,
+            count(*) filter (where v.type = 'sale_invoice')::int as bills,
+            coalesce(sum(v.total_paise) filter (where v.type = 'sale_invoice'), 0) as sales,
+            coalesce(sum(v.total_paise) filter (where v.type = 'credit_note'), 0) as returns
+          from locations l
+          left join vouchers v on v.location_id = l.id and v.status = 'active' and v.type in ('sale_invoice', 'credit_note') and v.date = ${today}
+          where l.firm_id = ${firmId} and l.active
+          group by l.id, l.name
+          order by l.sort, l.id`,
+    ),
+    ["bills", "sales", "returns"],
+  );
   return {
     receivable: Number(balances.receivable),
     payable: Number(balances.payable),
@@ -154,6 +169,7 @@ export async function dashboard(db: DB, firmId: number) {
     salesByMonth,
     lowStock: lowStock.n,
     overdue,
+    todayByShop: todayByShop.map((r) => ({ locationId: r.location_id!, locationName: r.location_name, bills: r.bills, salesPaise: r.sales, returnsPaise: r.returns, netPaise: r.sales - r.returns })),
   };
 }
 
@@ -689,4 +705,36 @@ export async function dailySalesReport(db: DB, firmId: number, date: string, loc
     topItems: topItems.map((r) => ({ itemId: r.item_id, name: r.name, qtyMilli: r.qty_milli, unitCode: r.unit_code, amountPaise: r.amount })),
     byStaff: byStaff.map((r) => ({ userId: r.user_id, name: r.name, bills: r.bills, salesPaise: r.sales, returnsPaise: r.returns })),
   };
+}
+
+export interface StaffSalesRow {
+  userId: number | null;
+  name: string;
+  bills: number;
+  returnCount: number;
+  salesPaise: number;
+  returnsPaise: number;
+  netPaise: number;
+}
+
+/** Sales and returns per staff member over a date range, optionally at one shop. */
+export async function staffSales(db: DB, firmId: number, from: string, to: string, locationId?: number): Promise<StaffSalesRow[]> {
+  const locWhere = locationId ? sql`and v.location_id = ${locationId}` : sql``;
+  const list = nums(
+    await rows<{ user_id: number | null; name: string; bills: number; return_count: number; sales: number; returns: number }>(
+      db,
+      sql`select v.created_by as user_id, coalesce(u.name, 'Unknown') as name,
+            count(*) filter (where v.type = 'sale_invoice')::int as bills,
+            count(*) filter (where v.type = 'credit_note')::int as return_count,
+            coalesce(sum(v.total_paise) filter (where v.type = 'sale_invoice'), 0) as sales,
+            coalesce(sum(v.total_paise) filter (where v.type = 'credit_note'), 0) as returns
+          from vouchers v
+          left join users u on u.id = v.created_by
+          where v.firm_id = ${firmId} and v.type in ('sale_invoice', 'credit_note') and v.status = 'active' and v.date between ${from} and ${to} ${locWhere}
+          group by v.created_by, u.name
+          order by sales desc`,
+    ),
+    ["bills", "return_count", "sales", "returns"],
+  );
+  return list.map((r) => ({ userId: r.user_id, name: r.name, bills: r.bills, returnCount: r.return_count, salesPaise: r.sales, returnsPaise: r.returns, netPaise: r.sales - r.returns }));
 }
