@@ -264,7 +264,7 @@ const costPerUnit = sql`case when i.purchase_price_includes_tax
     then round(i.purchase_price_paise * 10000.0 / (10000 + coalesce(t.gst_bp, 0) + coalesce(t.cess_bp, 0)))
     else i.purchase_price_paise end`;
 
-export async function stockSummary(db: DB, firmId: number, f: { asOf?: string; q?: string; categoryId?: number; lowOnly?: boolean; includeInactive?: boolean } = {}) {
+export async function stockSummary(db: DB, firmId: number, f: { asOf?: string; q?: string; categoryId?: number; lowOnly?: boolean; includeInactive?: boolean; locationId?: number } = {}) {
   const asOf = f.asOf ?? "9999-12-31";
   const where: SQL[] = [sql`i.firm_id = ${firmId}`, sql`i.kind = 'goods'`];
   if (!f.includeInactive) where.push(sql`i.active`);
@@ -273,12 +273,19 @@ export async function stockSummary(db: DB, firmId: number, f: { asOf?: string; q
     const like = `%${f.q.trim().toLowerCase()}%`;
     where.push(sql`(lower(i.name) like ${like} or lower(coalesce(i.code,'')) like ${like})`);
   }
+  // With a shop chosen: that shop's quantity, and its own low-stock level (falling back to the item's).
+  const qtySql = f.locationId
+    ? sql`coalesce((select sum(s.qty_milli) from stock_ledger s where s.item_id = i.id and s.date <= ${asOf} and s.location_id = ${f.locationId}), 0)`
+    : sql`coalesce((select sum(s.qty_milli) from stock_ledger s where s.item_id = i.id and s.date <= ${asOf}), 0)`;
+  const minStockSql = f.locationId
+    ? sql`coalesce((select ill.min_stock_milli from item_location_levels ill where ill.item_id = i.id and ill.location_id = ${f.locationId}), i.min_stock_milli)`
+    : sql`i.min_stock_milli`;
   const list = nums(
     await rows<StockRow>(
       db,
       sql`select i.id, i.name, i.code, c.name as category_name, u.code as unit_code, i.active,
-            coalesce((select sum(s.qty_milli) from stock_ledger s where s.item_id = i.id and s.date <= ${asOf}), 0) as qty_milli,
-            i.min_stock_milli, i.purchase_price_paise, i.sale_price_paise, ${costPerUnit} as cost_per_unit_paise
+            ${qtySql} as qty_milli,
+            ${minStockSql} as min_stock_milli, i.purchase_price_paise, i.sale_price_paise, ${costPerUnit} as cost_per_unit_paise
           from items i
           left join item_categories c on c.id = i.category_id
           left join units u on u.id = i.unit_id
@@ -318,6 +325,22 @@ export async function itemMovements(db: DB, itemId: number, from: string, to: st
     e.balance_milli = running;
   }
   return { openingMilli: opening.q, entries, closingMilli: running };
+}
+
+/** Current stock of one item, broken down by shop/warehouse. Only every active location, even ones with zero of this item. */
+export async function stockByLocation(db: DB, firmId: number, itemId: number) {
+  const list = nums(
+    await rows<{ id: number; name: string; kind: "warehouse" | "shop"; qty_milli: number }>(
+      db,
+      sql`select l.id, l.name, l.kind,
+            coalesce((select sum(s.qty_milli) from stock_ledger s where s.item_id = ${itemId} and s.location_id = l.id), 0) as qty_milli
+          from locations l
+          where l.firm_id = ${firmId} and l.active
+          order by (l.kind <> 'warehouse'), l.sort, l.id`,
+    ),
+    ["qty_milli"],
+  );
+  return list;
 }
 
 // ─── Cash & bank ─────────────────────────────────────────────────────────────

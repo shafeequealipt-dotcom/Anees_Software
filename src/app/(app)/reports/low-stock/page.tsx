@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkSelect } from "@/components/simple-filters";
 import { Badge, Empty, Money, PageHeader, Panel, Table, td, th } from "@/components/ui";
 import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
@@ -7,14 +8,26 @@ import { stockSummary } from "@/server/reports";
 
 export const metadata = { title: "Low stock" };
 
-export default async function LowStockPage() {
+export default async function LowStockPage({ searchParams }: { searchParams: Promise<{ location?: string }> }) {
   const user = await requireUser("reports.all");
+  const sp = await searchParams;
   const db = await getDb();
-  const list = await stockSummary(db, user.firmId, { lowOnly: true });
+  const locationId = sp.location && user.locations.some((l) => String(l.id) === sp.location) ? Number(sp.location) : undefined;
+  const list = await stockSummary(db, user.firmId, { lowOnly: true, locationId });
 
   return (
     <>
       <PageHeader title="Low stock" subtitle="Items at or below their alert level." back={{ href: "/reports", label: "Reports" }} />
+      {user.locations.length > 1 && (
+        <div className="mb-4">
+          <LinkSelect
+            param="location"
+            ariaLabel="Shop"
+            current={locationId ? String(locationId) : ""}
+            options={[{ value: "", label: "All shops (combined)" }, ...user.locations.map((l) => ({ value: String(l.id), label: l.name }))]}
+          />
+        </div>
+      )}
       <Panel padded={false}>
         {list.length === 0 ? (
           <Empty title="Nothing is low on stock right now" />

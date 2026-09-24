@@ -15,7 +15,7 @@ import { formatINR, formatPercent, formatQty } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { region } from "@/lib/region";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
-import { itemMovements } from "@/server/reports";
+import { itemMovements, stockByLocation } from "@/server/reports";
 
 export const metadata = { title: "Item" };
 
@@ -37,6 +37,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
   const to = sp.to ?? todayIST();
   const mv = isGoods ? await itemMovements(db, item.id, from, to) : null;
   const low = isGoods && item.minStockMilli > 0 && (mv?.closingMilli ?? 0) <= item.minStockMilli;
+  const byLocation = isGoods && user.locations.length > 1 ? (await stockByLocation(db, user.firmId, item.id)).filter((l) => user.allLocations || user.locations.some((ul) => ul.id === l.id)) : [];
 
   return (
     <>
@@ -92,6 +93,23 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                   Value at cost: <Money paise={Math.max(0, mv.closingMilli) * item.purchasePricePaise / 1000} />
                 </div>
               )}
+            </Panel>
+          )}
+          {byLocation.length > 0 && (
+            <Panel title="Stock by shop">
+              <dl className="flex flex-col gap-1.5 text-sm">
+                {byLocation.map((l) => (
+                  <div key={l.id} className="flex items-center justify-between gap-2">
+                    <dt className="text-muted">
+                      {l.name}
+                      {l.kind === "warehouse" && <span className="ml-1 text-xs text-faint">(warehouse)</span>}
+                    </dt>
+                    <dd className={l.qty_milli < 0 ? "font-medium text-bad" : "font-medium"}>
+                      {formatQty(l.qty_milli)} {unit?.code}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             </Panel>
           )}
         </div>

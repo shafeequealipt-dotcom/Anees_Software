@@ -1,7 +1,7 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { DB } from "@/db";
-import { itemCategories, items, parties, partyGroups, taxRates, units } from "@/db/schema";
+import { itemCategories, items, parties, partyGroups, stockLedger, taxRates, units } from "@/db/schema";
 import { GST_STATES } from "@/lib/gst/states";
 import { toMilli, toPaise, formatPercent } from "@/lib/money";
 import { region } from "@/lib/region";
@@ -154,8 +154,10 @@ export async function importParties(db: DB, firmId: number, table: Table, userId
 
 // ─── Items (also used for bulk updates: export, edit in Excel, import again) ──
 
-export function itemColumns(opts: { purchase: boolean; custom?: { id: number; name: string }[] }): Column[] {
+export function itemColumns(opts: { purchase: boolean; custom?: { id: number; name: string }[]; locations?: { id: number; name: string }[] }): Column[] {
   const r = region();
+  // Only worth a column each once there's more than one shop/warehouse to tell apart.
+  const stockLocations = (opts.locations ?? []).length > 1 ? opts.locations! : [];
   return [
     { header: "ID", key: "id", width: 8 },
     { header: "Name", key: "name", width: 32 },
@@ -177,6 +179,7 @@ export function itemColumns(opts: { purchase: boolean; custom?: { id: number; na
     { header: "Opening stock", key: "openingQty", kind: "number" },
     ...(opts.purchase ? ([{ header: "Opening stock cost per unit", key: "openingRate", kind: "money" }] as Column[]) : []),
     { header: "Low-stock alert", key: "minStock", kind: "number" },
+    ...stockLocations.map((l) => ({ header: `Stock at ${l.name}`, key: `loc:${l.id}`, kind: "number" }) as Column),
     { header: "Location", key: "location" },
     { header: "Description", key: "description", width: 30 },
     ...(opts.custom ?? []).map((f) => ({ header: f.name, key: `cf:${f.id}`, width: 18 })),
@@ -184,11 +187,22 @@ export function itemColumns(opts: { purchase: boolean; custom?: { id: number; na
   ];
 }
 
-export async function exportItems(db: DB, firmId: number, custom: { id: number }[] = []) {
+export async function exportItems(db: DB, firmId: number, custom: { id: number }[] = [], locations: { id: number; name: string }[] = []) {
   const list = await db.select().from(items).where(eq(items.firmId, firmId)).orderBy(asc(items.name));
   const cats = new Map((await db.select().from(itemCategories).where(eq(itemCategories.firmId, firmId))).map((c) => [c.id, c.name]));
   const us = new Map((await db.select().from(units).where(eq(units.firmId, firmId))).map((u) => [u.id, u.code]));
   const tx = new Map((await db.select().from(taxRates).where(eq(taxRates.firmId, firmId))).map((t) => [t.id, t]));
+  // Only worth computing once there's more than one shop/warehouse to tell apart.
+  const stockLocations = locations.length > 1 ? locations : [];
+  const stockByLoc = stockLocations.length
+    ? await db
+        .select({ itemId: stockLedger.itemId, locationId: stockLedger.locationId, qty: sql<number>`sum(${stockLedger.qtyMilli})::bigint` })
+        .from(stockLedger)
+        .innerJoin(items, eq(items.id, stockLedger.itemId))
+        .where(eq(items.firmId, firmId))
+        .groupBy(stockLedger.itemId, stockLedger.locationId)
+    : [];
+  const stockMap = new Map(stockByLoc.map((r) => [`${r.itemId}:${r.locationId}`, Number(r.qty)]));
   return list.map((i) => ({
     id: i.id,
     name: i.name,
@@ -206,6 +220,7 @@ export async function exportItems(db: DB, firmId: number, custom: { id: number }
     openingQty: i.openingQtyMilli / 1000,
     openingRate: i.openingRatePaise / 100,
     minStock: i.minStockMilli / 1000,
+    ...Object.fromEntries(stockLocations.map((l) => [`loc:${l.id}`, (stockMap.get(`${i.id}:${l.id}`) ?? 0) / 1000])),
     location: i.location,
     description: i.description,
     ...Object.fromEntries(custom.map((f) => [`cf:${f.id}`, i.customValues?.[String(f.id)] ?? ""])),

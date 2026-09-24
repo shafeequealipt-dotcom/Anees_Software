@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import QRCode from "qrcode";
 import type { DB } from "@/db";
 import { accounts, firms, items, parties } from "@/db/schema";
+import { listLocations } from "./locations";
 import { amountInWords } from "@/lib/amount-in-words";
 import { amountInWordsArabic } from "@/lib/arabic";
 import { type InvoiceLanguage, labeller, resolveLanguage } from "@/lib/invoice-labels";
@@ -70,6 +71,10 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
   const itemAr = itemIds.length ? new Map((await db.select({ id: items.id, ar: items.nameAr }).from(items).where(and(eq(items.firmId, firmId), inArray(items.id, itemIds)))).map((r) => [r.id, r.ar])) : new Map<number, string | null>();
   const images = await imageDataUrls(db, firmId);
   const [account] = v.accountId ? await db.select().from(accounts).where(eq(accounts.id, v.accountId)) : [];
+  // Only worth printing once there's more than one shop/warehouse to tell apart.
+  const allLocations = await listLocations(db, firmId);
+  const shopLocation = allLocations.length > 1 && v.locationId ? allLocations.find((l) => l.id === v.locationId) : undefined;
+  const toLocation = allLocations.length > 1 && v.toLocationId ? allLocations.find((l) => l.id === v.toLocationId) : undefined;
 
   const zrec = firm.country === "SA" ? await zatcaForVoucher(db, voucherId) : null;
   const hasQr = firm.country === "SA" && !!firm.gstin && ["sale_invoice", "credit_note"].includes(v.type) && v.status === "active";
@@ -113,7 +118,17 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
     name: firm.name,
     nameAr: ar ? firm.nameAr : null,
     linesAr: ar ? clean([firm.addressAr]) : [],
-    lines: clean([firm.legalName && firm.legalName !== firm.name ? firm.legalName : null, firm.address, [firm.city, firm.pincode].filter(Boolean).join(" "), firm.phone ? `${L("Phone:")} ${firm.phone}` : null, firm.email, firm.website, R.usesStates && firm.stateCode ? `State: ${firm.stateCode} - ${stateName(firm.stateCode)}` : null]),
+    lines: clean([
+      firm.legalName && firm.legalName !== firm.name ? firm.legalName : null,
+      firm.address,
+      [firm.city, firm.pincode].filter(Boolean).join(" "),
+      firm.phone ? `${L("Phone:")} ${firm.phone}` : null,
+      firm.email,
+      firm.website,
+      R.usesStates && firm.stateCode ? `State: ${firm.stateCode} - ${stateName(firm.stateCode)}` : null,
+      shopLocation ? `${toLocation ? L("From:") : L("Shop:")} ${shopLocation.name}${shopLocation.address ? `, ${shopLocation.address}` : ""}${shopLocation.phone ? ` · ${L("Phone:")} ${shopLocation.phone}` : ""}` : null,
+      toLocation ? `${L("To:")} ${toLocation.name}` : null,
+    ]),
     taxIdLabel: R.country === "SA" ? L("VAT number (TRN)") : R.taxIdLabel,
     taxId: firm.gstin,
   };

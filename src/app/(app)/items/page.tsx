@@ -11,17 +11,19 @@ import { stockSummary } from "@/server/reports";
 
 export const metadata = { title: "Items & stock" };
 
-export default async function ItemsPage({ searchParams }: { searchParams: Promise<{ q?: string; show?: string; category?: string }> }) {
+export default async function ItemsPage({ searchParams }: { searchParams: Promise<{ q?: string; show?: string; category?: string; location?: string }> }) {
   const user = await requireUser();
   const seeValue = can(user, "see.stockValue");
   const sp = await searchParams;
   const db = await getDb();
   const categories = await db.select().from(itemCategories).where(eq(itemCategories.firmId, user.firmId)).orderBy(asc(itemCategories.name));
+  const locationId = sp.location && user.locations.some((l) => String(l.id) === sp.location) ? Number(sp.location) : undefined;
   const list = await stockSummary(db, user.firmId, {
     q: sp.q,
     categoryId: sp.category ? Number(sp.category) : undefined,
     lowOnly: sp.show === "low",
     includeInactive: sp.show === "inactive",
+    locationId,
   });
   const shown = sp.show === "inactive" ? list.filter((i) => !i.active) : list;
   const stockValue = shown.reduce((s, i) => s + i.stock_value_paise, 0);
@@ -57,6 +59,14 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
             options={[{ value: "", label: "All categories" }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
           />
         )}
+        {user.locations.length > 1 && (
+          <LinkSelect
+            param="location"
+            ariaLabel="Shop"
+            current={locationId ? String(locationId) : ""}
+            options={[{ value: "", label: "All shops" }, ...user.locations.map((l) => ({ value: String(l.id), label: l.name }))]}
+          />
+        )}
         <SearchBox q={sp.q} placeholder="Name or item code" />
       </div>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:max-w-md">
@@ -83,7 +93,7 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
                 <th className={th}>Item</th>
                 <th className={th}>Category</th>
                 <th className={th + " text-right"}>Sale price</th>
-                <th className={th + " text-right"}>Stock</th>
+                <th className={th + " text-right"}>{locationId ? `Stock at ${user.locations.find((l) => l.id === locationId)?.name}` : "Stock"}</th>
                 {seeValue && <th className={th + " text-right"}>Stock value</th>}
               </tr>
             </thead>

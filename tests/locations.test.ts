@@ -4,7 +4,8 @@ import type { DB } from "@/db";
 import { firms, locations, roles, stockLedger } from "@/db/schema";
 import { saveSettings } from "@/lib/settings";
 import { saveItem } from "@/server/masters";
-import { stockSummary } from "@/server/reports";
+import { loadInvoiceModel } from "@/server/invoice";
+import { stockByLocation, stockSummary } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
 import { saveVoucher, VoucherError } from "@/server/vouchers";
 import { testDb } from "./helpers/db";
@@ -84,5 +85,32 @@ describe("per-location stock", () => {
     await saveVoucher(db, firmId, { type: "sale_invoice", date: "2026-09-04", locationId: warehouseId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 31_000, ratePaise: 2_000 }] }, 1);
     expect(await stockAt(widget, warehouseId)).toBe(29_000);
     await saveSettings(db, firmId, { allowNegativeStock: true });
+  });
+
+  it("stockSummary can be filtered to one shop", async () => {
+    const [wh] = await stockSummary(db, firmId, { locationId: warehouseId });
+    const [shop] = await stockSummary(db, firmId, { locationId: shopId });
+    expect(wh.qty_milli).toBe(29_000);
+    expect(shop.qty_milli).toBe(30_000);
+    expect(wh.qty_milli + shop.qty_milli).toBe((await stockSummary(db, firmId))[0].qty_milli);
+  });
+
+  it("stockByLocation breaks one item's stock down per shop", async () => {
+    const byLoc = await stockByLocation(db, firmId, widget);
+    expect(byLoc.find((l) => l.id === warehouseId)!.qty_milli).toBe(29_000);
+    expect(byLoc.find((l) => l.id === shopId)!.qty_milli).toBe(30_000);
+  });
+
+  it("the printed invoice names the shop the sale is from (multi-location company)", async () => {
+    const sale = await saveVoucher(db, firmId, { type: "sale_invoice", date: "2026-09-05", locationId: shopId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 1_000, ratePaise: 2_000 }] }, 1);
+    const model = (await loadInvoiceModel(db, firmId, sale.id))!;
+    expect(model.seller.lines.some((l) => l.includes("Main shop"))).toBe(true);
+  });
+
+  it("the printed transfer names both shops", async () => {
+    const xfer = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-05", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 1_000, ratePaise: 0 }] }, 1);
+    const model = (await loadInvoiceModel(db, firmId, xfer.id))!;
+    expect(model.seller.lines.some((l) => l.includes("Warehouse"))).toBe(true);
+    expect(model.seller.lines.some((l) => l.includes("Main shop"))).toBe(true);
   });
 });

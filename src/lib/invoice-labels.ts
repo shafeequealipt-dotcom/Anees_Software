@@ -68,6 +68,9 @@ const AR: Record<string, string> = {
   "ZATCA QR code": "رمز الاستجابة السريعة",
   "Sale return": "مردودات مبيعات",
   "Purchase return": "مردودات مشتريات",
+  "Shop:": "الفرع:",
+  "From:": "من:",
+  "To:": "إلى:",
 };
 
 /** Formats a label for the chosen language: "Total", "Total / الإجمالي" or "الإجمالي". */
