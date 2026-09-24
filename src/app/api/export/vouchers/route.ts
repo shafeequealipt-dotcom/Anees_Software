@@ -15,7 +15,15 @@ export async function GET(req: Request) {
   const type = (q.get("type") ?? "") as VoucherType;
   if (!VOUCHER_INFO[type]) return new Response("Unknown type", { status: 400 });
   const status = ["open", "paid", "overdue", "cancelled", "all"].includes(q.get("status") ?? "") ? (q.get("status") as "open") : undefined;
-  const list = await listVouchers(await getDb(), a.user.firmId, { types: [type], from: q.get("from") || undefined, to: q.get("to") || undefined, q: q.get("q") || undefined, status, limit: 20000 });
+  const list = await listVouchers(await getDb(), a.user.firmId, {
+    types: [type],
+    from: q.get("from") || undefined,
+    to: q.get("to") || undefined,
+    q: q.get("q") || undefined,
+    status,
+    limit: 20000,
+    ...(a.user.allLocations ? {} : { locationIds: a.user.locations.map((l) => l.id), createdBy: a.user.id }),
+  });
   const info = VOUCHER_INFO[type];
   const rows = list.map((r) => ({
     date: formatDate(r.date),

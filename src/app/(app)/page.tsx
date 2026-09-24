@@ -17,7 +17,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const user = await requireUser();
   const sp = await searchParams;
   const db = await getDb();
-  const d = await dashboard(db, user.firmId);
+  const d = await dashboard(db, user.firmId, user.allLocations ? undefined : { locationIds: user.locations.map((l) => l.id), createdBy: user.id });
   const seeMoney = can(user, "money.view");
   const today = todayIST();
   const cfg = await getSettings(db, user.firmId);

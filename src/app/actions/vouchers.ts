@@ -6,7 +6,7 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
 import { notifications, parties, partyLedger, shareLinks, vouchers } from "@/db/schema";
-import { AuthError, assertUser, clientIp } from "@/lib/auth";
+import { AuthError, assertUser, canSeeVoucher, clientIp } from "@/lib/auth";
 import { todayIST } from "@/lib/dates";
 import { can } from "@/lib/permissions";
 import { SETTLES, VOUCHER_INFO } from "@/lib/voucher-types";
@@ -43,10 +43,13 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
       if (!input.locationId && user.locations[0]) input.locationId = user.locations[0].id;
     }
     const db = await getDb();
-    if (input.id && !can(user, "vouchers.editOld")) {
-      const [v] = await db.select({ createdAt: vouchers.createdAt }).from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, user.firmId)));
-      const created = v ? new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(v.createdAt) : null;
-      if (created && created !== todayIST()) throw new AuthError("Only the owner or accountant can edit entries from earlier days.");
+    if (input.id) {
+      const [v] = await db.select({ createdAt: vouchers.createdAt, locationId: vouchers.locationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, user.firmId)));
+      if (v && !canSeeVoucher(user, v)) throw new AuthError("You don't have access to that entry.");
+      if (!can(user, "vouchers.editOld")) {
+        const created = v ? new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(v.createdAt) : null;
+        if (created && created !== todayIST()) throw new AuthError("Only the owner or accountant can edit entries from earlier days.");
+      }
     }
     const res = await saveVoucher(db, user.firmId, input, user.id, await clientIp());
     await notifyTransaction(db, user.firmId, user.id, res.id, input.id ? "updated" : "created");
@@ -69,6 +72,8 @@ export async function cancelVoucherAction(id: number): Promise<ActionResult> {
   try {
     const user = await assertUser("vouchers.cancel");
     const db = await getDb();
+    const existing = await getVoucher(db, user.firmId, id);
+    if (existing && !canSeeVoucher(user, existing.voucher)) throw new AuthError("You don't have access to that entry.");
     await cancelVoucher(db, user.firmId, id, user.id, await clientIp());
     await notifyTransaction(db, user.firmId, user.id, id, "cancelled");
     revalidatePath("/", "layout");
@@ -82,6 +87,8 @@ export async function deleteVoucherAction(id: number): Promise<ActionResult> {
   try {
     const user = await assertUser("vouchers.delete");
     const db = await getDb();
+    const existing = await getVoucher(db, user.firmId, id);
+    if (existing && !canSeeVoucher(user, existing.voucher)) throw new AuthError("You don't have access to that entry.");
     await deleteVoucher(db, user.firmId, id, user.id, await clientIp());
     await notifyTransaction(db, user.firmId, user.id, id, "deleted");
     revalidatePath("/", "layout");
@@ -95,6 +102,8 @@ export async function restoreVoucherAction(id: number): Promise<ActionResult<{ n
   try {
     const user = await assertUser("vouchers.restore");
     const db = await getDb();
+    const [existing] = await db.select({ locationId: vouchers.locationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, user.firmId)));
+    if (existing && !canSeeVoucher(user, existing)) throw new AuthError("You don't have access to that entry.");
     const r = await restoreVoucher(db, user.firmId, id, user.id, await clientIp());
     revalidatePath("/", "layout");
     return { ok: true, number: r.number, path: VOUCHER_INFO[r.type].path };
@@ -149,8 +158,8 @@ export async function shareLinkAction(voucherId: number): Promise<ActionResult<{
   try {
     const user = await assertUser();
     const db = await getDb();
-    const [own] = await db.select({ id: vouchers.id }).from(vouchers).where(and(eq(vouchers.id, voucherId), eq(vouchers.firmId, user.firmId)));
-    if (!own) return { ok: false, error: "This entry no longer exists." };
+    const [own] = await db.select({ id: vouchers.id, locationId: vouchers.locationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, voucherId), eq(vouchers.firmId, user.firmId)));
+    if (!own || !canSeeVoucher(user, own)) return { ok: false, error: "This entry no longer exists." };
     const [existing] = await db
       .select()
       .from(shareLinks)
@@ -173,7 +182,7 @@ export async function sendVoucherAction(voucherId: number): Promise<ActionResult
     const user = await assertUser();
     const db = await getDb();
     const data = await getVoucher(db, user.firmId, voucherId);
-    if (!data) return { ok: false, error: "This entry no longer exists." };
+    if (!data || !canSeeVoucher(user, data.voucher)) return { ok: false, error: "This entry no longer exists." };
     const v = data.voucher;
     const [party] = v.partyId ? await db.select().from(parties).where(and(eq(parties.id, v.partyId), eq(parties.firmId, user.firmId))) : [];
     const target = partyChannel(user.firm.country, { phone: v.partyPhone ?? party?.phone ?? null, email: party?.email ?? null });

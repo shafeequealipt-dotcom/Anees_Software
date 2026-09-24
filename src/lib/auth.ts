@@ -51,6 +51,17 @@ export interface CurrentUser {
   sessionId: string;
 }
 
+/**
+ * Whether this user may open a given bill: owners and holders of `locations.all` see everything;
+ * everyone else sees only bills at a shop they're assigned to, plus (for bills with no shop
+ * recorded, e.g. an older money_transfer) only the ones they themselves entered.
+ */
+export function canSeeVoucher(user: CurrentUser, v: { locationId: number | null; createdBy: number | null }): boolean {
+  if (user.allLocations) return true;
+  if (v.locationId != null) return user.locations.some((l) => l.id === v.locationId);
+  return v.createdBy === user.id;
+}
+
 // ─── Passwords ────────────────────────────────────────────────────────────────
 
 export async function hashPassword(password: string): Promise<string> {

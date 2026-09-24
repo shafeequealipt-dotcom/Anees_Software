@@ -6,7 +6,7 @@ import { getDb } from "@/db";
 import { accounts, firms, ledgerCategories, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { amountInWords } from "@/lib/amount-in-words";
-import { requireUser } from "@/lib/auth";
+import { canSeeVoucher, requireUser } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import QRCode from "qrcode";
 import { stateName } from "@/lib/gst/states";
@@ -36,6 +36,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   if (!data) notFound();
   const v = data.voucher;
   if (v.type !== type) redirect(`${VOUCHER_INFO[v.type].path}/${v.id}`);
+  if (!canSeeVoucher(user, v)) notFound();
   const info = VOUCHER_INFO[v.type];
   const [firm] = await db.select().from(firms).where(eq(firms.id, v.firmId));
   const [account] = v.accountId ? await db.select().from(accounts).where(eq(accounts.id, v.accountId)) : [];

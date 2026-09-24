@@ -37,10 +37,19 @@ export interface VoucherRow {
   supplier_invoice_no: string | null;
 }
 
+/** Restricts to what a location-restricted user may see: their shops' vouchers, plus any without a shop that they themselves entered. */
+function locationAccessWhere(locationIds: number[] | undefined, createdBy: number | undefined): SQL | null {
+  if (!locationIds) return null;
+  if (locationIds.length === 0) return createdBy ? sql`v.location_id is null and v.created_by = ${createdBy}` : sql`false`;
+  return createdBy
+    ? sql`(v.location_id in (${sql.join(locationIds.map((id) => sql`${id}`), sql`, `)}) or (v.location_id is null and v.created_by = ${createdBy}))`
+    : sql`v.location_id in (${sql.join(locationIds.map((id) => sql`${id}`), sql`, `)})`;
+}
+
 export async function listVouchers(
   db: DB,
   firmId: number,
-  f: { types: VoucherType[]; from?: string; to?: string; partyId?: number; q?: string; status?: "open" | "paid" | "overdue" | "cancelled" | "all"; limit?: number; accountId?: number; categoryId?: number },
+  f: { types: VoucherType[]; from?: string; to?: string; partyId?: number; q?: string; status?: "open" | "paid" | "overdue" | "cancelled" | "all"; limit?: number; accountId?: number; categoryId?: number; locationIds?: number[]; createdBy?: number },
 ): Promise<VoucherRow[]> {
   const where: SQL[] = [sql`v.firm_id = ${firmId}`, sql`v.status <> 'deleted'`, sql`v.type in (${sql.join(f.types.map((t) => sql`${t}`), sql`, `)})`];
   if (f.from) where.push(sql`v.date >= ${f.from}`);
@@ -54,6 +63,8 @@ export async function listVouchers(
   }
   if (f.status === "cancelled") where.push(sql`v.status = 'cancelled'`);
   else if (f.status && f.status !== "all") where.push(sql`v.status = 'active'`);
+  const locWhere = locationAccessWhere(f.locationIds, f.createdBy);
+  if (locWhere) where.push(locWhere);
 
   const list = await rows<VoucherRow>(
     db,
@@ -82,10 +93,12 @@ export async function listVouchers(
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
-export async function dashboard(db: DB, firmId: number) {
+export async function dashboard(db: DB, firmId: number, access?: { locationIds: number[]; createdBy: number }) {
   const today = todayIST();
   const month = monthRange(today);
   const yearAgo = addDays(month.from, -335).slice(0, 8) + "01";
+  const locWhere = locationAccessWhere(access?.locationIds, access?.createdBy);
+  const locAnd = locWhere ? sql`and ${locWhere}` : sql``;
 
   const [balances] = await rows<{ receivable: number; payable: number }>(
     db,
@@ -111,7 +124,7 @@ export async function dashboard(db: DB, firmId: number) {
             coalesce(sum(case when type = 'payment_in' then total_paise end), 0) as received,
             coalesce(sum(case when type = 'payment_out' then total_paise end), 0) as paid,
             count(*) filter (where type = 'sale_invoice') as invoices
-          from vouchers where firm_id = ${firmId} and status = 'active' and date between ${month.from} and ${month.to}`,
+          from vouchers v where firm_id = ${firmId} and status = 'active' and date between ${month.from} and ${month.to} ${locAnd}`,
     ),
     ["sales", "purchases", "expenses", "received", "paid", "invoices"],
   );
@@ -121,7 +134,7 @@ export async function dashboard(db: DB, firmId: number) {
       sql`select to_char(date_trunc('month', date), 'YYYY-MM') as month,
             coalesce(sum(case when type = 'sale_invoice' then taxable_paise when type = 'credit_note' then -taxable_paise end), 0) as sales,
             coalesce(sum(case when type = 'purchase_bill' then taxable_paise when type = 'debit_note' then -taxable_paise end), 0) as purchases
-          from vouchers where firm_id = ${firmId} and status = 'active' and date >= ${yearAgo}
+          from vouchers v where firm_id = ${firmId} and status = 'active' and date >= ${yearAgo} ${locAnd}
           group by 1 order by 1`,
     ),
     ["sales", "purchases"],
@@ -141,7 +154,7 @@ export async function dashboard(db: DB, firmId: number) {
       db,
       sql`select * from (
             select v.id, v.prefix, v.number, v.party_name, v.due_date::text, ${balanceExpr} as balance_paise
-            from vouchers v where v.firm_id = ${firmId} and v.type = 'sale_invoice' and v.status = 'active' and v.due_date < ${today}) t
+            from vouchers v where v.firm_id = ${firmId} and v.type = 'sale_invoice' and v.status = 'active' and v.due_date < ${today} ${locAnd}) t
           where balance_paise > 0 order by due_date limit 8`,
     ),
     ["balance_paise"],
@@ -388,7 +401,10 @@ export async function accountStatement(db: DB, accountId: number, from: string, 
 
 // ─── Day book ────────────────────────────────────────────────────────────────
 
-export async function dayBook(db: DB, firmId: number, from: string, to: string) {
+export async function dayBook(db: DB, firmId: number, from: string, to: string, access?: { locationIds: number[]; createdBy: number }) {
+  const where: SQL[] = [sql`v.firm_id = ${firmId}`, sql`v.status <> 'deleted'`, sql`v.date between ${from} and ${to}`];
+  const locWhere = locationAccessWhere(access?.locationIds, access?.createdBy);
+  if (locWhere) where.push(locWhere);
   const list = nums(
     await rows<{ id: number; type: VoucherType; prefix: string; number: number; date: string; party_name: string | null; total_paise: number; money_in: number; money_out: number; status: string; created_by: string | null }>(
       db,
@@ -396,7 +412,7 @@ export async function dayBook(db: DB, firmId: number, from: string, to: string) 
             coalesce((select sum(amount_paise) from money_ledger m where m.voucher_id = v.id and m.amount_paise > 0), 0) as money_in,
             coalesce((select -sum(amount_paise) from money_ledger m where m.voucher_id = v.id and m.amount_paise < 0), 0) as money_out
           from vouchers v left join users u on u.id = v.created_by
-          where v.firm_id = ${firmId} and v.status <> 'deleted' and v.date between ${from} and ${to}
+          where ${sql.join(where, sql` and `)}
           order by v.date, v.created_at`,
     ),
     ["total_paise", "money_in", "money_out"],
@@ -565,11 +581,18 @@ export async function taxReport(db: DB, firmId: number, from: string, to: string
 
 // ─── Global search ───────────────────────────────────────────────────────────
 
-export async function globalSearch(db: DB, firmId: number, q: string, opts: { partyContact?: boolean } = {}) {
+export async function globalSearch(db: DB, firmId: number, q: string, opts: { partyContact?: boolean; access?: { locationIds: number[]; createdBy: number } } = {}) {
   const contact = opts.partyContact ?? true;
   const term = q.trim().toLowerCase();
   if (term.length < 2) return { parties: [], items: [], vouchers: [] };
   const like = `%${term}%`;
+  const voucherWhere: SQL[] = [
+    sql`firm_id = ${firmId}`,
+    sql`status <> 'deleted'`,
+    sql`(lower(prefix || number::text) like ${like} or lower(coalesce(party_name,'')) like ${like} or lower(coalesce(supplier_invoice_no,'')) like ${like})`,
+  ];
+  const locWhere = opts.access ? locationAccessWhere(opts.access.locationIds, opts.access.createdBy) : null;
+  if (locWhere) voucherWhere.push(locWhere);
   const [p, i, v] = await Promise.all([
     rows<{ id: number; name: string; phone: string | null }>(
       db,
@@ -580,9 +603,7 @@ export async function globalSearch(db: DB, firmId: number, q: string, opts: { pa
     rows<{ id: number; name: string; code: string | null }>(db, sql`select id, name, code from items where firm_id = ${firmId} and (lower(name) like ${like} or lower(coalesce(code,'')) like ${like}) order by lower(name) limit 8`),
     rows<{ id: number; type: VoucherType; prefix: string; number: number; date: string; party_name: string | null; total_paise: number }>(
       db,
-      sql`select id, type, prefix, number, date::text, party_name, total_paise from vouchers
-          where firm_id = ${firmId} and status <> 'deleted' and (lower(prefix || number::text) like ${like} or lower(coalesce(party_name,'')) like ${like} or lower(coalesce(supplier_invoice_no,'')) like ${like})
-          order by date desc limit 10`,
+      sql`select id, type, prefix, number, date::text, party_name, total_paise from vouchers v where ${sql.join(voucherWhere, sql` and `)} order by date desc limit 10`,
     ),
   ]);
   return { parties: p, items: i, vouchers: nums(v, ["total_paise"]) };

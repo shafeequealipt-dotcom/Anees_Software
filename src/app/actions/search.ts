@@ -9,7 +9,10 @@ import { globalSearch } from "@/server/reports";
 export async function searchAction(q: string) {
   const user = await assertUser();
   const db = await getDb();
-  const r = await globalSearch(db, user.firmId, q.slice(0, 100), { partyContact: can(user, "see.partyContact") });
+  const r = await globalSearch(db, user.firmId, q.slice(0, 100), {
+    partyContact: can(user, "see.partyContact"),
+    access: user.allLocations ? undefined : { locationIds: user.locations.map((l) => l.id), createdBy: user.id },
+  });
   return {
     parties: r.parties,
     items: r.items,

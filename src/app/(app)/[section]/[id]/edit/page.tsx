@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { MoneyForm, PaymentForm } from "@/components/payment-form";
 import { VoucherForm } from "@/components/voucher-form";
 import { getDb } from "@/db";
-import { requireUser } from "@/lib/auth";
+import { canSeeVoucher, requireUser } from "@/lib/auth";
 import { typeFromPath, VOUCHER_INFO } from "@/lib/voucher-types";
 import { can } from "@/lib/permissions";
 import { loadVoucherFormData } from "@/server/form-data";
@@ -18,6 +18,7 @@ export default async function EditVoucherPage({ params }: { params: Promise<{ se
   const data = await loadVoucherFormData(db, user.firmId, type, { id: Number(id) }, { balance: can(user, "see.partyBalance"), contact: can(user, "see.partyContact"), purchase: can(user, "see.purchasePrice") }, user.locations);
   if (!data.existing) notFound();
   if (data.existing.voucher.type !== type) redirect(`${VOUCHER_INFO[data.existing.voucher.type].path}/${id}/edit`);
+  if (!canSeeVoucher(user, data.existing.voucher)) notFound();
   if (data.existing.voucher.status === "cancelled") redirect(`${VOUCHER_INFO[type].path}/${id}`);
   if (type === "payment_in" || type === "payment_out") return <PaymentForm data={data} />;
   if (type === "money_adjustment" || type === "money_transfer") return <MoneyForm data={data} />;
