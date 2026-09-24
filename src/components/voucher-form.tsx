@@ -7,6 +7,7 @@ import { calculateVoucher, supplyFor } from "@/lib/gst/engine";
 import { region, taxColumnLabels } from "@/lib/region";
 import { GST_STATES, stateName } from "@/lib/gst/states";
 import { formatINR, formatQty, toBasisPoints, toMilli, toPaise } from "@/lib/money";
+import { needsLocation } from "@/lib/posting";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import type { ItemOpt, PartyOpt, VoucherFormData } from "@/server/form-data";
 import { Combobox } from "./combobox";
@@ -75,6 +76,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const [paymentRef, setPaymentRef] = useState(ex?.paymentRef ?? "");
   const [categoryId, setCategoryId] = useState<number | null>(ex?.categoryId ?? null);
   const [direction, setDirection] = useState<1 | -1>((ex?.direction as 1 | -1) ?? 1);
+  const [locationId, setLocationId] = useState<number | null>(ex?.locationId ?? data.defaultLocationId);
+  const [toLocationId, setToLocationId] = useState<number | null>(ex?.toLocationId ?? null);
   const [notes, setNotes] = useState(ex?.notes ?? (data.sourceRefs.length > 1 ? `Combined from ${data.sourceRefs.map((r) => r.label).join(", ")}` : ""));
   const [terms, setTerms] = useState(ex?.terms ?? (data.type === "quotation" ? data.settings.quotationTerms : info.outward && info.takesPayment ? (data.firm?.terms ?? "") : ""));
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState(ex?.supplierInvoiceNo ?? "");
@@ -146,7 +149,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const R = region();
   const TL = taxColumnLabels(R);
   const composition = data.firm?.gstScheme !== "regular" && info.outward;
-  const noTax = data.type === "stock_adjustment" || data.type === "delivery_challan" || withoutTax || composition;
+  const isStockMove = data.type === "stock_adjustment" || data.type === "stock_transfer";
+  const noTax = isStockMove || data.type === "delivery_challan" || withoutTax || composition;
 
   // Fill party details when a party is picked (new vouchers only)
   const pickParty = useCallback(
@@ -266,6 +270,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         paymentMode: paidPaise > 0 ? paymentMode : null,
         paymentRef: paidPaise > 0 ? paymentRef || null : null,
         direction: data.type === "stock_adjustment" ? direction : null,
+        locationId,
+        toLocationId: data.type === "stock_transfer" ? toLocationId : null,
         categoryId,
         sourceVoucherId: src?.voucher.id ?? ex?.sourceVoucherId ?? null,
         sourceVoucherIds: data.sourceRefs.length > 1 ? data.sourceRefs.map((r) => r.id) : undefined,
@@ -485,6 +491,32 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
           <Field label="Date">
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} max="2100-12-31" />
           </Field>
+          {needsLocation(data.type) && data.locations.length > 1 && (
+            <Field label={data.type === "stock_transfer" ? "From" : "Shop"} className={data.type === "stock_transfer" ? "col-span-1" : "col-span-2"}>
+              <Select value={locationId ?? ""} onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">Choose…</option>
+                {data.locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {data.type === "stock_transfer" && data.locations.length > 1 && (
+            <Field label="To">
+              <Select value={toLocationId ?? ""} onChange={(e) => setToLocationId(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">Choose…</option>
+                {data.locations
+                  .filter((l) => l.id !== locationId)
+                  .map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+          )}
           {["sale_invoice", "purchase_bill", "quotation"].includes(data.type) && (
             <Field label={data.type === "quotation" ? "Valid until" : "Due date"}>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
@@ -505,7 +537,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               </Field>
             </>
           )}
-          {R.usesStates && info.hasLines && data.type !== "stock_adjustment" && data.type !== "expense" && (
+          {R.usesStates && info.hasLines && !isStockMove && data.type !== "expense" && (
             <Field label="Place of supply" className="col-span-2">
               <Select value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)}>
                 <option value="">
@@ -533,8 +565,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                   <th className="min-w-64 px-2 py-2">{data.type === "expense" || data.type === "other_income" ? "Item / description" : "Item"}</th>
                   <th className="w-24 px-2 py-2 text-right">Qty</th>
                   <th className="w-28 px-2 py-2">Unit</th>
-                  <th className="w-32 px-2 py-2 text-right">{data.type === "stock_adjustment" ? "Cost/unit" : "Rate"}</th>
-                  {data.settings.lineDiscount && data.type !== "stock_adjustment" && <th className="w-20 px-2 py-2 text-right">Disc %</th>}
+                  <th className="w-32 px-2 py-2 text-right">{isStockMove ? "Cost/unit" : "Rate"}</th>
+                  {data.settings.lineDiscount && !isStockMove && <th className="w-20 px-2 py-2 text-right">Disc %</th>}
                   {!noTax && <th className="w-36 px-2 py-2">Tax</th>}
                   <th className="w-32 px-2 py-2 text-right">Amount</th>
                   <th className="w-8" />
@@ -605,7 +637,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                           </label>
                         )}
                       </td>
-                      {data.settings.lineDiscount && data.type !== "stock_adjustment" && (
+                      {data.settings.lineDiscount && !isStockMove && (
                         <td className="px-2 py-1.5">
                           <Input value={l.discPct} onChange={(e) => updateLine(l.key, { discPct: e.target.value })} inputMode="decimal" className="num text-right" placeholder="0" />
                           {r?.lineDiscountPaise > 0 && <div className="mt-1 text-right text-xs text-faint">−{formatINR(r.lineDiscountPaise)}</div>}
@@ -666,7 +698,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
       {/* ── Footer: notes + totals ─────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
         <div className="flex flex-col gap-3 rounded-lg border border-line bg-panel p-4">
-          {info.hasLines && info.outward && data.type !== "stock_adjustment" && (
+          {info.hasLines && info.outward && !isStockMove && (
             <button type="button" className="self-start text-sm text-brand-600 hover:underline" onClick={() => setShowMore((s) => !s)}>
               {showMore ? "Hide" : "Show"} shipping, transport & order details
             </button>
@@ -695,13 +727,13 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               {data.type === "sale_invoice" && <Checkbox label="Tax payable on reverse charge" checked={reverseCharge} onChange={(e) => setReverseCharge(e.target.checked)} />}
             </div>
           )}
-          {info.hasLines && !composition && data.type !== "stock_adjustment" && data.type !== "delivery_challan" && (
+          {info.hasLines && !composition && !isStockMove && data.type !== "delivery_challan" && (
             <Checkbox label={R.usesStates ? (info.outward ? "Bill of supply (no GST on this bill)" : "No GST on this bill") : `No ${R.taxName} on this bill (out of scope / exempt)`} checked={withoutTax} onChange={(e) => setWithoutTax(e.target.checked)} />
           )}
           <Field label="Notes (printed on the bill)">
             <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
-          {info.outward && info.hasLines && data.type !== "stock_adjustment" && (
+          {info.outward && info.hasLines && !isStockMove && (
             <Field label="Terms & conditions">
               <Textarea rows={2} value={terms} onChange={(e) => setTerms(e.target.value)} />
             </Field>
@@ -711,7 +743,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         <div className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-4 text-sm">
           <Line label="Items total" value={calc.grossPaise} />
           {calc.discountPaise > 0 && <Line label="Discount" value={-calc.discountPaise} />}
-          {data.settings.billDiscount && info.hasLines && data.type !== "stock_adjustment" && (
+          {data.settings.billDiscount && info.hasLines && !isStockMove && (
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted">Bill discount</span>
               <div className="flex items-center gap-1">
@@ -730,7 +762,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               {calc.cessPaise > 0 && <Line label="Cess" value={calc.cessPaise} muted />}
             </>
           )}
-          {data.type !== "stock_adjustment" && (
+          {!isStockMove && (
             <div className="flex items-center justify-between">
               <Checkbox label={<span className="text-muted">Round off</span>} checked={roundOff} onChange={(e) => setRoundOff(e.target.checked)} />
               <Money paise={calc.roundOffPaise} className="text-muted" />

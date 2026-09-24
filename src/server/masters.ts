@@ -26,6 +26,7 @@ import { checkGstin } from "@/lib/gst/gstin";
 import { checkTrn } from "@/lib/gst/trn";
 import { region } from "@/lib/region";
 import { cleanCustomValues } from "./custom-fields";
+import { MasterError } from "./errors";
 import { removeOpening, syncAccountOpening, syncItemOpening, syncPartyOpening } from "./gl";
 import { defaultLocationId } from "./locations";
 import { isValidStateCode } from "@/lib/gst/states";
@@ -33,11 +34,7 @@ import { isValidStateCode } from "@/lib/gst/states";
 /** Opening balances default to the first day of the current financial year. */
 const defaultOpeningDate = () => financialYear(todayIST()).from;
 
-export class MasterError extends Error {
-  constructor(message: string, public field?: string) {
-    super(message);
-  }
-}
+export { MasterError };
 
 const text = (max: number) =>
   z.string().max(max, `Keep this under ${max} characters.`).nullish().transform((v) => (v && v.trim() ? v.trim() : null));

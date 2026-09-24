@@ -76,7 +76,20 @@ export interface Visibility {
   purchase: boolean;
 }
 
-export async function loadVoucherFormData(db: DB, firmId: number, type: VoucherType, opts: { id?: number; fromId?: number; fromIds?: number[]; partyId?: number }, see: Visibility) {
+export interface LocationOpt {
+  id: number;
+  name: string;
+  kind: "warehouse" | "shop";
+}
+
+export async function loadVoucherFormData(
+  db: DB,
+  firmId: number,
+  type: VoucherType,
+  opts: { id?: number; fromId?: number; fromIds?: number[]; partyId?: number },
+  see: Visibility,
+  myLocations: LocationOpt[] = [],
+) {
   const info = VOUCHER_INFO[type];
   const [firm] = await db.select().from(firms).where(eq(firms.id, firmId));
   const settings = await getSettings(db, firmId);
@@ -129,6 +142,8 @@ export async function loadVoucherFormData(db: DB, firmId: number, type: VoucherT
     source,
     sourceRefs,
     presetPartyId: opts.partyId ?? null,
+    locations: myLocations,
+    defaultLocationId: existing?.voucher.locationId ?? myLocations[0]?.id ?? null,
   };
 }
 

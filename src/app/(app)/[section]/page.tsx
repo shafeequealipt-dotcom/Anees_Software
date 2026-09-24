@@ -84,7 +84,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Tile label="Count" value={active.length.toString()} />
         <Tile label="Total" value={<Money paise={sum((r) => r.total_paise)} />} />
-        {info.hasLines && type !== "stock_adjustment" && <Tile label="Tax" value={<Money paise={sum((r) => r.tax_paise)} />} />}
+        {info.hasLines && type !== "stock_adjustment" && type !== "stock_transfer" && <Tile label="Tax" value={<Money paise={sum((r) => r.tax_paise)} />} />}
         {showBalance && <Tile label="Unpaid" value={<Money paise={sum((r) => Math.max(0, r.balance_paise))} className="text-bad" />} />}
       </div>
 

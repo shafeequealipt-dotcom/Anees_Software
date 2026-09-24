@@ -50,6 +50,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
         subtitle={item.kind === "service" ? "Service" : `${item.code ? `${item.code} · ` : ""}${category?.name ?? "No category"}`}
         actions={
           <>
+            {isGoods && <LinkButton size="sm" href={`/stock-transfers/new?item=${item.id}`}>Transfer stock</LinkButton>}
             {isGoods && <LinkButton size="sm" href={`/stock-adjustments/new?item=${item.id}`}>Adjust stock</LinkButton>}
             {can(user, "masters.edit") && <LinkButton size="sm" href={`/items/${item.id}/edit`}>Edit</LinkButton>}
           </>
