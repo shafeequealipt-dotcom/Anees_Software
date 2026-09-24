@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { asc, eq } from "drizzle-orm";
 import type { DB } from "@/db";
-import { firms, locations, roles, stockLedger } from "@/db/schema";
+import { firms, locations, roles, stockLedger, voucherLines } from "@/db/schema";
 import { saveSettings } from "@/lib/settings";
 import { saveItem } from "@/server/masters";
 import { loadInvoiceModel } from "@/server/invoice";
 import { stockByLocation, stockSummary } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
-import { saveVoucher, VoucherError } from "@/server/vouchers";
+import { receiveTransfer, saveVoucher, VoucherError } from "@/server/vouchers";
 import { testDb } from "./helpers/db";
 
 let db: DB;
@@ -55,10 +55,20 @@ describe("per-location stock", () => {
     expect(await stockAt(widget, shopId)).toBe(0);
   });
 
-  it("a transfer moves stock from the warehouse to the shop at zero net value", async () => {
-    await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-02", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 40_000, ratePaise: 0 }] }, 1);
+  it("sending a transfer moves stock out of the warehouse and into transit, not the shop yet", async () => {
+    const locs = await db.select().from(locations).where(eq(locations.firmId, firmId));
+    const transitId = locs.find((l) => l.kind === "transit")!.id;
+    const xfer = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-02", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 40_000, ratePaise: 0 }] }, 1);
+    expect(await stockAt(widget, warehouseId)).toBe(60_000);
+    expect(await stockAt(widget, shopId)).toBe(0);
+    expect(await stockAt(widget, transitId)).toBe(40_000);
+
+    // Receiving it in full moves it on from transit to the shop, with nothing damaged or short.
+    const [xferLine] = await db.select().from(voucherLines).where(eq(voucherLines.voucherId, xfer.id));
+    await receiveTransfer(db, firmId, xfer.id, 1, [{ lineId: xferLine.id, receivedQtyMilli: 40_000, damagedQtyMilli: 0 }], null);
     expect(await stockAt(widget, warehouseId)).toBe(60_000);
     expect(await stockAt(widget, shopId)).toBe(40_000);
+    expect(await stockAt(widget, transitId)).toBe(0);
   });
 
   it("a transfer needs two different shops", async () => {

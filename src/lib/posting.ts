@@ -26,6 +26,8 @@ export interface PostingVoucher {
   locationId: number | null;
   /** Stock transfers only: the destination location. */
   toLocationId?: number | null;
+  /** Stock transfers only: the firm's system "in transit" location — sent stock lands here, not directly at toLocationId, until receiveTransfer() moves it on. */
+  transitLocationId?: number | null;
   lines: {
     lineId?: number;
     itemId: number | null;
@@ -131,11 +133,15 @@ export function buildPostings(v: PostingVoucher): Postings {
   if (v.type === "stock_transfer") {
     if (!v.locationId || !v.toLocationId) throw new PostingError("Choose both the from and to locations for the transfer.");
     if (v.locationId === v.toLocationId) throw new PostingError("Transfer needs two different locations.");
+    if (!v.transitLocationId) throw new PostingError("Set up an In transit location first (Settings › Shops & warehouse).");
+    // Sending only moves stock out of the sender and into transit — it doesn't land at the
+    // destination until the other end confirms receiveTransfer(). toLocationId is kept on the
+    // voucher purely to say where it's headed and for access/visibility (who may receive it).
     for (const l of v.lines) {
       if (!l.itemId || !l.isGoods) continue;
       const qty = baseQty(l);
       out.stock.push({ lineId: l.lineId, itemId: l.itemId, locationId: v.locationId, date, qtyMilli: -qty, valuePaise: -l.taxablePaise, batchNo: l.batchNo, expiryDate: l.expiryDate });
-      out.stock.push({ lineId: l.lineId, itemId: l.itemId, locationId: v.toLocationId, date, qtyMilli: qty, valuePaise: l.taxablePaise, batchNo: l.batchNo, expiryDate: l.expiryDate });
+      out.stock.push({ lineId: l.lineId, itemId: l.itemId, locationId: v.transitLocationId, date, qtyMilli: qty, valuePaise: l.taxablePaise, batchNo: l.batchNo, expiryDate: l.expiryDate });
     }
     return out;
   }

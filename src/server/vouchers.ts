@@ -29,7 +29,7 @@ import { formatMoney, formatQty } from "@/lib/money";
 import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
 import { syncVoucherGl } from "./gl";
-import { defaultLocationId } from "./locations";
+import { defaultLocationId, systemLocationId } from "./locations";
 import { isZatcaIssued, ZATCA_LOCKED_MESSAGE } from "./zatca-lock";
 import { syncServiceReminders } from "./notify/service";
 import { SETTLES, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
@@ -163,6 +163,9 @@ export async function saveVoucher(
       if (await isZatcaIssued(tx, existing.id)) throw new VoucherError(ZATCA_LOCKED_MESSAGE);
       if (existing.type !== input.type) throw new VoucherError("An entry can't change its type.");
       if (existing.status === "cancelled") throw new VoucherError("Cancelled entries can't be edited.");
+      if (existing.type === "stock_transfer" && existing.receivedAt) {
+        throw new VoucherError("This transfer has already been received and can't be edited. Cancel it and make a new one if something needs fixing.");
+      }
     }
 
     // ── Party
@@ -314,6 +317,7 @@ export async function saveVoucher(
       const own = await tx.select({ id: locations.id }).from(locations).where(and(inArray(locations.id, locationIds), eq(locations.firmId, firmId)));
       if (own.length !== new Set(locationIds).size) throw new VoucherError("Choose a shop from this company.", "locationId");
     }
+    const transitLocationId = input.type === "stock_transfer" ? await systemLocationId(tx, firmId, "transit") : null;
 
     // ── Number
     const prefix = existing ? existing.prefix : (cfg.prefixes[input.type] ?? "");
@@ -482,6 +486,7 @@ export async function saveVoucher(
         direction: values.direction,
         locationId: values.locationId,
         toLocationId: values.toLocationId,
+        transitLocationId,
         lines: normalizedLines.map((l, i) => {
           const item = l.itemId ? itemMap.get(l.itemId) : undefined;
           // Stock value for sales is the item's cost, not the selling price.
@@ -766,6 +771,88 @@ export async function cancelVoucher(db: DB, firmId: number, id: number, userId: 
       before: v,
       ip,
     });
+  });
+}
+
+export interface ReceiveLineInput {
+  lineId: number;
+  /** In the line's own unit (same as the line's qtyMilli), not necessarily the item's base unit. */
+  receivedQtyMilli: number;
+  damagedQtyMilli: number;
+}
+
+/**
+ * The destination confirms what actually arrived. Moves stock out of the "in transit" location:
+ * the received amount lands at the destination, the damaged amount at the firm's "damaged goods"
+ * location, and anything neither received nor damaged (lost or short) simply isn't posted anywhere
+ * — a permanent reduction in stock on hand, which (since stock value is derived from the ledger,
+ * not tracked separately) shows up as extra cost of goods sold for the period on its own.
+ */
+export async function receiveTransfer(db: DB, firmId: number, voucherId: number, userId: number, lineInputs: ReceiveLineInput[], receiveNotes: string | null, ip?: string | null) {
+  return db.transaction(async (tx) => {
+    const [v] = await tx.select().from(vouchers).where(and(eq(vouchers.id, voucherId), eq(vouchers.firmId, firmId))).for("update");
+    if (!v || v.status !== "active" || v.type !== "stock_transfer") throw new VoucherError("This transfer no longer exists.");
+    if (v.receivedAt) throw new VoucherError("This transfer has already been received.");
+    if (!v.toLocationId) throw new VoucherError("This transfer has no destination.");
+    const [transitLocationId, damagedLocationId] = await Promise.all([systemLocationId(tx, firmId, "transit"), systemLocationId(tx, firmId, "damaged")]);
+    if (!transitLocationId) throw new VoucherError("Set up an In transit location first.");
+
+    const vLines = await tx.select().from(voucherLines).where(eq(voucherLines.voucherId, voucherId)).orderBy(asc(voucherLines.lineNo));
+    const byId = new Map(lineInputs.map((l) => [l.lineId, l]));
+    const stockRows: (typeof stockLedger.$inferInsert)[] = [];
+    const lineUpdates: { id: number; receivedQtyMilli: number; damagedQtyMilli: number }[] = [];
+    const today = todayIST();
+    let anyDamaged = false;
+
+    for (const l of vLines) {
+      if (!l.itemId) continue; // a description-only line never moved stock
+      const input = byId.get(l.id);
+      if (!input) throw new VoucherError(`Missing received/damaged quantity for "${l.description}".`);
+      if (input.receivedQtyMilli < 0 || input.damagedQtyMilli < 0) throw new VoucherError(`Quantities can't be negative, on "${l.description}".`);
+      if (input.receivedQtyMilli + input.damagedQtyMilli > l.qtyMilli) {
+        throw new VoucherError(`Received + damaged is more than the ${formatQty(l.qtyMilli)} sent, on "${l.description}".`);
+      }
+      const sentBase = baseQty({ qtyMilli: l.qtyMilli, unitFactorMilli: l.unitFactorMilli });
+      const receivedBase = baseQty({ qtyMilli: input.receivedQtyMilli, unitFactorMilli: l.unitFactorMilli });
+      const damagedBase = baseQty({ qtyMilli: input.damagedQtyMilli, unitFactorMilli: l.unitFactorMilli });
+      const valuePerBase = sentBase > 0 ? l.taxablePaise / sentBase : 0;
+      const receivedValue = Math.round(valuePerBase * receivedBase);
+      const damagedValue = Math.round(valuePerBase * damagedBase);
+
+      // The full amount sent leaves transit, whatever the split — a shortage doesn't stay parked there.
+      stockRows.push({ source: "voucher", voucherId, lineId: l.id, itemId: l.itemId, locationId: transitLocationId, date: today, qtyMilli: -sentBase, valuePaise: -l.taxablePaise, batchNo: l.batchNo, expiryDate: l.expiryDate });
+      if (receivedBase > 0) {
+        stockRows.push({ source: "voucher", voucherId, lineId: l.id, itemId: l.itemId, locationId: v.toLocationId, date: today, qtyMilli: receivedBase, valuePaise: receivedValue, batchNo: l.batchNo, expiryDate: l.expiryDate });
+      }
+      if (damagedBase > 0) {
+        if (!damagedLocationId) throw new VoucherError("Set up a Damaged goods location first.");
+        anyDamaged = true;
+        stockRows.push({ source: "voucher", voucherId, lineId: l.id, itemId: l.itemId, locationId: damagedLocationId, date: today, qtyMilli: damagedBase, valuePaise: damagedValue, batchNo: l.batchNo, expiryDate: l.expiryDate });
+      }
+      lineUpdates.push({ id: l.id, receivedQtyMilli: input.receivedQtyMilli, damagedQtyMilli: input.damagedQtyMilli });
+    }
+
+    if (stockRows.length) await tx.insert(stockLedger).values(stockRows);
+    for (const u of lineUpdates) {
+      await tx.update(voucherLines).set({ receivedQtyMilli: u.receivedQtyMilli, damagedQtyMilli: u.damagedQtyMilli }).where(eq(voucherLines.id, u.id));
+    }
+    const notes = receiveNotes ? `${v.notes ? `${v.notes}\n\n` : ""}Received: ${receiveNotes}` : v.notes;
+    await tx.update(vouchers).set({ receivedAt: new Date(), receivedBy: userId, notes, updatedBy: userId, updatedAt: new Date() }).where(eq(vouchers.id, voucherId));
+
+    const shortBase = lineUpdates.reduce((s, u, i) => {
+      const l = vLines.find((x) => x.id === u.id)!;
+      return s + baseQty({ qtyMilli: l.qtyMilli, unitFactorMilli: l.unitFactorMilli }) - baseQty({ qtyMilli: u.receivedQtyMilli, unitFactorMilli: l.unitFactorMilli }) - baseQty({ qtyMilli: u.damagedQtyMilli, unitFactorMilli: l.unitFactorMilli });
+    }, 0);
+    await audit(tx, {
+      firmId,
+      userId,
+      action: "update",
+      entity: "voucher",
+      entityId: voucherId,
+      summary: `Received transfer ${voucherNumber(v)}${anyDamaged ? " (some damaged)" : ""}${shortBase > 0 ? ` (${formatQty(shortBase)} short)` : ""}`,
+      ip,
+    });
+    return { id: voucherId, number: voucherNumber(v) };
   });
 }
 
