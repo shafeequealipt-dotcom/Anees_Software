@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cancelVoucherAction, deleteVoucherAction, sendVoucherAction, shareLinkAction } from "@/app/actions/vouchers";
+import { ShareFileButton } from "./share-file-button";
 import { Alert, Button, buttonClass } from "./ui";
 
 export function VoucherActions({
@@ -107,6 +108,7 @@ export function VoucherActions({
             <Button size="sm" onClick={copyLink} disabled={busy}>
               {copied ? "Link copied" : "Copy link"}
             </Button>
+            <ShareFileButton url={`/api/vouchers/${id}/pdf?download=1`} filename={`bill-${id}.pdf`} title={share.text} text={share.text} />
           </>
         )}
         {receivePayment && !cancelled && (

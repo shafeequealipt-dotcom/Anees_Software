@@ -71,6 +71,13 @@ const AR: Record<string, string> = {
   "Shop:": "الفرع:",
   "From:": "من:",
   "To:": "إلى:",
+  Bills: "الفواتير",
+  "Gross sales": "إجمالي المبيعات",
+  "Net sales": "صافي المبيعات",
+  "Paid on bill": "مدفوع عند الفاتورة",
+  "Payments received": "المدفوعات المستلمة",
+  "All shops": "جميع الفروع",
+  "Daily Sales Report": "تقرير المبيعات اليومي",
 };
 
 /** Formats a label for the chosen language: "Total", "Total / الإجمالي" or "الإجمالي". */

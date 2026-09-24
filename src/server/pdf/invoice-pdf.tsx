@@ -1,25 +1,6 @@
-import path from "node:path";
-import { Document, Font, Image, Page, renderToBuffer, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, renderToBuffer, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { InvoiceModel } from "../invoice";
-
-const fontFile = (n: string) => path.join(process.cwd(), "assets", "fonts", n);
-Font.register({
-  family: "NotoSans",
-  fonts: [
-    { src: fontFile("NotoSans-Regular.ttf"), fontWeight: 400 },
-    { src: fontFile("NotoSans-Bold.ttf"), fontWeight: 700 },
-  ],
-});
-Font.register({
-  family: "Tajawal",
-  fonts: [
-    { src: fontFile("Tajawal-Regular.ttf"), fontWeight: 400 },
-    { src: fontFile("Tajawal-Bold.ttf"), fontWeight: 700 },
-  ],
-});
-Font.registerHyphenationCallback((w) => [w]);
-/** Latin text uses Noto Sans; anything Arabic falls through to Tajawal. */
-const FAMILY = ["NotoSans", "Tajawal"] as unknown as string;
+import { FAMILY, MM } from "./fonts";
 
 const ink = "#1a2230";
 const muted = "#5b6675";
@@ -306,8 +287,6 @@ function Sheet({ m }: { m: InvoiceModel }) {
 }
 
 // ─── Thermal receipt (58 mm / 80 mm) ─────────────────────────────────────────
-
-const MM = 72 / 25.4;
 
 function Receipt({ m }: { m: InvoiceModel }) {
   const mm = m.paper === "T58" ? 58 : 80;

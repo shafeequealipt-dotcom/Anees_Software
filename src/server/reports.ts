@@ -571,3 +571,122 @@ export async function globalSearch(db: DB, firmId: number, q: string, opts: { pa
   ]);
   return { parties: p, items: i, vouchers: nums(v, ["total_paise"]) };
 }
+
+// ─── Daily sales, per shop ────────────────────────────────────────────────────
+
+export interface DailySalesReport {
+  date: string;
+  locationId: number | null;
+  locationName: string | null;
+  bills: number;
+  grossSalesPaise: number;
+  discountPaise: number;
+  taxPaise: number;
+  returnCount: number;
+  returnsPaise: number;
+  netSalesPaise: number;
+  paidOnBillPaise: number;
+  paymentsReceivedPaise: number;
+  unpaidPaise: number;
+  byPaymentMode: { mode: string; amountPaise: number }[];
+  topItems: { itemId: number | null; name: string; qtyMilli: number; unitCode: string | null; amountPaise: number }[];
+  byStaff: { userId: number | null; name: string; bills: number; salesPaise: number; returnsPaise: number }[];
+}
+
+/** One shop's (or, with no locationId, the whole company's) sales for one day — the "daily sales" report and print-out. */
+export async function dailySalesReport(db: DB, firmId: number, date: string, locationId?: number): Promise<DailySalesReport> {
+  const locWhere = locationId ? sql`and v.location_id = ${locationId}` : sql``;
+  const [totals] = nums(
+    await rows<{ bills: number; gross: number; discount: number; tax: number; paid_on_bill: number; unpaid: number }>(
+      db,
+      sql`select count(*)::int as bills,
+            coalesce(sum(v.total_paise), 0) as gross,
+            coalesce(sum(v.discount_paise + v.bill_discount_paise), 0) as discount,
+            coalesce(sum(v.cgst_paise + v.sgst_paise + v.igst_paise + v.cess_paise), 0) as tax,
+            coalesce(sum(v.paid_paise), 0) as paid_on_bill,
+            coalesce(sum(${balanceExpr}), 0) as unpaid
+          from vouchers v
+          where v.firm_id = ${firmId} and v.type = 'sale_invoice' and v.status = 'active' and v.date = ${date} ${locWhere}`,
+    ),
+    ["bills", "gross", "discount", "tax", "paid_on_bill", "unpaid"],
+  );
+  const [returns] = nums(
+    await rows<{ n: number; amount: number }>(
+      db,
+      sql`select count(*)::int as n, coalesce(sum(v.total_paise), 0) as amount
+          from vouchers v
+          where v.firm_id = ${firmId} and v.type = 'credit_note' and v.status = 'active' and v.date = ${date} ${locWhere}`,
+    ),
+    ["n", "amount"],
+  );
+  const [paymentsIn] = nums(
+    await rows<{ amount: number }>(
+      db,
+      sql`select coalesce(sum(v.total_paise), 0) as amount
+          from vouchers v
+          where v.firm_id = ${firmId} and v.type = 'payment_in' and v.status = 'active' and v.date = ${date} ${locWhere}`,
+    ),
+    ["amount"],
+  );
+  const byPaymentMode = nums(
+    await rows<{ mode: string; amount: number }>(
+      db,
+      sql`select coalesce(nullif(v.payment_mode, ''), 'Cash') as mode, sum(amt) as amount from (
+            select payment_mode, paid_paise as amt, location_id, firm_id, date, status, type from vouchers where type = 'sale_invoice' and paid_paise > 0
+            union all
+            select payment_mode, total_paise as amt, location_id, firm_id, date, status, type from vouchers where type = 'payment_in'
+          ) v
+          where v.firm_id = ${firmId} and v.status = 'active' and v.date = ${date} ${locWhere}
+          group by 1 order by amount desc`,
+    ),
+    ["amount"],
+  );
+  const topItems = nums(
+    await rows<{ item_id: number | null; name: string; qty_milli: number; unit_code: string | null; amount: number }>(
+      db,
+      sql`select l.item_id, coalesce(i.name, l.description) as name, sum(l.qty_milli * l.unit_factor_milli / 1000) as qty_milli, max(u.code) as unit_code, sum(l.total_paise) as amount
+          from voucher_lines l
+          join vouchers v on v.id = l.voucher_id
+          left join items i on i.id = l.item_id
+          left join units u on u.id = i.unit_id
+          where v.firm_id = ${firmId} and v.type = 'sale_invoice' and v.status = 'active' and v.date = ${date} ${locWhere}
+          group by l.item_id, coalesce(i.name, l.description)
+          order by amount desc limit 10`,
+    ),
+    ["qty_milli", "amount"],
+  );
+  const byStaff = nums(
+    await rows<{ user_id: number | null; name: string; bills: number; sales: number; returns: number }>(
+      db,
+      sql`select v.created_by as user_id, coalesce(u.name, 'Unknown') as name,
+            count(*) filter (where v.type = 'sale_invoice')::int as bills,
+            coalesce(sum(v.total_paise) filter (where v.type = 'sale_invoice'), 0) as sales,
+            coalesce(sum(v.total_paise) filter (where v.type = 'credit_note'), 0) as returns
+          from vouchers v
+          left join users u on u.id = v.created_by
+          where v.firm_id = ${firmId} and v.type in ('sale_invoice', 'credit_note') and v.status = 'active' and v.date = ${date} ${locWhere}
+          group by v.created_by, u.name
+          order by sales desc`,
+    ),
+    ["bills", "sales", "returns"],
+  );
+  const [loc] = locationId ? await rows<{ name: string }>(db, sql`select name from locations where id = ${locationId} and firm_id = ${firmId}`) : [];
+  return {
+    date,
+    locationId: locationId ?? null,
+    locationName: loc?.name ?? null,
+    bills: totals?.bills ?? 0,
+    grossSalesPaise: totals?.gross ?? 0,
+    discountPaise: totals?.discount ?? 0,
+    taxPaise: totals?.tax ?? 0,
+    returnCount: returns?.n ?? 0,
+    returnsPaise: returns?.amount ?? 0,
+    netSalesPaise: (totals?.gross ?? 0) - (returns?.amount ?? 0),
+    paidOnBillPaise: totals?.paid_on_bill ?? 0,
+    paymentsReceivedPaise: paymentsIn?.amount ?? 0,
+    unpaidPaise: totals?.unpaid ?? 0,
+    byPaymentMode: byPaymentMode.map((r) => ({ mode: r.mode, amountPaise: r.amount })),
+    topItems: topItems.map((r) => ({ itemId: r.item_id, name: r.name, qtyMilli: r.qty_milli, unitCode: r.unit_code, amountPaise: r.amount })),
+    byStaff: byStaff.map((r) => ({ userId: r.user_id, name: r.name, bills: r.bills, salesPaise: r.sales, returnsPaise: r.returns })),
+  };
+}
