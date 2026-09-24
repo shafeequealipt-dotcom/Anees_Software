@@ -69,6 +69,13 @@ describe("canSeeVoucher", () => {
     expect(canSeeVoucher(u, { locationId: null, createdBy: u.id })).toBe(true);
     expect(canSeeVoucher(u, { locationId: null, createdBy: u.id + 1 })).toBe(false);
   });
+
+  it("a stock transfer is visible from either end, not just the sender", () => {
+    const u = { ...shopUser(), locations: [{ id: shopId, name: "Main shop", kind: "shop" as const }] };
+    expect(canSeeVoucher(u, { locationId: warehouseId, toLocationId: shopId, createdBy: 999 })).toBe(true);
+    expect(canSeeVoucher(u, { locationId: shopId, toLocationId: warehouseId, createdBy: 999 })).toBe(true);
+    expect(canSeeVoucher(u, { locationId: warehouseId, toLocationId: warehouseId, createdBy: 999 })).toBe(false);
+  });
 });
 
 describe("shop-scoped listings", () => {
@@ -87,6 +94,14 @@ describe("shop-scoped listings", () => {
 
     const unrestricted = await listVouchers(db, firmId, { types: ["sale_invoice"] });
     expect(unrestricted.map((v) => v.id)).toEqual(expect.arrayContaining([shopSaleId, warehouseSaleId]));
+  });
+
+  it("listVouchers shows a stock transfer to a user restricted to the receiving shop, not just the sender", async () => {
+    const xfer = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-01", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 1_000, ratePaise: 0 }] }, staffId);
+    const shopOnly = await listVouchers(db, firmId, { types: ["stock_transfer"], locationIds: [shopId], createdBy: staffId });
+    expect(shopOnly.map((v) => v.id)).toContain(xfer.id);
+    const warehouseOnly = await listVouchers(db, firmId, { types: ["stock_transfer"], locationIds: [warehouseId], createdBy: staffId });
+    expect(warehouseOnly.map((v) => v.id)).toContain(xfer.id);
   });
 
   it("dayBook only shows a restricted user's own shop", async () => {

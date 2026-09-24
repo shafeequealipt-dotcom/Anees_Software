@@ -18,7 +18,7 @@ import { enqueue, partyChannel, processOutbox } from "@/server/notify/outbox";
 import { formatDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { whatsappLink } from "@/lib/phone";
-import { cancelVoucher, deleteVoucher, getVoucher, openBills, restoreVoucher, saveVoucher, VoucherError, type VoucherInput } from "@/server/vouchers";
+import { cancelVoucher, deleteVoucher, getVoucher, openBills, receiveTransfer, restoreVoucher, saveVoucher, VoucherError, type ReceiveLineInput, type VoucherInput } from "@/server/vouchers";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
 
@@ -36,15 +36,26 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
     if (["money_adjustment", "money_transfer", "other_income"].includes(input.type) && !can(user, "money.edit")) {
       throw new AuthError("You don't have permission to record this.");
     }
+    // The In transit location is never picked by hand. Damaged goods can only be picked as the
+    // location on a purchase return or a stock write-off — never as a transfer's from/to, and
+    // never on any other voucher type.
+    const damagedOk = ["debit_note", "stock_adjustment"].includes(input.type);
+    if (input.locationId === user.transitLocationId || (input.locationId === user.damagedLocationId && !damagedOk)) {
+      throw new AuthError("That location can't be picked directly.");
+    }
+    if (input.toLocationId && (input.toLocationId === user.transitLocationId || input.toLocationId === user.damagedLocationId)) {
+      throw new AuthError("That location can't be picked directly.");
+    }
     if (!user.allLocations) {
       const mine = new Set(user.locations.map((l) => l.id));
-      if (input.locationId && !mine.has(input.locationId)) throw new AuthError("You don't have access to that shop.");
-      if (input.toLocationId && !mine.has(input.toLocationId)) throw new AuthError("You don't have access to that shop.");
+      if (input.locationId && input.locationId !== user.damagedLocationId && !mine.has(input.locationId)) throw new AuthError("You don't have access to that shop.");
+      // A transfer's destination isn't restricted to the sender's own shops — you can send
+      // anywhere, you just can't RECEIVE anywhere but your own shop (see receiveTransferAction).
       if (!input.locationId && user.locations[0]) input.locationId = user.locations[0].id;
     }
     const db = await getDb();
     if (input.id) {
-      const [v] = await db.select({ createdAt: vouchers.createdAt, locationId: vouchers.locationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, user.firmId)));
+      const [v] = await db.select({ createdAt: vouchers.createdAt, locationId: vouchers.locationId, toLocationId: vouchers.toLocationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, input.id), eq(vouchers.firmId, user.firmId)));
       if (v && !canSeeVoucher(user, v)) throw new AuthError("You don't have access to that entry.");
       if (!can(user, "vouchers.editOld")) {
         const created = v ? new Intl.DateTimeFormat("en-CA", { timeZone: region().timezone }).format(v.createdAt) : null;
@@ -98,11 +109,30 @@ export async function deleteVoucherAction(id: number): Promise<ActionResult> {
   }
 }
 
+/** Confirming receipt of a transfer is only for the destination's own shop — unlike sending, which anyone can do to any shop. */
+export async function receiveTransferAction(voucherId: number, lines: ReceiveLineInput[], notes: string | null): Promise<ActionResult<{ number: string }>> {
+  try {
+    const user = await assertUser("vouchers.edit");
+    const db = await getDb();
+    const existing = await getVoucher(db, user.firmId, voucherId);
+    if (!existing || existing.voucher.type !== "stock_transfer") throw new AuthError("This transfer no longer exists.");
+    if (!user.allLocations && !user.locations.some((l) => l.id === existing.voucher.toLocationId)) {
+      throw new AuthError("Only someone at the receiving shop can confirm this transfer.");
+    }
+    const r = await receiveTransfer(db, user.firmId, voucherId, user.id, lines, notes, await clientIp());
+    revalidatePath("/stock-transfers");
+    revalidatePath("/");
+    return { ok: true, number: r.number };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function restoreVoucherAction(id: number): Promise<ActionResult<{ number: string; path: string }>> {
   try {
     const user = await assertUser("vouchers.restore");
     const db = await getDb();
-    const [existing] = await db.select({ locationId: vouchers.locationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, user.firmId)));
+    const [existing] = await db.select({ locationId: vouchers.locationId, toLocationId: vouchers.toLocationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, user.firmId)));
     if (existing && !canSeeVoucher(user, existing)) throw new AuthError("You don't have access to that entry.");
     const r = await restoreVoucher(db, user.firmId, id, user.id, await clientIp());
     revalidatePath("/", "layout");
@@ -158,7 +188,7 @@ export async function shareLinkAction(voucherId: number): Promise<ActionResult<{
   try {
     const user = await assertUser();
     const db = await getDb();
-    const [own] = await db.select({ id: vouchers.id, locationId: vouchers.locationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, voucherId), eq(vouchers.firmId, user.firmId)));
+    const [own] = await db.select({ id: vouchers.id, locationId: vouchers.locationId, toLocationId: vouchers.toLocationId, createdBy: vouchers.createdBy }).from(vouchers).where(and(eq(vouchers.id, voucherId), eq(vouchers.firmId, user.firmId)));
     if (!own || !canSeeVoucher(user, own)) return { ok: false, error: "This entry no longer exists." };
     const [existing] = await db
       .select()

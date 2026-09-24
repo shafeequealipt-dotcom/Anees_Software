@@ -41,9 +41,11 @@ export interface VoucherRow {
 function locationAccessWhere(locationIds: number[] | undefined, createdBy: number | undefined): SQL | null {
   if (!locationIds) return null;
   if (locationIds.length === 0) return createdBy ? sql`v.location_id is null and v.created_by = ${createdBy}` : sql`false`;
+  const ids = sql.join(locationIds.map((id) => sql`${id}`), sql`, `);
+  // A stock transfer shows up for either end: the sender's shop and the receiving shop.
   return createdBy
-    ? sql`(v.location_id in (${sql.join(locationIds.map((id) => sql`${id}`), sql`, `)}) or (v.location_id is null and v.created_by = ${createdBy}))`
-    : sql`v.location_id in (${sql.join(locationIds.map((id) => sql`${id}`), sql`, `)})`;
+    ? sql`(v.location_id in (${ids}) or v.to_location_id in (${ids}) or (v.location_id is null and v.created_by = ${createdBy}))`
+    : sql`(v.location_id in (${ids}) or v.to_location_id in (${ids}))`;
 }
 
 export async function listVouchers(
