@@ -2,7 +2,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DB } from "@/db";
 import { firms, locations, stockLedger, voucherLines, vouchers } from "@/db/schema";
+import { loadInvoiceModel } from "@/server/invoice";
 import { saveItem } from "@/server/masters";
+import { renderInvoicePdf } from "@/server/pdf/invoice-pdf";
 import { dashboard } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
 import { cancelVoucher, receiveTransfer, saveVoucher } from "@/server/vouchers";
@@ -138,6 +140,31 @@ describe("editing and cancelling", () => {
     expect(await stockAt(widget, warehouseId)).toBe(before.wh);
     expect(await stockAt(widget, shopId)).toBe(before.shop);
     expect(await stockAt(widget, transitId)).toBe(before.transit);
+  });
+});
+
+describe("printed transfer note", () => {
+  it("shows From/To, sender/receiver, and any shortfall, and renders as a PDF", async () => {
+    const xfer = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-10", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 20_000, ratePaise: 0 }] }, 1);
+
+    const inTransit = (await loadInvoiceModel(db, firmId, xfer.id))!;
+    expect(inTransit.columns.transferStatus).toBe(false); // nothing to show yet
+    expect(inTransit.meta.map((m) => m.k)).toContain("Sent by");
+    expect(inTransit.meta.map((m) => m.k)).not.toContain("Received by");
+    expect(inTransit.lines[0]).toMatchObject({ received: "", damaged: "" });
+
+    const line = await firstLine(xfer.id);
+    await receiveTransfer(db, firmId, xfer.id, 1, [{ lineId: line.id, receivedQtyMilli: 15_000, damagedQtyMilli: 2_000 }], "3 short");
+
+    const received = (await loadInvoiceModel(db, firmId, xfer.id))!;
+    expect(received.columns.transferStatus).toBe(true);
+    expect(received.meta.map((m) => m.k)).toContain("Received by");
+    expect(received.lines[0]).toMatchObject({ received: "15", damaged: "2" });
+
+    const a4 = await renderInvoicePdf(received);
+    expect(a4.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    const thermal = await renderInvoicePdf({ ...received, paper: "T80" });
+    expect(thermal.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 });
 

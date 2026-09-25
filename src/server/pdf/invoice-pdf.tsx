@@ -59,7 +59,7 @@ function Sheet({ m }: { m: InvoiceModel }) {
   const modern = m.layout === "modern";
   const s = makeStyles(m.accent, modern);
   const c = m.columns;
-  const w = { no: 4, hsn: c.hsn ? 9 : 0, qty: 10, rate: 11, disc: c.discount ? 9 : 0, taxable: 12, taxrate: c.tax ? 7 : 0, tax: c.tax ? 10 : 0, total: 12 };
+  const w = { no: 4, hsn: c.hsn ? 9 : 0, qty: 10, rate: 11, disc: c.discount ? 9 : 0, taxable: 12, taxrate: c.tax ? 7 : 0, tax: c.tax ? 10 : 0, received: c.transferStatus ? 10 : 0, damaged: c.transferStatus ? 10 : 0, total: 12 };
   const desc = 100 - Object.values(w).reduce((a, b) => a + b, 0);
   const th = (t: string, ww: number | string, right?: boolean) => (
     <Cell s={s} w={ww} right={right}>
@@ -145,6 +145,8 @@ function Sheet({ m }: { m: InvoiceModel }) {
               {th(m.ui.Taxable, w.taxable, true)}
               {c.tax && th(m.ui["Tax %"], w.taxrate, true)}
               {c.tax && th(m.ui.Tax, w.tax, true)}
+              {c.transferStatus && th(m.ui.Received, w.received, true)}
+              {c.transferStatus && th(m.ui.Damaged, w.damaged, true)}
               {th(m.ui.Amount, w.total, true)}
             </View>
             {m.lines.map((l, i) => (
@@ -161,6 +163,8 @@ function Sheet({ m }: { m: InvoiceModel }) {
                 <Cell s={s} w={w.taxable} right>{l.taxable}</Cell>
                 {c.tax && <Cell s={s} w={w.taxrate} right>{l.taxRate}</Cell>}
                 {c.tax && <Cell s={s} w={w.tax} right>{l.tax}</Cell>}
+                {c.transferStatus && <Cell s={s} w={w.received} right>{l.received}</Cell>}
+                {c.transferStatus && <Cell s={s} w={w.damaged} right>{l.damaged}</Cell>}
                 <Cell s={s} w={w.total} right bold>{l.total}</Cell>
               </View>
             ))}
@@ -303,7 +307,7 @@ function Receipt({ m }: { m: InvoiceModel }) {
     logo: { maxHeight: 40, maxWidth: (mm - 4) * MM * 0.7, objectFit: "contain", alignSelf: "center", marginBottom: 3 },
     qr: { width: wide ? 90 : 70, height: wide ? 90 : 70, alignSelf: "center", marginTop: 4 },
   });
-  const height = 150 + m.lines.length * (wide ? 30 : 38) + m.totals.length * 13 + m.meta.length * 11 + (m.qr ? 110 : 0) + (m.terms ? 50 : 0) + m.seller.lines.length * 11 + (m.taxSummary.length ? 40 + m.taxSummary.length * 12 : 0) + (m.words.length / (wide ? 40 : 28)) * 11;
+  const height = 150 + m.lines.length * (wide ? 30 : 38) + m.totals.length * 13 + m.meta.length * 11 + (m.qr ? 110 : 0) + (m.terms ? 50 : 0) + m.seller.lines.length * 11 + (m.taxSummary.length ? 40 + m.taxSummary.length * 12 : 0) + (m.words.length / (wide ? 40 : 28)) * 11 + m.lines.filter((l) => l.received || l.damaged).length * 11;
 
   return (
     <Document title={m.title} author={m.seller.name}>
@@ -352,6 +356,12 @@ function Receipt({ m }: { m: InvoiceModel }) {
                 </Text>
                 <Text style={s.bold}>{l.total}</Text>
               </View>
+              {(l.received || l.damaged) && (
+                <Text>
+                  {m.ui.Received}: {l.received || "0"}
+                  {l.damaged ? `  ${m.ui.Damaged}: ${l.damaged}` : ""}
+                </Text>
+              )}
             </View>
           ))
         ) : (

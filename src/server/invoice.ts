@@ -2,12 +2,12 @@ import "server-only";
 import { and, eq, inArray } from "drizzle-orm";
 import QRCode from "qrcode";
 import type { DB } from "@/db";
-import { accounts, firms, items, parties } from "@/db/schema";
+import { accounts, firms, items, parties, users } from "@/db/schema";
 import { listLocations } from "./locations";
 import { amountInWords } from "@/lib/amount-in-words";
 import { amountInWordsArabic } from "@/lib/arabic";
 import { type InvoiceLanguage, labeller, resolveLanguage } from "@/lib/invoice-labels";
-import { formatDate } from "@/lib/dates";
+import { formatDate, formatDateTime } from "@/lib/dates";
 import { stateName } from "@/lib/gst/states";
 import { formatMoney, formatPercent, formatQty } from "@/lib/money";
 import { setRegion, taxColumnLabels } from "@/lib/region";
@@ -39,8 +39,8 @@ export interface InvoiceModel {
   seller: { name: string; nameAr: string | null; lines: string[]; linesAr: string[]; taxIdLabel: string; taxId: string | null };
   meta: { k: string; v: string }[];
   party: { heading: string; name: string; nameAr: string | null; lines: string[]; linesAr: string[]; taxId: string | null; taxIdLabel: string };
-  columns: { hsn: boolean; discount: boolean; tax: boolean };
-  lines: { no: string; desc: string; descAr: string | null; hsn: string; qty: string; rate: string; discount: string; taxable: string; taxRate: string; tax: string; total: string }[];
+  columns: { hsn: boolean; discount: boolean; tax: boolean; transferStatus: boolean };
+  lines: { no: string; desc: string; descAr: string | null; hsn: string; qty: string; rate: string; discount: string; taxable: string; taxRate: string; tax: string; total: string; received: string; damaged: string }[];
   taxSummary: { rate: string; taxable: string; cgst: string; sgst: string; igst: string; total: string }[];
   taxLabels: { cgst: string; sgst: string; igst: string };
   split: boolean;
@@ -71,6 +71,8 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
   const itemAr = itemIds.length ? new Map((await db.select({ id: items.id, ar: items.nameAr }).from(items).where(and(eq(items.firmId, firmId), inArray(items.id, itemIds)))).map((r) => [r.id, r.ar])) : new Map<number, string | null>();
   const images = await imageDataUrls(db, firmId);
   const [account] = v.accountId ? await db.select().from(accounts).where(eq(accounts.id, v.accountId)) : [];
+  const [sentBy] = v.type === "stock_transfer" && v.createdBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.createdBy)) : [];
+  const [receivedBy] = v.type === "stock_transfer" && v.receivedBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.receivedBy)) : [];
   // Only worth printing once there's more than one shop/warehouse to tell apart.
   const allLocations = await listLocations(db, firmId);
   const shopLocation = allLocations.length > 1 && v.locationId ? allLocations.find((l) => l.id === v.locationId) : undefined;
@@ -148,6 +150,11 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
   add(L("Transport"), v.transportName);
   add("E-way bill", v.ewayBillNo);
   if (v.reverseCharge) add(L("Reverse charge"), "Yes");
+  if (v.type === "stock_transfer") {
+    add(L("Sent by"), sentBy ? `${sentBy.name}, ${formatDateTime(v.createdAt)}` : formatDateTime(v.createdAt));
+    if (v.receivedAt) add(L("Received by"), receivedBy ? `${receivedBy.name}, ${formatDateTime(v.receivedAt)}` : formatDateTime(v.receivedAt));
+    else add(L("Status"), L("In transit"));
+  }
 
   const partyModel = {
     heading: L(info.partySide === "supplier" ? "Supplier" : v.type === "delivery_challan" ? "Deliver to" : "Bill to"),
@@ -171,6 +178,8 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
     taxRate: l.gstBp ? formatPercent(l.gstBp + l.cessBp) : "",
     tax: l.cgstPaise + l.sgstPaise + l.igstPaise + l.cessPaise ? money(l.cgstPaise + l.sgstPaise + l.igstPaise + l.cessPaise) : "",
     total: money(l.totalPaise),
+    received: v.type === "stock_transfer" && v.receivedAt && l.receivedQtyMilli != null ? `${formatQty(l.receivedQtyMilli)}${l.unitCode ? ` ${l.unitCode}` : ""}` : "",
+    damaged: v.type === "stock_transfer" && v.receivedAt && l.damagedQtyMilli ? `${formatQty(l.damagedQtyMilli)}${l.unitCode ? ` ${l.unitCode}` : ""}` : "",
   }));
 
   const groups = new Map<string, { bp: number; taxable: number; cgst: number; sgst: number; igst: number; total: number }>();
@@ -239,7 +248,7 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
     seller,
     meta,
     party: partyModel,
-    columns: { hsn: R.usesHsn && data.lines.some((l) => !!l.hsn), discount: data.lines.some((l) => l.lineDiscountPaise + l.billDiscountPaise > 0), tax: hasTax },
+    columns: { hsn: R.usesHsn && data.lines.some((l) => !!l.hsn), discount: data.lines.some((l) => l.lineDiscountPaise + l.billDiscountPaise > 0), tax: hasTax, transferStatus: v.type === "stock_transfer" && !!v.receivedAt },
     lines,
     taxSummary: hasTax ? taxSummary : [],
     taxLabels: { cgst: TL.cgst, sgst: TL.sgst, igst: TL.igst },
@@ -248,7 +257,7 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
     words: language === "ar" && R.country === "SA" ? amountInWordsArabic(v.totalPaise) : amountInWords(v.totalPaise),
     wordsAr: language === "bilingual" && R.country === "SA" ? amountInWordsArabic(v.totalPaise) : null,
     language,
-    ui: Object.fromEntries(["Amounts in", "Item", "Qty", "Rate", "Discount", "Taxable", "Tax %", "Tax", "Amount", "HSN", "Amount in words", "Total tax", "Bank details", "Authorised signatory", "Terms and conditions", "Notes", "Page", "of", "Mode", "Reference", "Against bills", "Thank you!", "ZATCA QR code"].map((k) => [k, L(k)])),
+    ui: Object.fromEntries(["Amounts in", "Item", "Qty", "Rate", "Discount", "Taxable", "Tax %", "Tax", "Amount", "HSN", "Amount in words", "Total tax", "Bank details", "Authorised signatory", "Terms and conditions", "Notes", "Page", "of", "Mode", "Reference", "Against bills", "Thank you!", "ZATCA QR code", "Received", "Damaged"].map((k) => [k, L(k)])),
     bank,
     qr: zatca ? { src: zatca, caption: L("ZATCA QR code") } : upi ? { src: upi, caption: "Scan to pay (UPI)" } : null,
     terms: v.terms || (info.outward && info.takesPayment ? firm.invoiceTerms : null),
