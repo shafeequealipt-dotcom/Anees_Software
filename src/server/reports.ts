@@ -4,6 +4,7 @@ import type { DB } from "@/db";
 import type { VoucherType } from "@/db/schema";
 import { nums, rows } from "@/db/query";
 import { addDays, monthRange, todayIST } from "@/lib/dates";
+import { region } from "@/lib/region";
 import { depreciationBetween } from "./gl";
 
 const settleable = sql`v.type in ('sale_invoice','purchase_bill','credit_note','debit_note','expense','other_income')`;
@@ -419,7 +420,7 @@ export async function transfersReport(db: DB, firmId: number, from: string, to: 
           join voucher_lines vl on vl.voucher_id = v.id
           join locations l on l.id = v.to_location_id
           where v.firm_id = ${firmId} and v.type = 'stock_transfer' and v.status = 'active' and v.received_at is not null
-            and v.received_at::date between ${from} and ${to}
+            and (v.received_at at time zone ${region().timezone})::date between ${from} and ${to}
           group by v.to_location_id, l.name, l.sort
           having sum(coalesce(vl.damaged_qty_milli, 0)) > 0 or sum(greatest(vl.qty_milli - coalesce(vl.received_qty_milli, 0) - coalesce(vl.damaged_qty_milli, 0), 0)) > 0
           order by l.sort`,
