@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS = {
   allowNegativeStock: true,
   creditLimitMode: "warn" as "off" | "warn" | "block",
   showLowStockWarning: true,
+  /** Whole units. Used for any item (or item+shop) that doesn't have its own low-stock level set. */
+  defaultLowStock: 5,
   defaultPriceIncludesTax: false,
   lineDiscount: true,
   billDiscount: true,

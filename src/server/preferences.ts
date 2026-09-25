@@ -9,6 +9,7 @@ import { MasterError } from "./masters";
 export const preferencesSchema = z.object({
   creditLimitMode: z.enum(["off", "warn", "block"]),
   allowNegativeStock: z.boolean(),
+  defaultLowStock: z.number().int().min(0).max(1_000_000),
   roundOff: z.boolean(),
   lineDiscount: z.boolean(),
   billDiscount: z.boolean(),

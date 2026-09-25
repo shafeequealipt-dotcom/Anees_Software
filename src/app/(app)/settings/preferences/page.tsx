@@ -13,6 +13,7 @@ export default async function PreferencesPage() {
       initial={{
         creditLimitMode: s.creditLimitMode,
         allowNegativeStock: s.allowNegativeStock,
+        defaultLowStock: s.defaultLowStock,
         roundOff: s.roundOff,
         lineDiscount: s.lineDiscount,
         billDiscount: s.billDiscount,

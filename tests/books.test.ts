@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "@/db";
 import { accounts, firms, items, taxRates, units } from "@/db/schema";
 import { financialYear, todayIST } from "@/lib/dates";
+import { saveSettings } from "@/lib/settings";
 import { accountSchema } from "@/server/masters";
 import { saveAccount, saveItem, saveParty } from "@/server/masters";
 import { accountStatement, dashboard, dayBook, itemSales, listVouchers, partyBalances, partyStatement, profitAndLoss, stockSummary } from "@/server/reports";
@@ -360,5 +361,27 @@ describe("double-entry books", () => {
     await rebuildGl(db, firmId);
     expect(JSON.stringify((await trialBalance(db, firmId, asOf)).map((r) => [r.name, r.debit, r.credit]))).toBe(before);
     await check();
+  });
+});
+
+describe("default low-stock level", () => {
+  it("flags an item with no level of its own using the firm's default, including at exactly zero", async () => {
+    const stapler = await saveItem(db, firmId, { name: "Stapler", unitId: pcs, salePricePaise: 4_000, purchasePricePaise: 2_000 }, 1);
+    await saveVoucher(db, firmId, { type: "stock_adjustment", date: "2026-09-22", direction: 1, lines: [{ itemId: stapler, description: "Stapler", qtyMilli: 3_000, ratePaise: 2_000 }] }, 1);
+
+    // Default level is 5: 3 in stock counts as low even though the item itself has no level set.
+    expect((await stockSummary(db, firmId, { lowOnly: true })).map((s) => s.id)).toContain(stapler);
+
+    // Raising stock above the default clears it.
+    await saveVoucher(db, firmId, { type: "stock_adjustment", date: "2026-09-22", direction: 1, lines: [{ itemId: stapler, description: "Stapler", qtyMilli: 10_000, ratePaise: 2_000 }] }, 1);
+    expect((await stockSummary(db, firmId, { lowOnly: true })).map((s) => s.id)).not.toContain(stapler);
+
+    // With the default set to 0, only a genuinely empty item is flagged — this was the original bug: a min level of 0 used to mean "never low" instead of "low at zero".
+    await saveSettings(db, firmId, { defaultLowStock: 0 });
+    expect((await stockSummary(db, firmId, { lowOnly: true })).map((s) => s.id)).not.toContain(stapler);
+    await saveVoucher(db, firmId, { type: "stock_adjustment", date: "2026-09-22", direction: -1, lines: [{ itemId: stapler, description: "Stapler", qtyMilli: 13_000, ratePaise: 2_000 }] }, 1);
+    expect((await stockSummary(db, firmId, { lowOnly: true })).map((s) => s.id)).toContain(stapler);
+
+    await saveSettings(db, firmId, { defaultLowStock: 5 });
   });
 });

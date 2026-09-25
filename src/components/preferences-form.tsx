@@ -10,6 +10,7 @@ import { Alert, Button, Checkbox, Field, Input, Panel, Select, Textarea } from "
 interface Values {
   creditLimitMode: "off" | "warn" | "block";
   allowNegativeStock: boolean;
+  defaultLowStock: number;
   roundOff: boolean;
   lineDiscount: boolean;
   billDiscount: boolean;
@@ -62,6 +63,15 @@ export function PreferencesForm({ initial, india }: { initial: Values; india: bo
           <Checkbox label="Prices include tax by default" checked={v.defaultPriceIncludesTax} onChange={(e) => set("defaultPriceIncludesTax", e.target.checked)} />
           <Checkbox label="Show MRP on bills" checked={v.showMrp} onChange={(e) => set("showMrp", e.target.checked)} />
           <Checkbox label="Allow selling more than is in stock" checked={v.allowNegativeStock} onChange={(e) => set("allowNegativeStock", e.target.checked)} />
+          <Field label="Default low-stock level" hint="Used for any item (or item at a shop) that doesn't have its own level set on the item page. Set to 0 to only flag items that hit exactly zero.">
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              value={v.defaultLowStock}
+              onChange={(e) => set("defaultLowStock", Math.max(0, Math.round(Number(e.target.value) || 0)))}
+            />
+          </Field>
           {india && <Checkbox label="Use TCS and TDS on bills (tax collected / deducted at source)" checked={v.tdsTcsEnabled} onChange={(e) => set("tdsTcsEnabled", e.target.checked)} className="sm:col-span-2" />}
           <Field label="When a customer goes over their credit limit" className="sm:col-span-2" hint="Set each customer's limit on their party page.">
             <Select value={v.creditLimitMode} onChange={(e) => set("creditLimitMode", e.target.value as Values["creditLimitMode"])}>

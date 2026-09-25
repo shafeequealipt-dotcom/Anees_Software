@@ -16,6 +16,7 @@ import { can } from "@/lib/permissions";
 import { region } from "@/lib/region";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { itemMovements, stockByLocation } from "@/server/reports";
+import { getSettings } from "@/lib/settings";
 
 export const metadata = { title: "Item" };
 
@@ -36,7 +37,9 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();
   const mv = isGoods ? await itemMovements(db, item.id, from, to) : null;
-  const low = isGoods && item.minStockMilli > 0 && (mv?.closingMilli ?? 0) <= item.minStockMilli;
+  const defaultLowMilli = (await getSettings(db, user.firmId)).defaultLowStock * 1000;
+  const effectiveMinMilli = item.minStockMilli > 0 ? item.minStockMilli : defaultLowMilli;
+  const low = isGoods && (mv?.closingMilli ?? 0) <= effectiveMinMilli;
   const byLocation =
     isGoods && user.locations.length > 1
       ? (await stockByLocation(db, user.firmId, item.id)).filter(
@@ -73,7 +76,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
               {item.mrpPaise ? <Detail k="MRP" v={<Money paise={item.mrpPaise} />} /> : null}
               {tax && <Detail k="Tax rate" v={formatPercent(tax.gstBp)} />}
               {unit && <Detail k="Unit" v={altUnit ? `${unit.name} (also ${altUnit.name}, ${formatQty(item.altUnitFactorMilli ?? 0)}:1)` : unit.name} />}
-              {isGoods && item.minStockMilli > 0 && <Detail k="Low-stock alert" v={`${formatQty(item.minStockMilli)} ${unit?.code ?? ""}`} />}
+              {isGoods && <Detail k="Low-stock alert" v={`${formatQty(effectiveMinMilli)} ${unit?.code ?? ""}${item.minStockMilli > 0 ? "" : " (default)"}`} />}
               {item.location && <Detail k="Location" v={item.location} />}
               {item.trackBatches && <Detail k="Tracking" v="Batch & expiry" />}
               {item.trackSerials && <Detail k="Tracking" v="Serial numbers" />}
