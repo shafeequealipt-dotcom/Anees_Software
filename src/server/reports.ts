@@ -5,6 +5,7 @@ import type { VoucherType } from "@/db/schema";
 import { nums, rows } from "@/db/query";
 import { addDays, monthRange, todayIST } from "@/lib/dates";
 import { region } from "@/lib/region";
+import { getSettings } from "@/lib/settings";
 import { depreciationBetween } from "./gl";
 
 const settleable = sql`v.type in ('sale_invoice','purchase_bill','credit_note','debit_note','expense','other_income')`;
@@ -104,6 +105,7 @@ export async function listVouchers(
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
 export async function dashboard(db: DB, firmId: number, access?: { locationIds: number[]; createdBy: number }) {
+  const defaultLowMilli = (await getSettings(db, firmId)).defaultLowStock * 1000;
   const today = todayIST();
   const month = monthRange(today);
   const yearAgo = addDays(month.from, -335).slice(0, 8) + "01";
@@ -153,9 +155,11 @@ export async function dashboard(db: DB, firmId: number, access?: { locationIds: 
     await rows<{ n: number }>(
       db,
       sql`select count(*) as n from (
-            select i.id from items i left join stock_ledger s on s.item_id = i.id
-            where i.firm_id = ${firmId} and i.active and i.kind = 'goods' and i.min_stock_milli > 0
-            group by i.id having coalesce(sum(s.qty_milli), 0) <= i.min_stock_milli) t`,
+            select i.id, coalesce(nullif(i.min_stock_milli, 0), ${defaultLowMilli}) as min_stock_milli
+            from items i left join stock_ledger s on s.item_id = i.id
+            where i.firm_id = ${firmId} and i.active and i.kind = 'goods'
+            group by i.id, coalesce(nullif(i.min_stock_milli, 0), ${defaultLowMilli})
+            having coalesce(sum(s.qty_milli), 0) <= coalesce(nullif(i.min_stock_milli, 0), ${defaultLowMilli})) t`,
     ),
     ["n"],
   );
@@ -178,7 +182,22 @@ export async function dashboard(db: DB, firmId: number, access?: { locationIds: 
             coalesce(sum(v.total_paise) filter (where v.type = 'credit_note'), 0) as returns
           from locations l
           left join vouchers v on v.location_id = l.id and v.status = 'active' and v.type in ('sale_invoice', 'credit_note') and v.date = ${today}
-          where l.firm_id = ${firmId} and l.active
+          where l.firm_id = ${firmId} and l.active and l.kind in ('warehouse', 'shop')
+          group by l.id, l.name
+          order by l.sort, l.id`,
+    ),
+    ["bills", "sales", "returns"],
+  );
+  const monthByShop = nums(
+    await rows<{ location_id: number | null; location_name: string; bills: number; sales: number; returns: number }>(
+      db,
+      sql`select l.id as location_id, l.name as location_name,
+            count(*) filter (where v.type = 'sale_invoice')::int as bills,
+            coalesce(sum(v.total_paise) filter (where v.type = 'sale_invoice'), 0) as sales,
+            coalesce(sum(v.total_paise) filter (where v.type = 'credit_note'), 0) as returns
+          from locations l
+          left join vouchers v on v.location_id = l.id and v.status = 'active' and v.type in ('sale_invoice', 'credit_note') and v.date between ${month.from} and ${month.to}
+          where l.firm_id = ${firmId} and l.active and l.kind in ('warehouse', 'shop')
           group by l.id, l.name
           order by l.sort, l.id`,
     ),
@@ -205,6 +224,8 @@ export async function dashboard(db: DB, firmId: number, access?: { locationIds: 
     lowStock: lowStock.n,
     overdue,
     todayByShop: todayByShop.map((r) => ({ locationId: r.location_id!, locationName: r.location_name, bills: r.bills, salesPaise: r.sales, returnsPaise: r.returns, netPaise: r.sales - r.returns })),
+    monthByShop: monthByShop.map((r) => ({ locationId: r.location_id!, locationName: r.location_name, bills: r.bills, salesPaise: r.sales, returnsPaise: r.returns, netPaise: r.sales - r.returns })),
+    monthRange: month,
     pendingTransfers: pendingTransfers.n,
   };
 }
@@ -318,6 +339,7 @@ const costPerUnit = sql`case when i.purchase_price_includes_tax
 
 export async function stockSummary(db: DB, firmId: number, f: { asOf?: string; q?: string; categoryId?: number; lowOnly?: boolean; includeInactive?: boolean; locationId?: number } = {}) {
   const asOf = f.asOf ?? "9999-12-31";
+  const defaultLowMilli = (await getSettings(db, firmId)).defaultLowStock * 1000;
   const where: SQL[] = [sql`i.firm_id = ${firmId}`, sql`i.kind = 'goods'`];
   if (!f.includeInactive) where.push(sql`i.active`);
   if (f.categoryId) where.push(sql`i.category_id = ${f.categoryId}`);
@@ -349,7 +371,8 @@ export async function stockSummary(db: DB, firmId: number, f: { asOf?: string; q
   );
   for (const r of list) {
     r.stock_value_paise = Math.round((Math.max(0, r.qty_milli) * r.cost_per_unit_paise) / 1000);
-    r.low = r.min_stock_milli > 0 && r.qty_milli <= r.min_stock_milli;
+    if (r.min_stock_milli <= 0) r.min_stock_milli = defaultLowMilli;
+    r.low = r.qty_milli <= r.min_stock_milli;
   }
   return f.lowOnly ? list.filter((r) => r.low) : list;
 }

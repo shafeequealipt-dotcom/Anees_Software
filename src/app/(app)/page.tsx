@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MonthBars } from "@/components/bar-chart";
 import { ShareFileButton } from "@/components/share-file-button";
+import { ShopSalesChart } from "@/components/shop-sales-chart";
 import { Alert, LinkButton, Money, PageHeader, Panel, Stat, Table, td, th } from "@/components/ui";
 import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
@@ -34,6 +35,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   }
   const cashTotal = d.money.reduce((s, m) => s + m.balance, 0);
   const todayByShop = user.allLocations ? d.todayByShop : d.todayByShop.filter((s) => user.locations.some((l) => l.id === s.locationId));
+  const monthByShop = user.allLocations ? d.monthByShop : d.monthByShop.filter((s) => user.locations.some((l) => l.id === s.locationId));
+  const R = region();
+  const monthLabel = new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: R.timezone }).format(new Date(d.monthRange.from + "T00:00:00Z"));
 
   return (
     <>
@@ -115,37 +119,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </div>
 
       {todayByShop.length > 1 && (
-        <Panel title="Today by shop" padded={false} className="mt-4" actions={<Link href="/reports/daily-sales" className="text-xs text-brand-600">Daily sales report</Link>}>
-          <Table>
-            <thead>
-              <tr>
-                <th className={th}>Shop</th>
-                <th className={th + " text-right"}>Bills</th>
-                <th className={th + " text-right"}>Sales</th>
-                <th className={th + " text-right"}>Returns</th>
-                <th className={th + " text-right"}>Net</th>
-              </tr>
-            </thead>
-            <tbody>
-              {todayByShop.map((s) => (
-                <tr key={s.locationId} className="hover:bg-ground/60">
-                  <td className={td}>
-                    <Link href={`/reports/daily-sales?location=${s.locationId}`} className="text-brand-600 hover:underline">
-                      {s.locationName}
-                    </Link>
-                  </td>
-                  <td className={td + " text-right"}>{s.bills}</td>
-                  <td className={td + " text-right"}>
-                    <Money paise={s.salesPaise} />
-                  </td>
-                  <td className={td + " text-right"}>{s.returnsPaise > 0 ? <Money paise={s.returnsPaise} /> : "—"}</td>
-                  <td className={td + " text-right font-medium"}>
-                    <Money paise={s.netPaise} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+        <Panel title="Sales by shop" className="mt-4" actions={<Link href="/reports/daily-sales" className="text-xs text-brand-600">Daily sales report</Link>}>
+          <ShopSalesChart
+            today={todayByShop}
+            month={monthByShop}
+            todayDate={today}
+            monthFrom={d.monthRange.from}
+            monthTo={d.monthRange.to}
+            monthLabel={monthLabel}
+            currencySymbol={R.currencySymbol}
+            indianGrouping={R.indianGrouping}
+          />
         </Panel>
       )}
 
