@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { DB } from "@/db";
 import { rows, nums } from "@/db/query";
-import { accounts, firms, ledgerCategories, taxRates, vouchers, type VoucherType } from "@/db/schema";
+import { accounts, firms, ledgerCategories, locations, taxRates, vouchers, type VoucherType } from "@/db/schema";
 import { emptyPricing } from "@/lib/pricing";
 import { getSettings } from "@/lib/settings";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
@@ -121,7 +121,7 @@ export async function loadVoucherFormData(
   db: DB,
   firmId: number,
   type: VoucherType,
-  opts: { id?: number; fromId?: number; fromIds?: number[]; partyId?: number; toLocationId?: number },
+  opts: { id?: number; fromId?: number; fromIds?: number[]; partyId?: number; toLocationId?: number; locationId?: number },
   see: Visibility,
   myLocations: LocationOpt[] = [],
 ) {
@@ -141,6 +141,12 @@ export async function loadVoucherFormData(
   // A shop can send a transfer to ANY other location, not just ones the user is themselves
   // assigned to — so the "To" picker needs the firm's full location list, not `myLocations`.
   const transferLocations = type === "stock_transfer" ? await listLocations(db, firmId) : [];
+  // A purchase return or write-off is the only place the Damaged goods location can be picked —
+  // never assigned to a user, so it isn't in `myLocations` and has to be added in separately.
+  const [damagedLocation] =
+    type === "debit_note" || type === "stock_adjustment"
+      ? await db.select({ id: locations.id, name: locations.name }).from(locations).where(and(eq(locations.firmId, firmId), eq(locations.kind, "damaged"), eq(locations.active, true)))
+      : [];
 
   const existing = opts.id ? await getVoucher(db, firmId, opts.id) : null;
   const fromIds = [...new Set(opts.fromIds?.length ? opts.fromIds : opts.fromId ? [opts.fromId] : [])];
@@ -185,8 +191,10 @@ export async function loadVoucherFormData(
     presetPartyId: opts.partyId ?? null,
     locations: myLocations,
     transferLocations: transferLocations.map((l) => ({ id: l.id, name: l.name, kind: l.kind })),
+    damagedLocationId: damagedLocation?.id ?? null,
+    damagedLocationName: damagedLocation?.name ?? null,
     // Returns default to the shop the original bill was at, same as the server falls back to on save.
-    defaultLocationId: existing?.voucher.locationId ?? (isReturn ? sources[0]?.voucher.locationId : null) ?? myLocations[0]?.id ?? null,
+    defaultLocationId: opts.locationId ?? existing?.voucher.locationId ?? (isReturn ? sources[0]?.voucher.locationId : null) ?? myLocations[0]?.id ?? null,
     presetToLocationId: existing?.voucher.toLocationId ?? opts.toLocationId ?? null,
   };
 }

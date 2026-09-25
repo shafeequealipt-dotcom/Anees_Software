@@ -8,7 +8,7 @@ import { region, taxColumnLabels } from "@/lib/region";
 import { GST_STATES, stateName } from "@/lib/gst/states";
 import { formatINR, formatQty, toBasisPoints, toMilli, toPaise } from "@/lib/money";
 import { wantsLocation } from "@/lib/posting";
-import { RETURN_REASONS, VOUCHER_INFO } from "@/lib/voucher-types";
+import { RETURN_REASONS, SUPPLIER_RETURN_REASONS, VOUCHER_INFO } from "@/lib/voucher-types";
 import type { ItemOpt, PartyOpt, VoucherFormData } from "@/server/form-data";
 import { Combobox } from "./combobox";
 import { Alert, Button, Checkbox, cx, Field, Input, Money, PartyBalance, Select, Textarea } from "./ui";
@@ -154,6 +154,12 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const composition = data.firm?.gstScheme !== "regular" && info.outward;
   const isStockMove = data.type === "stock_adjustment" || data.type === "stock_transfer";
   const noTax = isStockMove || data.type === "delivery_challan" || withoutTax || composition;
+  // A purchase return or write-off can also be from the Damaged goods location — the only place
+  // it can be picked, since it isn't assigned to any user like a normal shop.
+  const shopOptions =
+    (data.type === "debit_note" || data.type === "stock_adjustment") && data.damagedLocationId
+      ? [...data.locations, { id: data.damagedLocationId, name: data.damagedLocationName ?? "Damaged goods", kind: "shop" as const }]
+      : data.locations;
 
   // Fill party details when a party is picked (new vouchers only)
   const pickParty = useCallback(
@@ -495,11 +501,11 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
           <Field label="Date">
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} max="2100-12-31" />
           </Field>
-          {wantsLocation(data.type) && data.locations.length > 1 && (
+          {wantsLocation(data.type) && shopOptions.length > 1 && (
             <Field label={data.type === "stock_transfer" ? "From" : "Shop"} className={data.type === "stock_transfer" ? "col-span-1" : "col-span-2"}>
               <Select value={locationId ?? ""} onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">Choose…</option>
-                {data.locations.map((l) => (
+                {shopOptions.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
                   </option>
@@ -542,7 +548,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               <Field label="Reason for return" className="col-span-2">
                 <Select value={returnReason} onChange={(e) => setReturnReason(e.target.value)}>
                   <option value="">Not specified</option>
-                  {RETURN_REASONS.map((r) => (
+                  {(data.type === "debit_note" ? SUPPLIER_RETURN_REASONS : RETURN_REASONS).map((r) => (
                     <option key={r.value} value={r.value}>
                       {r.label}
                     </option>

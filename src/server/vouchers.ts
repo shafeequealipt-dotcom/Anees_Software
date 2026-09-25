@@ -110,7 +110,7 @@ export const voucherSchema = z.object({
   originalInvoiceNo: optText(60),
   originalInvoiceDate: optDate,
   /** Sale/purchase returns: why the goods came back. */
-  returnReason: z.enum(["damaged", "wrong_item", "changed_mind", "quality", "other"]).nullish(),
+  returnReason: z.enum(["damaged", "wrong_item", "changed_mind", "quality", "other", "expired", "excess"]).nullish(),
   supplierInvoiceNo: optText(60),
   poNumber: optText(60),
   poDate: optDate,

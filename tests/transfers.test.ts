@@ -168,6 +168,24 @@ describe("printed transfer note", () => {
   });
 });
 
+describe("acting on damaged goods", () => {
+  it("can write off or return stock sitting at the Damaged goods location", async () => {
+    const xfer = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-11", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 10_000, ratePaise: 0 }] }, 1);
+    const line = await firstLine(xfer.id);
+    await receiveTransfer(db, firmId, xfer.id, 1, [{ lineId: line.id, receivedQtyMilli: 4_000, damagedQtyMilli: 6_000 }], null);
+    const before = await stockAt(widget, damagedId);
+    expect(before).toBeGreaterThanOrEqual(6_000);
+
+    // Write off half of it as unsellable.
+    await saveVoucher(db, firmId, { type: "stock_adjustment", date: "2026-09-11", direction: -1, locationId: damagedId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 3_000, ratePaise: 0 }] }, 1);
+    expect(await stockAt(widget, damagedId)).toBe(before - 3_000);
+
+    // Return the rest to the supplier.
+    await saveVoucher(db, firmId, { type: "debit_note", date: "2026-09-11", locationId: damagedId, returnReason: "damaged", lines: [{ itemId: widget, description: "Widget", qtyMilli: 3_000, ratePaise: 1_000 }] }, 1);
+    expect(await stockAt(widget, damagedId)).toBe(before - 6_000);
+  });
+});
+
 describe("pending transfer count", () => {
   it("counts unreceived transfers, scoped to the destination shop when restricted", async () => {
     const before = (await dashboard(db, firmId)).pendingTransfers;

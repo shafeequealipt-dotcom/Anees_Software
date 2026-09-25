@@ -54,7 +54,7 @@ export function voucherNumber(v: { prefix: string | null; number: number }): str
   return `${v.prefix ?? ""}${v.number}`;
 }
 
-/** Why goods came back on a sale/purchase return. */
+/** Why a customer brought goods back (credit notes). */
 export const RETURN_REASONS: { value: string; label: string }[] = [
   { value: "damaged", label: "Damaged" },
   { value: "wrong_item", label: "Wrong item sent" },
@@ -63,8 +63,20 @@ export const RETURN_REASONS: { value: string; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+/** Why goods are going back to a supplier (debit notes) — a different set of reasons than a customer return. */
+export const SUPPLIER_RETURN_REASONS: { value: string; label: string }[] = [
+  { value: "damaged", label: "Damaged" },
+  { value: "expired", label: "Expired" },
+  { value: "wrong_item", label: "Wrong item received" },
+  { value: "excess", label: "Excess / unsold stock" },
+  { value: "quality", label: "Quality issue" },
+  { value: "other", label: "Other" },
+];
+
+const ALL_RETURN_REASON_LABELS = new Map([...RETURN_REASONS, ...SUPPLIER_RETURN_REASONS].map((r) => [r.value, r.label]));
+
 export function returnReasonLabel(reason: string | null | undefined): string | null {
-  return reason ? (RETURN_REASONS.find((r) => r.value === reason)?.label ?? reason) : null;
+  return reason ? (ALL_RETURN_REASON_LABELS.get(reason) ?? reason) : null;
 }
 
 export function typeFromPath(section: string): VoucherType | null {
