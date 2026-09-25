@@ -68,7 +68,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-dvh overflow-hidden">
-      <div className="flex flex-col bg-brand-900 max-lg:contents">
+      <div className="flex flex-col bg-gradient-to-b from-[#241f63] via-brand-900 to-[#171341] max-lg:contents">
         <div className="no-print hidden border-b border-white/10 px-5 py-4 lg:block">
           <div className="truncate text-sm font-semibold text-white" title={name}>
             {name}
@@ -78,7 +78,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Nav groups={groups} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4 pl-24 lg:pl-4">
+        <header className="no-print flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4 pl-24 shadow-sm shadow-ink/[0.03] lg:pl-4">
           <GlobalSearch />
           <div className="ml-auto flex items-center gap-2">
             <CompanySwitcher current={user.firm} companies={user.firms} canManage={can(user, "companies.manage")} />
@@ -90,7 +90,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </Link>
             <details className="relative">
               <summary className="flex h-8 cursor-pointer list-none items-center gap-2 rounded-md px-2 text-sm hover:bg-ground">
-                <span className="flex size-7 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
+                <span className="flex size-7 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-semibold text-white shadow-sm">
                   {user.name.slice(0, 1).toUpperCase()}
                 </span>
                 <span className="max-md:hidden">{user.name}</span>

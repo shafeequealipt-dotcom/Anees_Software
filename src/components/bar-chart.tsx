@@ -32,7 +32,7 @@ export function MonthBars({ data }: { data: { month: string; a: number; b: numbe
               <rect x={cx - bw - 1} y={y(Math.max(0, d.a))} width={bw} height={Math.max(0, y(0) - y(Math.max(0, d.a)))} rx={2} fill="var(--color-brand-500)">
                 <title>{`${m}: sales ${formatINR(d.a)}`}</title>
               </rect>
-              <rect x={cx + 1} y={y(Math.max(0, d.b))} width={bw} height={Math.max(0, y(0) - y(Math.max(0, d.b)))} rx={2} fill="var(--color-brand-200)">
+              <rect x={cx + 1} y={y(Math.max(0, d.b))} width={bw} height={Math.max(0, y(0) - y(Math.max(0, d.b)))} rx={2} fill="var(--color-accent-500)">
                 <title>{`${m}: purchases ${formatINR(d.b)}`}</title>
               </rect>
               <text x={cx} y={H - 8} textAnchor="middle" fontSize={10} fill="var(--color-muted)">

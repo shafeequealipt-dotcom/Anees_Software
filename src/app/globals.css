@@ -4,27 +4,35 @@
   --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --color-ink: #16202b;
-  --color-muted: #5d6b79;
-  --color-faint: #8a96a3;
-  --color-line: #dde3e9;
-  --color-ground: #f4f6f8;
+  --color-ink: #191c2e;
+  --color-muted: #5c6178;
+  --color-faint: #8c92a8;
+  --color-line: #e2e4f0;
+  --color-ground: #f5f6fc;
   --color-panel: #ffffff;
 
-  --color-brand-50: #eef5fb;
-  --color-brand-100: #d7e8f5;
-  --color-brand-200: #aed0ea;
-  --color-brand-500: #2872b5;
-  --color-brand-600: #1f5f99;
-  --color-brand-700: #184c7b;
-  --color-brand-900: #0e2c47;
+  /* Primary: a livelier indigo-violet instead of the old muted steel blue. */
+  --color-brand-50: #eef1ff;
+  --color-brand-100: #e0e5ff;
+  --color-brand-200: #c7d0ff;
+  --color-brand-500: #5b56f0;
+  --color-brand-600: #4640df;
+  --color-brand-700: #3730b3;
+  --color-brand-900: #1e1a4d;
 
-  --color-good: #1d7a4d;
-  --color-good-bg: #e3f4ea;
-  --color-warn: #93600a;
-  --color-warn-bg: #fdf1d8;
-  --color-bad: #b42333;
-  --color-bad-bg: #fbe5e8;
+  /* Accent: a warm amber used sparingly against the indigo primary, for charts, highlights and the sidebar's active marker. */
+  --color-accent-50: #fff7ed;
+  --color-accent-100: #ffedd0;
+  --color-accent-200: #fed9a4;
+  --color-accent-500: #f5960f;
+  --color-accent-600: #d97b06;
+
+  --color-good: #0f8a52;
+  --color-good-bg: #e2f6ea;
+  --color-warn: #9c5f07;
+  --color-warn-bg: #fdefd6;
+  --color-bad: #c22147;
+  --color-bad-bg: #fce6ec;
 }
 
 html,

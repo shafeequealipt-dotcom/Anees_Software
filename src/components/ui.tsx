@@ -10,12 +10,12 @@ export function cx(...parts: (string | false | null | undefined)[]) {
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 const buttonBase =
-  "inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap";
+  "inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-all disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap active:scale-[0.98]";
 const buttonVariants: Record<Variant, string> = {
-  primary: "bg-brand-600 text-white hover:bg-brand-700 shadow-sm",
-  secondary: "bg-panel text-ink border border-line hover:bg-ground",
-  ghost: "text-muted hover:bg-ground hover:text-ink",
-  danger: "bg-panel text-bad border border-line hover:bg-bad-bg",
+  primary: "bg-gradient-to-b from-brand-500 to-brand-600 text-white shadow-sm shadow-brand-900/20 hover:from-brand-600 hover:to-brand-700 hover:shadow-md",
+  secondary: "bg-panel text-ink border border-line hover:border-brand-200 hover:bg-ground",
+  ghost: "text-muted hover:bg-ground hover:text-brand-700",
+  danger: "bg-panel text-bad border border-line hover:border-bad/40 hover:bg-bad-bg",
 };
 const buttonSizes = { sm: "h-8 px-2.5", md: "h-9 px-3.5", lg: "h-10 px-4" };
 
@@ -44,7 +44,7 @@ export function LinkButton({
 // ─── Form fields ─────────────────────────────────────────────────────────────
 
 export const inputClass =
-  "h-9 w-full rounded-md border border-line bg-panel px-2.5 text-sm text-ink placeholder:text-faint focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-ground disabled:text-muted";
+  "h-9 w-full rounded-md border border-line bg-panel px-2.5 text-sm text-ink placeholder:text-faint transition-shadow focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-ground disabled:text-muted";
 
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input {...props} className={cx(inputClass, className)} />;
@@ -118,7 +118,7 @@ export function PageHeader({ title, subtitle, actions, back }: { title: ReactNod
 
 export function Panel({ title, actions, children, className, padded = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={cx("rounded-lg border border-line bg-panel", className)}>
+    <section className={cx("rounded-lg border border-line bg-panel shadow-sm shadow-ink/[0.03]", className)}>
       {(title || actions) && (
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
           <h2 className="text-sm font-semibold text-ink">{title}</h2>
@@ -138,9 +138,9 @@ export function Stat({ label, value, tone, href, hint }: { label: string; value:
       {hint && <div className="mt-0.5 text-xs text-faint">{hint}</div>}
     </>
   );
-  const cls = "block rounded-lg border border-line bg-panel px-4 py-3";
+  const cls = "block rounded-lg border border-line bg-panel px-4 py-3 shadow-sm shadow-ink/[0.03] transition-all";
   return href ? (
-    <Link href={href} className={cx(cls, "hover:border-brand-200")}>
+    <Link href={href} className={cx(cls, "hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md")}>
       {body}
     </Link>
   ) : (
@@ -179,7 +179,7 @@ const badgeTones = {
 };
 
 export function Badge({ tone = "neutral", children }: { tone?: keyof typeof badgeTones; children: ReactNode }) {
-  return <span className={cx("inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", badgeTones[tone])}>{children}</span>;
+  return <span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold", badgeTones[tone])}>{children}</span>;
 }
 
 export function StatusBadge({ status }: { status: "paid" | "partial" | "unpaid" | "overdue" | "cancelled" | "open" | "converted" }) {
@@ -219,10 +219,10 @@ export function Empty({ title, children, action }: { title: string; children?: R
 
 export function Alert({ tone = "warn", children }: { tone?: "warn" | "bad" | "good" | "brand"; children: ReactNode }) {
   const tones = {
-    warn: "border-warn/30 bg-warn-bg text-warn",
-    bad: "border-bad/30 bg-bad-bg text-bad",
-    good: "border-good/30 bg-good-bg text-good",
-    brand: "border-brand-200 bg-brand-50 text-brand-700",
+    warn: "border-warn bg-warn-bg text-warn",
+    bad: "border-bad bg-bad-bg text-bad",
+    good: "border-good bg-good-bg text-good",
+    brand: "border-brand-500 bg-brand-50 text-brand-700",
   };
-  return <div className={cx("rounded-md border px-3 py-2 text-sm", tones[tone])}>{children}</div>;
+  return <div className={cx("rounded-md border-l-4 px-3 py-2 text-sm", tones[tone])}>{children}</div>;
 }

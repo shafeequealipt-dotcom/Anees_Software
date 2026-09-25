@@ -214,7 +214,7 @@ function Legend() {
   return (
     <div className="flex items-center gap-3 text-xs text-muted">
       <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-sm bg-brand-500" /> Sales</span>
-      <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-sm bg-brand-200" /> Purchases</span>
+      <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-sm bg-accent-500" /> Purchases</span>
     </div>
   );
 }
