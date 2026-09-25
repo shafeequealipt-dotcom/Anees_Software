@@ -41,7 +41,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
   const view = isTransfer ? (sp.view === "incoming" || sp.view === "outgoing" ? sp.view : "all") : "all";
   const visible =
     view === "incoming"
-      ? list.filter((r) => user.allLocations || (r.to_location_id != null && myLocationIds.has(r.to_location_id)))
+      ? list.filter((r) => r.status === "active" && !r.received_at && (user.allLocations || (r.to_location_id != null && myLocationIds.has(r.to_location_id))))
       : view === "outgoing"
         ? list.filter((r) => user.allLocations || (r.location_id != null && myLocationIds.has(r.location_id)))
         : list;
