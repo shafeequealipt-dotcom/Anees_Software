@@ -394,6 +394,52 @@ export async function stockByLocation(db: DB, firmId: number, itemId: number) {
   return list;
 }
 
+/** In-transit value right now, shortages/damages by receiving shop for a period, and supplier returns by reason. */
+export async function transfersReport(db: DB, firmId: number, from: string, to: string) {
+  const [inTransit] = nums(
+    await rows<{ qty_milli: number; value_paise: number }>(
+      db,
+      sql`select coalesce(sum(s.qty_milli), 0) as qty_milli, coalesce(sum(round(s.qty_milli * ${costPerUnit} / 1000.0)), 0) as value_paise
+          from stock_ledger s
+          join items i on i.id = s.item_id
+          left join tax_rates t on t.id = i.tax_rate_id
+          join locations l on l.id = s.location_id
+          where l.firm_id = ${firmId} and l.kind = 'transit'`,
+    ),
+    ["qty_milli", "value_paise"],
+  );
+  const byShop = nums(
+    await rows<{ location_id: number; location_name: string; transfers: number; damaged_value_paise: number; short_value_paise: number }>(
+      db,
+      sql`select v.to_location_id as location_id, l.name as location_name,
+            count(distinct v.id) as transfers,
+            coalesce(round(sum(vl.taxable_paise * coalesce(vl.damaged_qty_milli, 0)::numeric / nullif(vl.qty_milli, 0))), 0) as damaged_value_paise,
+            coalesce(round(sum(vl.taxable_paise * greatest(vl.qty_milli - coalesce(vl.received_qty_milli, 0) - coalesce(vl.damaged_qty_milli, 0), 0)::numeric / nullif(vl.qty_milli, 0))), 0) as short_value_paise
+          from vouchers v
+          join voucher_lines vl on vl.voucher_id = v.id
+          join locations l on l.id = v.to_location_id
+          where v.firm_id = ${firmId} and v.type = 'stock_transfer' and v.status = 'active' and v.received_at is not null
+            and v.received_at::date between ${from} and ${to}
+          group by v.to_location_id, l.name, l.sort
+          having sum(coalesce(vl.damaged_qty_milli, 0)) > 0 or sum(greatest(vl.qty_milli - coalesce(vl.received_qty_milli, 0) - coalesce(vl.damaged_qty_milli, 0), 0)) > 0
+          order by l.sort`,
+    ),
+    ["transfers", "damaged_value_paise", "short_value_paise"],
+  );
+  const byReason = nums(
+    await rows<{ reason: string; count: number; value_paise: number }>(
+      db,
+      sql`select coalesce(v.return_reason, 'not_specified') as reason, count(*) as count, coalesce(sum(v.taxable_paise), 0) as value_paise
+          from vouchers v
+          where v.firm_id = ${firmId} and v.type = 'debit_note' and v.status = 'active' and v.date between ${from} and ${to}
+          group by coalesce(v.return_reason, 'not_specified')
+          order by value_paise desc`,
+    ),
+    ["count", "value_paise"],
+  );
+  return { inTransit, byShop, byReason };
+}
+
 // ─── Cash & bank ─────────────────────────────────────────────────────────────
 
 export async function accountStatement(db: DB, accountId: number, from: string, to: string) {

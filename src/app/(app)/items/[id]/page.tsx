@@ -37,7 +37,12 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
   const to = sp.to ?? todayIST();
   const mv = isGoods ? await itemMovements(db, item.id, from, to) : null;
   const low = isGoods && item.minStockMilli > 0 && (mv?.closingMilli ?? 0) <= item.minStockMilli;
-  const byLocation = isGoods && user.locations.length > 1 ? (await stockByLocation(db, user.firmId, item.id)).filter((l) => user.allLocations || user.locations.some((ul) => ul.id === l.id)) : [];
+  const byLocation =
+    isGoods && user.locations.length > 1
+      ? (await stockByLocation(db, user.firmId, item.id)).filter(
+          (l) => (user.allLocations || user.locations.some((ul) => ul.id === l.id)) && (l.qty_milli !== 0 || l.kind === "warehouse" || l.kind === "shop"),
+        )
+      : [];
 
   return (
     <>
@@ -103,6 +108,8 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                     <dt className="text-muted">
                       {l.name}
                       {l.kind === "warehouse" && <span className="ml-1 text-xs text-faint">(warehouse)</span>}
+                      {l.kind === "transit" && <span className="ml-1 text-xs text-faint">(waiting to be received)</span>}
+                      {l.kind === "damaged" && <span className="ml-1 text-xs text-faint">(damaged)</span>}
                     </dt>
                     <dd className={l.qty_milli < 0 ? "font-medium text-bad" : "font-medium"}>
                       {formatQty(l.qty_milli)} {unit?.code}

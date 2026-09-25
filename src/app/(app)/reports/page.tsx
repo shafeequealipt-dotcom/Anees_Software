@@ -32,6 +32,7 @@ const GROUPS: { title: string; items: { href: string; label: string; hint: strin
     items: [
       { href: "/reports/stock-summary", label: "Stock summary", hint: "Quantity and value on hand" },
       { href: "/reports/low-stock", label: "Low stock", hint: "Items at or below the alert level" },
+      { href: "/reports/transfers", label: "Transfers & returns", hint: "In-transit stock, shortages/damage, supplier returns" },
       { href: "/reports/batches", label: "Batches and expiry", hint: "Stock by batch, what expires soon" },
       { href: "/reports/serials", label: "Serial numbers", hint: "Which serial is in stock or sold" },
     ],

@@ -2,10 +2,11 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DB } from "@/db";
 import { firms, locations, stockLedger, voucherLines, vouchers } from "@/db/schema";
+import { todayIST } from "@/lib/dates";
 import { loadInvoiceModel } from "@/server/invoice";
 import { saveItem } from "@/server/masters";
 import { renderInvoicePdf } from "@/server/pdf/invoice-pdf";
-import { dashboard } from "@/server/reports";
+import { dashboard, transfersReport } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
 import { cancelVoucher, receiveTransfer, saveVoucher } from "@/server/vouchers";
 import { testDb } from "./helpers/db";
@@ -183,6 +184,43 @@ describe("acting on damaged goods", () => {
     // Return the rest to the supplier.
     await saveVoucher(db, firmId, { type: "debit_note", date: "2026-09-11", locationId: damagedId, returnReason: "damaged", lines: [{ itemId: widget, description: "Widget", qtyMilli: 3_000, ratePaise: 1_000 }] }, 1);
     expect(await stockAt(widget, damagedId)).toBe(before - 6_000);
+  });
+});
+
+describe("transfers & returns report", () => {
+  it("reports in-transit value, shortage/damage by shop, and returns by reason", async () => {
+    const gadget = await saveItem(db, firmId, { name: "Gadget", salePricePaise: 4_000, purchasePricePaise: 2_000 }, 1);
+    await saveVoucher(db, firmId, { type: "purchase_bill", date: "2026-09-12", locationId: warehouseId, lines: [{ itemId: gadget, description: "Gadget", qtyMilli: 100_000, ratePaise: 2_000 }] }, 1);
+
+    // Other tests in this file leave their own stock sitting in transit (and receive on today's
+    // real date, regardless of the voucher's own date — see receiveTransfer), so compare deltas
+    // rather than absolute totals.
+    const before0 = await transfersReport(db, firmId, "2026-09-12", "2026-09-12");
+
+    // One transfer left sitting in transit, un-received.
+    await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-12", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: gadget, description: "Gadget", qtyMilli: 10_000, ratePaise: 2_000 }] }, 1);
+    const before = await transfersReport(db, firmId, "2026-09-12", "2026-09-12");
+    expect(before.inTransit.qty_milli - before0.inTransit.qty_milli).toBe(10_000);
+    expect(before.inTransit.value_paise - before0.inTransit.value_paise).toBe(20_000); // 10 units at 2000 paise/unit
+
+    // A second transfer, received with 3 damaged and 2 short (out of 20 sent). received_at is
+    // always today's real date, so the shortage/damage-by-shop query needs today's date range.
+    const today = todayIST();
+    const beforeShop = (await transfersReport(db, firmId, today, today)).byShop.find((r) => r.location_id === shopId);
+    const xfer = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-12", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: gadget, description: "Gadget", qtyMilli: 20_000, ratePaise: 2_000 }] }, 1);
+    const line = await firstLine(xfer.id);
+    await receiveTransfer(db, firmId, xfer.id, 1, [{ lineId: line.id, receivedQtyMilli: 15_000, damagedQtyMilli: 3_000 }], "2 short");
+
+    const afterShop = (await transfersReport(db, firmId, today, today)).byShop.find((r) => r.location_id === shopId)!;
+    expect(afterShop.damaged_value_paise - (beforeShop?.damaged_value_paise ?? 0)).toBe(3_000 * 2_000 / 1000); // 3 units at 2000 paise/unit
+    expect(afterShop.short_value_paise - (beforeShop?.short_value_paise ?? 0)).toBe(2_000 * 2_000 / 1000); // 2 units short
+
+    // A supplier return for the damaged units, with a reason (dated by its own `date` field).
+    await saveVoucher(db, firmId, { type: "debit_note", date: "2026-09-12", locationId: damagedId, returnReason: "damaged", lines: [{ itemId: gadget, description: "Gadget", qtyMilli: 3_000, ratePaise: 2_000 }] }, 1);
+    const withReturn = await transfersReport(db, firmId, "2026-09-12", "2026-09-12");
+    const damagedReason = withReturn.byReason.find((r) => r.reason === "damaged")!;
+    expect(damagedReason.count).toBe(1);
+    expect(damagedReason.value_paise).toBe(3_000 * 2_000 / 1000);
   });
 });
 
