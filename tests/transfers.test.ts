@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "@/db";
 import { firms, locations, stockLedger, voucherLines, vouchers } from "@/db/schema";
 import { saveItem } from "@/server/masters";
+import { dashboard } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
 import { cancelVoucher, receiveTransfer, saveVoucher } from "@/server/vouchers";
 import { testDb } from "./helpers/db";
@@ -137,5 +138,20 @@ describe("editing and cancelling", () => {
     expect(await stockAt(widget, warehouseId)).toBe(before.wh);
     expect(await stockAt(widget, shopId)).toBe(before.shop);
     expect(await stockAt(widget, transitId)).toBe(before.transit);
+  });
+});
+
+describe("pending transfer count", () => {
+  it("counts unreceived transfers, scoped to the destination shop when restricted", async () => {
+    const before = (await dashboard(db, firmId)).pendingTransfers;
+    const xfer = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-09-09", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: widget, description: "Widget", qtyMilli: 1_000, ratePaise: 0 }] }, 1);
+
+    expect((await dashboard(db, firmId)).pendingTransfers).toBe(before + 1);
+    expect((await dashboard(db, firmId, { locationIds: [shopId], createdBy: 1 })).pendingTransfers).toBeGreaterThanOrEqual(1);
+    expect((await dashboard(db, firmId, { locationIds: [warehouseId], createdBy: 1 })).pendingTransfers).toBe(0);
+
+    const line = await firstLine(xfer.id);
+    await receiveTransfer(db, firmId, xfer.id, 1, [{ lineId: line.id, receivedQtyMilli: 1_000, damagedQtyMilli: 0 }], null);
+    expect((await dashboard(db, firmId)).pendingTransfers).toBe(before);
   });
 });

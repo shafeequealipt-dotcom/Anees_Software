@@ -62,6 +62,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <Alert tone="warn">Your role doesn&apos;t have access to that page. Ask the owner if you need it.</Alert>
         </div>
       )}
+      {d.pendingTransfers > 0 && (
+        <div className="mb-4">
+          <Alert tone="warn">
+            {d.pendingTransfers} stock transfer{d.pendingTransfers === 1 ? "" : "s"} waiting to be received.{" "}
+            <Link href="/stock-transfers?view=incoming" className="underline">Review</Link>
+          </Alert>
+        </div>
+      )}
       {reportReady && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel px-4 py-3">
           <div>

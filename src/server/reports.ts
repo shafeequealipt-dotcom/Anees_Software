@@ -183,6 +183,18 @@ export async function dashboard(db: DB, firmId: number, access?: { locationIds: 
     ),
     ["bills", "sales", "returns"],
   );
+  const pendingWhere = access?.locationIds
+    ? access.locationIds.length
+      ? sql`and v.to_location_id in (${sql.join(access.locationIds.map((id) => sql`${id}`), sql`, `)})`
+      : sql`and false`
+    : sql``;
+  const [pendingTransfers] = nums(
+    await rows<{ n: number }>(
+      db,
+      sql`select count(*) as n from vouchers v where v.firm_id = ${firmId} and v.type = 'stock_transfer' and v.status = 'active' and v.received_at is null ${pendingWhere}`,
+    ),
+    ["n"],
+  );
   return {
     receivable: Number(balances.receivable),
     payable: Number(balances.payable),
@@ -192,6 +204,7 @@ export async function dashboard(db: DB, firmId: number, access?: { locationIds: 
     lowStock: lowStock.n,
     overdue,
     todayByShop: todayByShop.map((r) => ({ locationId: r.location_id!, locationName: r.location_name, bills: r.bills, salesPaise: r.sales, returnsPaise: r.returns, netPaise: r.sales - r.returns })),
+    pendingTransfers: pendingTransfers.n,
   };
 }
 
