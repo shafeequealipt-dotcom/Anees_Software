@@ -13,7 +13,7 @@ export async function generateMetadata({ params }: { params: Promise<{ section: 
   return { title: type ? `New ${VOUCHER_INFO[type].label.toLowerCase()}` : "Not found" };
 }
 
-export default async function NewVoucherPage({ params, searchParams }: { params: Promise<{ section: string }>; searchParams: Promise<{ from?: string; party?: string; saved?: string }> }) {
+export default async function NewVoucherPage({ params, searchParams }: { params: Promise<{ section: string }>; searchParams: Promise<{ from?: string; party?: string; saved?: string; to?: string }> }) {
   const { section } = await params;
   const type = typeFromPath(section);
   if (!type) notFound();
@@ -23,6 +23,7 @@ export default async function NewVoucherPage({ params, searchParams }: { params:
   const data = await loadVoucherFormData(db, user.firmId, type, {
     fromIds: sp.from ? sp.from.split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 50) : undefined,
     partyId: sp.party ? Number(sp.party) || undefined : undefined,
+    toLocationId: sp.to ? Number(sp.to) || undefined : undefined,
   }, { balance: can(user, "see.partyBalance"), contact: can(user, "see.partyContact"), purchase: can(user, "see.purchasePrice") }, user.locations);
   const saved = sp.saved ? <div className="mb-3"><Alert tone="good">Saved {sp.saved}. Ready for the next one.</Alert></div> : null;
   if (!data.firm) return <Alert tone="warn">Set up your business first in Settings.</Alert>;

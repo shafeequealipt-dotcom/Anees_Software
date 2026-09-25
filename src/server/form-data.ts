@@ -6,6 +6,7 @@ import { accounts, firms, ledgerCategories, taxRates, vouchers, type VoucherType
 import { emptyPricing } from "@/lib/pricing";
 import { getSettings } from "@/lib/settings";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
+import { listLocations } from "./locations";
 import { loadPricing } from "./pricing";
 import { getVoucher, returnableQtyByItem } from "./vouchers";
 
@@ -120,7 +121,7 @@ export async function loadVoucherFormData(
   db: DB,
   firmId: number,
   type: VoucherType,
-  opts: { id?: number; fromId?: number; fromIds?: number[]; partyId?: number },
+  opts: { id?: number; fromId?: number; fromIds?: number[]; partyId?: number; toLocationId?: number },
   see: Visibility,
   myLocations: LocationOpt[] = [],
 ) {
@@ -136,6 +137,10 @@ export async function loadVoucherFormData(
       ? db.select().from(ledgerCategories).where(and(eq(ledgerCategories.firmId, firmId), eq(ledgerCategories.kind, type === "expense" ? "expense" : "income"))).orderBy(asc(ledgerCategories.name))
       : Promise.resolve([]),
   ]);
+
+  // A shop can send a transfer to ANY other location, not just ones the user is themselves
+  // assigned to — so the "To" picker needs the firm's full location list, not `myLocations`.
+  const transferLocations = type === "stock_transfer" ? await listLocations(db, firmId) : [];
 
   const existing = opts.id ? await getVoucher(db, firmId, opts.id) : null;
   const fromIds = [...new Set(opts.fromIds?.length ? opts.fromIds : opts.fromId ? [opts.fromId] : [])];
@@ -179,8 +184,10 @@ export async function loadVoucherFormData(
     sourceRefs,
     presetPartyId: opts.partyId ?? null,
     locations: myLocations,
+    transferLocations: transferLocations.map((l) => ({ id: l.id, name: l.name, kind: l.kind })),
     // Returns default to the shop the original bill was at, same as the server falls back to on save.
     defaultLocationId: existing?.voucher.locationId ?? (isReturn ? sources[0]?.voucher.locationId : null) ?? myLocations[0]?.id ?? null,
+    presetToLocationId: existing?.voucher.toLocationId ?? opts.toLocationId ?? null,
   };
 }
 

@@ -79,7 +79,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const [categoryId, setCategoryId] = useState<number | null>(ex?.categoryId ?? null);
   const [direction, setDirection] = useState<1 | -1>((ex?.direction as 1 | -1) ?? 1);
   const [locationId, setLocationId] = useState<number | null>(ex?.locationId ?? data.defaultLocationId);
-  const [toLocationId, setToLocationId] = useState<number | null>(ex?.toLocationId ?? null);
+  const [toLocationId, setToLocationId] = useState<number | null>(ex?.toLocationId ?? data.presetToLocationId ?? null);
   const [notes, setNotes] = useState(ex?.notes ?? (data.sourceRefs.length > 1 ? `Combined from ${data.sourceRefs.map((r) => r.label).join(", ")}` : ""));
   const [terms, setTerms] = useState(ex?.terms ?? (data.type === "quotation" ? data.settings.quotationTerms : info.outward && info.takesPayment ? (data.firm?.terms ?? "") : ""));
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState(ex?.supplierInvoiceNo ?? "");
@@ -507,11 +507,11 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               </Select>
             </Field>
           )}
-          {data.type === "stock_transfer" && data.locations.length > 1 && (
+          {data.type === "stock_transfer" && data.transferLocations.length > 1 && (
             <Field label="To">
               <Select value={toLocationId ?? ""} onChange={(e) => setToLocationId(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">Choose…</option>
-                {data.locations
+                {data.transferLocations
                   .filter((l) => l.id !== locationId)
                   .map((l) => (
                     <option key={l.id} value={l.id}>
