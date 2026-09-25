@@ -8,9 +8,10 @@ import { formatDate, todayIST } from "@/lib/dates";
 import { can } from "@/lib/permissions";
 import { resolvePeriod } from "@/lib/periods";
 import { typeFromPath, VOUCHER_INFO } from "@/lib/voucher-types";
+import { listLocations } from "@/server/locations";
 import { listVouchers } from "@/server/reports";
 
-type SP = { from?: string; to?: string; q?: string; status?: string; saved?: string };
+type SP = { from?: string; to?: string; q?: string; status?: string; saved?: string; view?: string };
 
 export async function generateMetadata({ params }: { params: Promise<{ section: string }> }) {
   const type = typeFromPath((await params).section);
@@ -35,12 +36,29 @@ export default async function VoucherListPage({ params, searchParams }: { params
     status,
     ...(user.allLocations ? {} : { locationIds: user.locations.map((l) => l.id), createdBy: user.id }),
   });
-  const active = list.filter((r) => r.status === "active");
+  const isTransfer = type === "stock_transfer";
+  const myLocationIds = new Set(user.locations.map((l) => l.id));
+  const view = isTransfer ? (sp.view === "incoming" || sp.view === "outgoing" ? sp.view : "all") : "all";
+  const visible =
+    view === "incoming"
+      ? list.filter((r) => user.allLocations || (r.to_location_id != null && myLocationIds.has(r.to_location_id)))
+      : view === "outgoing"
+        ? list.filter((r) => user.allLocations || (r.location_id != null && myLocationIds.has(r.location_id)))
+        : list;
+  const active = visible.filter((r) => r.status === "active");
   const sum = (f: (r: (typeof list)[number]) => number) => active.reduce((s, r) => s + f(r), 0);
   const today = todayIST();
   const showBalance = info.takesPayment;
   const showConverted = info.convertsTo.length > 0 && !info.posts;
   const exportHref = `/api/export/vouchers?type=${type}&from=${from}&to=${to}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ""}${sp.status ? `&status=${sp.status}` : ""}`;
+  const tabHref = (v: string) => {
+    const params = new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => e[1] != null));
+    if (v === "all") params.delete("view");
+    else params.set("view", v);
+    return `${info.path}?${params.toString()}`;
+  };
+  const waitingCount = list.filter((r) => r.status === "active" && !r.received_at && (user.allLocations || (r.to_location_id != null && myLocationIds.has(r.to_location_id)))).length;
+  const warehouseId = isTransfer ? (await listLocations(db, user.firmId)).find((l) => l.kind === "warehouse")?.id : undefined;
 
   return (
     <>
@@ -58,6 +76,11 @@ export default async function VoucherListPage({ params, searchParams }: { params
                 {type === "sale_invoice" ? "Combine orders & challans" : "Combine orders"}
               </LinkButton>
             )}
+            {isTransfer && warehouseId && can(user, "vouchers.create") && (
+              <LinkButton href={`${info.path}/new?to=${warehouseId}`} variant="secondary">
+                Return to warehouse
+              </LinkButton>
+            )}
             <LinkButton href={`${info.path}/new`} variant="primary">
               + New {info.label.toLowerCase()}
             </LinkButton>
@@ -65,6 +88,26 @@ export default async function VoucherListPage({ params, searchParams }: { params
         }
       />
       {sp.saved && <p className="mb-3 rounded-md bg-good-bg px-3 py-2 text-sm text-good">Saved {sp.saved}.</p>}
+      {isTransfer && (
+        <div className="mb-4 flex gap-2">
+          {[
+            { key: "all", label: "All" },
+            { key: "incoming", label: `Incoming${waitingCount > 0 ? ` (${waitingCount} waiting)` : ""}` },
+            { key: "outgoing", label: "Outgoing" },
+          ].map((t) => (
+            <Link
+              key={t.key}
+              href={tabHref(t.key)}
+              className={
+                "rounded-full px-3 py-1.5 text-sm font-medium " +
+                (view === t.key ? "bg-brand-600 text-white" : "border border-line bg-panel text-muted hover:bg-ground")
+              }
+            >
+              {t.label}
+            </Link>
+          ))}
+        </div>
+      )}
       <ListFilters
         presets={presets}
         from={from}
@@ -96,7 +139,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
       </div>
 
       <Panel padded={false}>
-        {list.length === 0 ? (
+        {visible.length === 0 ? (
           <Empty title={`No ${info.plural.toLowerCase()} in this period`} action={<LinkButton href={`${info.path}/new`} variant="primary">+ New {info.label.toLowerCase()}</LinkButton>}>
             Change the dates above, or create a new one.
           </Empty>
@@ -107,6 +150,8 @@ export default async function VoucherListPage({ params, searchParams }: { params
                 <th className={th}>Date</th>
                 <th className={th}>Number</th>
                 {info.partySide !== "none" && <th className={th}>Party</th>}
+                {isTransfer && <th className={th}>From</th>}
+                {isTransfer && <th className={th}>To</th>}
                 {(type === "expense" || type === "other_income") && <th className={th}>Category</th>}
                 {!info.hasLines && <th className={th}>Account</th>}
                 <th className={th + " text-right"}>Total</th>
@@ -115,7 +160,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
               </tr>
             </thead>
             <tbody>
-              {list.map((r) => {
+              {visible.map((r) => {
                 const st =
                   r.status === "cancelled"
                     ? "cancelled"
@@ -153,6 +198,8 @@ export default async function VoucherListPage({ params, searchParams }: { params
                         )}
                       </td>
                     )}
+                    {isTransfer && <td className={td}>{r.location_name ?? "—"}</td>}
+                    {isTransfer && <td className={td}>{r.to_location_name ?? "—"}</td>}
                     {(type === "expense" || type === "other_income") && <td className={td}>{r.category_name ?? "—"}</td>}
                     {!info.hasLines && <td className={td}>{r.account_name}{r.payment_mode && <span className="text-xs text-faint"> · {r.payment_mode}</span>}</td>}
                     <td className={td + " text-right"}>
@@ -163,7 +210,17 @@ export default async function VoucherListPage({ params, searchParams }: { params
                         <Money paise={Math.max(0, r.balance_paise)} blankZero />
                       </td>
                     )}
-                    <td className={td}>{st ? <StatusBadge status={st} /> : r.status === "active" ? <Badge tone="good">Saved</Badge> : null}</td>
+                    <td className={td}>
+                      {r.status === "cancelled" ? (
+                        <StatusBadge status="cancelled" />
+                      ) : isTransfer ? (
+                        <Badge tone={r.received_at ? "good" : "warn"}>{r.received_at ? "Received" : "In transit"}</Badge>
+                      ) : st ? (
+                        <StatusBadge status={st} />
+                      ) : r.status === "active" ? (
+                        <Badge tone="good">Saved</Badge>
+                      ) : null}
+                    </td>
                   </tr>
                 );
               })}
@@ -171,7 +228,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
           </Table>
         )}
       </Panel>
-      {list.length >= 1000 && <p className="mt-2 text-xs text-muted">Showing the latest 1,000. Narrow the dates to see older entries.</p>}
+      {visible.length >= 1000 && <p className="mt-2 text-xs text-muted">Showing the latest 1,000. Narrow the dates to see older entries.</p>}
       <p className="mt-2 text-xs text-faint">
         {formatDate(from)} – {formatDate(to)}
       </p>

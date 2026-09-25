@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Alert, Badge, Money, PageHeader, Panel, StatusBadge, Table, td, th } from "@/components/ui";
+import { ReceiveTransferForm } from "@/components/receive-transfer-form";
 import { VoucherActions } from "@/components/voucher-actions";
 import { getDb } from "@/db";
-import { accounts, firms, ledgerCategories, users } from "@/db/schema";
+import { accounts, firms, ledgerCategories, locations, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { amountInWords } from "@/lib/amount-in-words";
 import { canSeeVoucher, requireUser } from "@/lib/auth";
@@ -44,6 +45,10 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   const [category] = v.categoryId ? await db.select().from(ledgerCategories).where(eq(ledgerCategories.id, v.categoryId)) : [];
   const [creator] = v.createdBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.createdBy)) : [];
   const [editor] = v.updatedBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.updatedBy)) : [];
+  const [fromLocation] = v.locationId ? await db.select({ name: locations.name }).from(locations).where(eq(locations.id, v.locationId)) : [];
+  const [toLocation] = v.toLocationId ? await db.select({ name: locations.name }).from(locations).where(eq(locations.id, v.toLocationId)) : [];
+  const [receiver] = v.receivedBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.receivedBy)) : [];
+  const canReceive = v.type === "stock_transfer" && v.status === "active" && !v.receivedAt && (user.allLocations || user.locations.some((l) => l.id === v.toLocationId));
 
   const R = region();
   const TL = taxColumnLabels(R);
@@ -94,6 +99,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
         title={
           <span className="flex flex-wrap items-center gap-2">
             {info.label} {number} {status && <StatusBadge status={status} />}
+            {v.type === "stock_transfer" && v.status === "active" && <Badge tone={v.receivedAt ? "good" : "warn"}>{v.receivedAt ? "Received" : "In transit"}</Badge>}
             {retStatus !== "none" && <Badge tone={retStatus === "full" ? "bad" : "warn"}>{retStatus === "full" ? "Fully returned" : "Partly returned"}</Badge>}
           </span>
         }
@@ -151,6 +157,9 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   {v.dueDate && <Pair k={v.type === "quotation" ? "Valid until" : "Due date"} v={formatDate(v.dueDate)} />}
                   {v.supplierInvoiceNo && <Pair k="Supplier bill no." v={v.supplierInvoiceNo} />}
                   {v.originalInvoiceNo && <Pair k="Against bill" v={`${v.originalInvoiceNo}${v.originalInvoiceDate ? `, ${formatDate(v.originalInvoiceDate)}` : ""}`} />}
+                  {v.type === "stock_transfer" && fromLocation && <Pair k="From" v={fromLocation.name} />}
+                  {v.type === "stock_transfer" && toLocation && <Pair k="To" v={toLocation.name} />}
+                  {v.type === "stock_transfer" && v.receivedAt && <Pair k="Received" v={`${formatDate(v.receivedAt.toISOString().slice(0, 10))}${receiver ? ` by ${receiver.name}` : ""}`} />}
                   {v.returnReason && <Pair k="Reason for return" v={returnReasonLabel(v.returnReason)} />}
                   {v.poNumber && <Pair k="PO number" v={v.poNumber} />}
                   {v.ewayBillNo && <Pair k="E-way bill" v={v.ewayBillNo} />}
@@ -167,6 +176,8 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                     <th className={th}>#</th>
                     <th className={th}>Item</th>
                     <th className={th + " text-right"}>Qty</th>
+                    {v.type === "stock_transfer" && v.receivedAt && <th className={th + " text-right"}>Received</th>}
+                    {v.type === "stock_transfer" && v.receivedAt && <th className={th + " text-right"}>Damaged</th>}
                     <th className={th + " text-right"}>Rate</th>
                     {v.discountPaise > 0 && <th className={th + " text-right"}>Discount</th>}
                     {hasTax && <th className={th + " text-right"}>Tax</th>}
@@ -192,6 +203,12 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                       <td className={td + " num text-right"}>
                         {formatQty(l.qtyMilli)} {l.unitCode}
                       </td>
+                      {v.type === "stock_transfer" && v.receivedAt && (
+                        <td className={td + " num text-right" + (l.damagedQtyMilli ? "" : " text-muted")}>{formatQty(l.receivedQtyMilli ?? 0)}</td>
+                      )}
+                      {v.type === "stock_transfer" && v.receivedAt && (
+                        <td className={td + " num text-right" + (l.damagedQtyMilli ? " text-bad" : " text-muted")}>{formatQty(l.damagedQtyMilli ?? 0)}</td>
+                      )}
                       <td className={td + " text-right"}>
                         <Money paise={l.ratePaise} />
                         {l.rateIncludesTax && hasTax && <div className="text-xs text-faint">incl. tax</div>}
@@ -257,6 +274,13 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
               </dl>
               <p className="mt-3 text-xs text-muted">{amountInWords(v.totalPaise)}</p>
             </Panel>
+          )}
+
+          {canReceive && (
+            <ReceiveTransferForm
+              voucherId={v.id}
+              lines={data.lines.filter((l) => l.itemId).map((l) => ({ id: l.id, description: l.description, qtyMilli: l.qtyMilli, unitCode: l.unitCode }))}
+            />
           )}
 
           {(v.notes || v.terms) && (
