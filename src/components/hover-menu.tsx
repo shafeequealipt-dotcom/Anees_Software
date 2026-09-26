@@ -20,11 +20,15 @@ export const HoverMenu = forwardRef<
     align?: "left" | "right";
     panelClassName?: string;
     className?: string;
-    /** Close the moment anything inside the panel is clicked. Turn off for a menu whose action can
-     * fail and needs to show an error instead of closing — call the exposed close() once it succeeds. */
+    /** Close the moment anything inside the panel is clicked. Off by default: every current use of
+     * this panel navigates away (a Link, a full reload, a redirecting form) when clicked, which
+     * dismisses the menu on its own — closing it ourselves first risks unmounting a <form> before
+     * its submit has actually been dispatched, silently swallowing the click. Turn on only for a
+     * menu whose entries don't navigate away, or whose action can fail and must stay open to show
+     * an error — call the exposed close() explicitly once an action actually succeeds. */
     closeOnPanelClick?: boolean;
   }
->(function HoverMenu({ trigger, children, align = "right", panelClassName, className, closeOnPanelClick = true }, ref) {
+>(function HoverMenu({ trigger, children, align = "right", panelClassName, className, closeOnPanelClick = false }, ref) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,7 +63,9 @@ export const HoverMenu = forwardRef<
     setOpen(true);
   };
   const closeSoon = () => {
-    timer.current = setTimeout(() => setOpen(false), 150);
+    // Long enough to cross from the trigger to the panel below it without the menu vanishing
+    // mid-move (a real mouse takes some time to travel, unlike a scripted click).
+    timer.current = setTimeout(() => setOpen(false), 350);
   };
 
   return (
@@ -74,9 +80,12 @@ export const HoverMenu = forwardRef<
         {trigger}
       </button>
       {open && (
+        // top-full, not a fixed offset: the panel must sit flush against the trigger with zero
+        // gap. Any visible gap is a dead zone the pointer briefly leaves this subtree crossing —
+        // firing mouseleave and starting the close timer before the pointer ever reaches the panel.
         <div
           role="menu"
-          className={cx("absolute top-10 z-50", align === "right" ? "right-0" : "left-0", panelClassName)}
+          className={cx("absolute top-full z-50", align === "right" ? "right-0" : "left-0", panelClassName)}
           onClick={closeOnPanelClick ? () => setOpen(false) : undefined}
         >
           {children}
