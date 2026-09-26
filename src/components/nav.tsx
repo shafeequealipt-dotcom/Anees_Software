@@ -55,8 +55,13 @@ export function Nav({ groups }: { groups: NavGroup[] }) {
       >
         ☰ Menu
       </button>
-      {/* Desktop: the gradient lives on the parent wrapper (with the header block) so it reads as one continuous panel, not two independently-stretched gradients with a seam between them. */}
-      <aside className="no-print hidden w-56 shrink-0 overflow-y-auto lg:block">{links}</aside>
+      {/* Desktop: the gradient lives on the parent wrapper (with the header block) so it reads as one continuous panel, not two independently-stretched gradients with a seam between them.
+          min-h-0 flex-1 (not shrink-0): without it, the flex item grows to fit all the nav links'
+          natural height instead of stopping at the space actually available below the header —
+          which, at a high enough browser zoom, pushes the lower links past the bottom of the
+          screen with no way to reach them, since overflow-y-auto only scrolls once something
+          forces this element to stop growing. Same pattern <main> already uses on the content side. */}
+      <aside className="no-print hidden w-56 min-h-0 flex-1 overflow-y-auto lg:block">{links}</aside>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
           <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close menu" onClick={() => setOpen(false)} />

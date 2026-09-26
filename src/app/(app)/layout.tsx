@@ -69,7 +69,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-dvh overflow-hidden">
-      <div className="flex flex-col bg-gradient-to-b from-[#241f63] via-brand-900 to-[#171341] max-lg:contents">
+      <div className="flex min-h-0 flex-col bg-gradient-to-b from-[#241f63] via-brand-900 to-[#171341] max-lg:contents">
         <div className="no-print hidden border-b border-white/10 px-5 py-4 lg:block">
           <div className="truncate text-sm font-semibold text-white" title={name}>
             {name}
