@@ -47,7 +47,7 @@ export function GlobalSearch() {
   const empty = res && !res.parties.length && !res.items.length && !res.vouchers.length;
 
   return (
-    <div ref={box} className="relative w-full max-w-md">
+    <div ref={box} className="relative w-full min-w-[64px] max-w-md">
       <input
         ref={input}
         value={q}

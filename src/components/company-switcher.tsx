@@ -39,7 +39,7 @@ export function CompanySwitcher({ current, companies, canManage }: { current: Co
       closeOnPanelClick={false}
       panelClassName="w-72 rounded-lg border border-line bg-panel py-1 shadow-lg"
       trigger={
-        <span className="flex h-8 max-w-56 cursor-pointer items-center gap-1.5 rounded-md border border-line px-2.5 text-sm hover:bg-ground" title="Switch company">
+        <span className="flex h-8 max-w-16 cursor-pointer items-center gap-1 rounded-md border border-line px-1.5 text-sm hover:bg-ground sm:max-w-56 sm:gap-1.5 sm:px-2.5" title="Switch company">
           <span className="truncate font-medium">{current.name}</span>
           <span className="text-xs text-faint">▾</span>
         </span>

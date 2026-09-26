@@ -189,10 +189,11 @@ export function Nav({ groups }: { groups: NavGroup[] }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="no-print fixed left-3 top-3 z-30 rounded-md border border-line bg-panel px-2.5 py-1.5 text-sm font-medium shadow-sm lg:hidden"
+        className="no-print fixed left-3 top-3 z-30 rounded-md border border-line bg-panel px-2.5 py-1.5 text-base font-medium shadow-sm lg:hidden"
         aria-label="Open menu"
       >
-        ☰ Menu
+        <span aria-hidden="true">☰</span>
+        <span className="max-sm:hidden"> Menu</span>
       </button>
       {/* Desktop: the gradient lives on the parent wrapper (with the header block) so it reads as one continuous panel, not two independently-stretched gradients with a seam between them.
           min-h-0 flex-1 (not shrink-0): without it, the flex item grows to fit all the nav links'

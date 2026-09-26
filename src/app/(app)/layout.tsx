@@ -82,12 +82,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Nav groups={groups} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4 pl-24 shadow-sm shadow-ink/[0.03] lg:pl-4">
+        <header className="no-print flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2 pl-16 shadow-sm shadow-ink/[0.03] sm:gap-3 sm:px-4 lg:pl-4">
           <GlobalSearch />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
             <CompanySwitcher current={user.firm} companies={user.firms} canManage={can(user, "companies.manage")} />
-            <Link href="/sales/new" className={buttonClass("primary", "sm")}>
-              + Sale
+            <Link href="/sales/new" className={buttonClass("primary", "sm")} title="New sale invoice">
+              <span aria-hidden="true">+</span>
+              <span className="max-sm:hidden"> Sale</span>
             </Link>
             <Link href="/purchases/new" className={buttonClass("secondary", "sm") + " max-sm:hidden"}>
               + Purchase

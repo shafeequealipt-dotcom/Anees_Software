@@ -49,13 +49,17 @@ body {
 /* Phones, not just a narrow desktop window: everything here — text sizes, padding, gaps, icon
    sizes — is built on Tailwind's rem scale, which is relative to the root font-size. Raising it
    only below the sm breakpoint scales the whole UI up together (bigger tap targets included, not
-   just bigger letters) without touching the desktop layout at all. */
+   just bigger letters) without touching the desktop layout at all.
+   A first pass at 18px (from the 16px default) was still reported as too small to read
+   comfortably — the smallest text in the app (labels, hints: text-xs = 0.75rem) was still only
+   ~13.5px at that size. 22px brings that same text to ~16.5px, a genuinely comfortable minimum,
+   and scales everything built on top of it — body text, buttons, inputs, icons — up to match. */
 @media (max-width: 640px) {
   html {
-    font-size: 18px;
+    font-size: 22px;
   }
   body {
-    font-size: 16px;
+    font-size: 19px;
   }
 }
 
@@ -98,7 +102,7 @@ input[type="number"]::-webkit-outer-spin-button {
 [dir="rtl"] .mr-3 { margin-right: 0; margin-left: 0.75rem; }
 [dir="rtl"] .right-0 { right: auto; left: 0; }
 [dir="rtl"] .left-3 { left: auto; right: 0.75rem; }
-[dir="rtl"] .pl-24 { padding-left: 1rem; padding-right: 6rem; }
+[dir="rtl"] .pl-16 { padding-left: 0.5rem; padding-right: 4rem; }
 [dir="rtl"] .pr-7 { padding-right: 0.625rem; padding-left: 1.75rem; }
 [dir="rtl"] .border-l { border-left-width: 0; border-right-width: 1px; }
 @media (min-width: 64rem) {
