@@ -19,9 +19,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const lang = (await cookies()).get("lang")?.value === "ar" ? "ar" : "en";
 
   const groups: NavGroup[] = [
-    { items: [{ href: "/", label: "Home" }] },
+    { items: [{ href: "/", label: "Home", icon: "home" }] },
     {
       label: "Sales",
+      icon: "sales",
       items: [
         { href: "/sales", label: "Sale invoices" },
         { href: "/payments-in", label: "Payments in" },
@@ -33,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     },
     {
       label: "Purchases",
+      icon: "purchases",
       items: [
         { href: "/purchases", label: "Purchase bills" },
         { href: "/payments-out", label: "Payments out" },
@@ -42,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     },
     {
       label: "Accounts",
+      icon: "accounts",
       items: [
         { href: "/parties", label: "Parties" },
         { href: "/items", label: "Items & stock" },
@@ -57,12 +60,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           : []),
       ],
     },
-    ...(can(user, "accounting.view") ? [{ label: "Books", items: [{ href: "/accounting", label: "Accounting" }] }] : []),
+    ...(can(user, "accounting.view") ? [{ label: "Books", icon: "books" as const, items: [{ href: "/accounting", label: "Accounting" }] }] : []),
     {
       items: [
-        { href: "/reports", label: "Reports" },
-        ...(can(user, "vouchers.restore") ? [{ href: "/deleted", label: "Deleted entries" }] : []),
-        ...(can(user, "settings.edit") || can(user, "users.manage") || can(user, "audit.view") || can(user, "companies.manage") ? [{ href: "/settings", label: "Settings" }] : []),
+        { href: "/reports", label: "Reports", icon: "reports" },
+        ...(can(user, "vouchers.restore") ? [{ href: "/deleted", label: "Deleted entries", icon: "trash" as const }] : []),
+        ...(can(user, "settings.edit") || can(user, "users.manage") || can(user, "audit.view") || can(user, "companies.manage") ? [{ href: "/settings", label: "Settings", icon: "settings" as const }] : []),
       ],
     },
   ];
