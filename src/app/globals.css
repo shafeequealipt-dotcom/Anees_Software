@@ -46,6 +46,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Phones, not just a narrow desktop window: everything here — text sizes, padding, gaps, icon
+   sizes — is built on Tailwind's rem scale, which is relative to the root font-size. Raising it
+   only below the sm breakpoint scales the whole UI up together (bigger tap targets included, not
+   just bigger letters) without touching the desktop layout at all. */
+@media (max-width: 640px) {
+  html {
+    font-size: 18px;
+  }
+  body {
+    font-size: 16px;
+  }
+}
+
 .num {
   font-variant-numeric: tabular-nums;
 }
