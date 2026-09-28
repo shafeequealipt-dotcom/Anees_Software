@@ -45,7 +45,9 @@ Plan doc (features/roadmap): https://claude.ai/artifact/1kh1d3yQiSi8Hx2zi6CufR
 
 ## Last updated
 
-2026-09-21 · session: first feature list DEPLOYED (live). Second batch (logo/signature, invoice styles, thermal, Arabic invoices and interface, categories, Backups page, ZATCA Phase 2) built, 146 tests pass; build+deploy in progress
+2026-09-29 · session: mobile UI scale + header overflow fix deployed. One-click Excel
+data backup/restore built (203 tests pass); future feature list moved to
+`docs/future-features.md`.
 
 ---
 
@@ -177,6 +179,28 @@ Verified = automated test passes, or manually clicked through in the dev server.
   — `deploy/server/`
 - [x] `deploy/push.sh` — build from the Mac, rsync to VM, deploy
 
+### Data backup (Excel) — built 2026-09-29
+- [x] Settings → Backups → "Download all data (Excel)": one workbook, one sheet per
+  business table (every company the person can open), a "Backup info" sheet with a
+  format version and per-sheet row counts. `src/server/data-backup.ts`,
+  `src/app/api/backup/excel/route.ts`, `src/components/excel-backup-panel.tsx`.
+- [x] "Restore from Excel": checks the file, then adds every company in it as a
+  **new** company (e.g. "Anees Shop (restored 29 Sept 2026)") in one transaction —
+  existing companies and data are never touched. All rows are copied exactly (bill
+  numbers, statuses, cancelled/deleted state) with fresh IDs; every foreign key,
+  and the IDs hidden inside JSON (item custom-field values, deleted-bill snapshots,
+  GL entry ref keys), are rewritten to the new IDs. A file with a missing/altered
+  "Backup info" sheet or a row count that doesn't match what was recorded at export
+  is rejected before anything is written.
+- Deliberately excluded from the file (redone by hand after a restore, not copied):
+  users/roles/logins, ZATCA device keys/certificates (redo onboarding), share
+  links, backup job records.
+- Requires nginx's `client_max_body_size` to allow files bigger than the 1 MB
+  default on production — not yet applied there (see Not started).
+- Round-trip tested (export → restore → same party balances, stock, day book,
+  trial balance, invoice numbers/PDF, audit trail) in `tests/data-backup.test.ts`,
+  and manually via the real Settings → Backups screen in the dev server.
+
 ### Dev tooling
 - [x] Vitest test suite (`npm test`), TypeScript strict mode (`npm run typecheck`),
   embedded PostgreSQL for local dev with no Docker (`@electric-sql/pglite`) so
@@ -297,6 +321,11 @@ feature list each of these maps to.
 
 ### Data migration
 - [ ] Read a Vyapar backup file and map it into this schema (design not started)
+
+### Server config
+- [ ] Add `client_max_body_size 50m;` to `/etc/nginx/sites-available/billing.dnhcare.co.in`
+  (needed for the Excel backup/restore feature above; nginx's 1 MB default would
+  reject a real backup file), then `nginx -t` and reload.
 
 ### Production readiness
 - [x] Production build (`next build`) passes locally (2026-09-20)
