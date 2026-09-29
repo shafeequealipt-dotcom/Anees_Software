@@ -27,8 +27,10 @@ export const HoverMenu = forwardRef<
      * menu whose entries don't navigate away, or whose action can fail and must stay open to show
      * an error — call the exposed close() explicitly once an action actually succeeds. */
     closeOnPanelClick?: boolean;
+    /** Stay open while something inside has focus (e.g. a date field whose calendar popup sits outside the panel). */
+    keepOpenWhileFocused?: boolean;
   }
->(function HoverMenu({ trigger, children, align = "right", panelClassName, className, closeOnPanelClick = false }, ref) {
+>(function HoverMenu({ trigger, children, align = "right", panelClassName, className, closeOnPanelClick = false, keepOpenWhileFocused = false }, ref) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -65,7 +67,10 @@ export const HoverMenu = forwardRef<
   const closeSoon = () => {
     // Long enough to cross from the trigger to the panel below it without the menu vanishing
     // mid-move (a real mouse takes some time to travel, unlike a scripted click).
-    timer.current = setTimeout(() => setOpen(false), 350);
+    timer.current = setTimeout(() => {
+      if (keepOpenWhileFocused && boxRef.current?.contains(document.activeElement)) return;
+      setOpen(false);
+    }, 350);
   };
 
   return (

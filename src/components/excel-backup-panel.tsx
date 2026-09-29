@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { Alert, Button, Panel } from "./ui";
+import { Alert, Button, Panel, cx } from "./ui";
 
 interface CheckResult {
   ok: boolean;
@@ -11,31 +11,36 @@ interface CheckResult {
   error?: string;
 }
 
-export function ExcelBackupPanel({ canRestore }: { canRestore: boolean }) {
+export function ExcelBackupPanel({ companies, canRestore }: { companies: { id: number; name: string }[]; canRestore: boolean }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
+  const [which, setWhich] = useState<string>("all");
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [checked, setChecked] = useState<CheckResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [restored, setRestored] = useState<{ companies: string[]; rows: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const several = companies.length > 1;
+  const chosenName = which === "all" ? null : companies.find((c) => String(c.id) === which)?.name;
+
   async function download() {
     setDownloading(true);
+    setDownloadError(null);
     try {
-      const res = await fetch("/api/backup/excel");
+      const res = await fetch(`/api/backup/excel${which === "all" ? "" : `?company=${which}`}`);
       if (!res.ok) throw new Error(await res.text());
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "backup.xlsx";
+      const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
-      const stamp = new Date().toISOString().slice(0, 10);
       a.href = url;
-      a.download = `billing-backup-${stamp}.xlsx`;
+      a.download = name;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      setError("Couldn't download the backup. Try again in a moment.");
+      setDownloadError("Couldn't prepare the backup. Try again in a moment.");
     }
     setDownloading(false);
   }
@@ -47,39 +52,21 @@ export function ExcelBackupPanel({ canRestore }: { canRestore: boolean }) {
     setError(null);
   }
 
-  async function check() {
+  async function send(mode: "check" | "restore") {
     if (!file) return;
     setBusy(true);
     setError(null);
     try {
       const body = new FormData();
       body.set("file", file);
-      const r = await fetch("/api/backup/excel?mode=check", { method: "POST", body });
-      const j = (await r.json()) as CheckResult;
+      const r = await fetch(`/api/backup/excel?mode=${mode}`, { method: "POST", body });
+      const j = r.status === 413 ? { ok: false, error: "The file is larger than the server accepts. Ask whoever manages the server to raise the upload limit." } : ((await r.json()) as CheckResult);
       if (!r.ok || !j.ok) setError(j.error ?? "The file couldn't be read.");
-      else setChecked(j);
-    } catch {
-      setError("Couldn't reach the server. Check your connection and try again.");
-    }
-    setBusy(false);
-  }
-
-  async function restore() {
-    if (!file || !checked) return;
-    if (!confirm(`Add ${checked.companies!.length === 1 ? "this company" : "these companies"} as new, separate ${checked.companies!.length === 1 ? "company" : "companies"}?\n\n${checked.companies!.join("\n")}\n\nNothing already in the app is changed or removed.`)) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const body = new FormData();
-      body.set("file", file);
-      const r = await fetch("/api/backup/excel?mode=restore", { method: "POST", body });
-      const j = (await r.json()) as CheckResult;
-      if (!r.ok || !j.ok) setError(j.error ?? "The restore failed.");
+      else if (mode === "check") setChecked(j);
       else {
-        setRestored({ companies: j.companies!, rows: j.rows! });
-        setFile(null);
-        setChecked(null);
+        pick(null);
         if (input.current) input.current.value = "";
+        setRestored({ companies: j.companies!, rows: j.rows! });
         router.refresh();
       }
     } catch {
@@ -88,57 +75,98 @@ export function ExcelBackupPanel({ canRestore }: { canRestore: boolean }) {
     setBusy(false);
   }
 
+  function restore() {
+    if (!checked?.companies) return;
+    const n = checked.companies.length;
+    if (!confirm(`Add ${n === 1 ? "this company" : `these ${n} companies`} as new, separate ${n === 1 ? "company" : "companies"}?\n\n${checked.companies.join("\n")}\n\nNothing already in the app is changed or removed.`)) return;
+    void send("restore");
+  }
+
   return (
     <Panel title="Excel backup">
-      <p className="text-sm text-muted">
-        A single Excel file with all your business data — every company, party, item and bill, one sheet per kind of record. Keep a copy somewhere safe. It can be brought back at any time as a new company, without touching what&apos;s already in the app.
-      </p>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <Button variant="primary" onClick={download} disabled={downloading}>
-          {downloading ? "Preparing…" : "Download all data (Excel)"}
-        </Button>
-      </div>
-
-      {canRestore && (
-        <div className="mt-5 border-t border-line pt-4">
-          <h3 className="text-sm font-semibold">Restore from Excel</h3>
-          <p className="mt-1 text-sm text-muted">Choose a backup file downloaded from here. It&apos;s added as a new company — your current data is never changed.</p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <input ref={input} type="file" accept=".xlsx" onChange={(e) => pick(e.target.files?.[0] ?? null)} className="text-sm" />
-            <Button onClick={check} disabled={!file || busy}>
-              {busy ? "Working…" : "Check file"}
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Download</h3>
+            <p className="mt-1 text-sm text-muted">One Excel file with every party, item and bill — a sheet for each kind of record. Keep it somewhere safe.</p>
+          </div>
+          {several && (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted">Company</span>
+              <select
+                value={which}
+                onChange={(e) => setWhich(e.target.value)}
+                className="h-10 w-full rounded-lg border border-line bg-panel px-3 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              >
+                <option value="all">All companies ({companies.length})</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div>
+            <Button variant="primary" onClick={download} disabled={downloading}>
+              {downloading ? "Preparing…" : several ? (chosenName ? `Download ${chosenName}` : "Download all companies") : "Download backup"}
             </Button>
           </div>
+          {downloadError && <Alert tone="bad">{downloadError}</Alert>}
+        </div>
 
-          {error && (
-            <div className="mt-3">
-              <Alert tone="bad">{error}</Alert>
+        {canRestore && (
+          <div className="flex flex-col gap-3 border-line max-md:border-t max-md:pt-5 md:border-l md:pl-6">
+            <div>
+              <h3 className="text-sm font-semibold text-ink">Restore</h3>
+              <p className="mt-1 text-sm text-muted">Bring a downloaded file back. It&apos;s added as a new company — what&apos;s already here is never changed.</p>
             </div>
-          )}
+            <label
+              className={cx(
+                "flex cursor-pointer items-center gap-3 rounded-lg border border-dashed px-3 py-3 text-sm transition-colors",
+                file ? "border-brand-200 bg-brand-50/50" : "border-line hover:border-brand-200 hover:bg-ground",
+              )}
+            >
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} className="size-4" aria-hidden="true">
+                  <path d="M10 13V4M6.5 7.5 10 4l3.5 3.5M4 13.5V15a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-ink">{file ? file.name : "Choose a backup file"}</span>
+                <span className="block text-xs text-faint">{file ? `${(file.size / 1024).toFixed(0)} KB` : ".xlsx downloaded from this page"}</span>
+              </span>
+              <input ref={input} type="file" accept=".xlsx" onChange={(e) => pick(e.target.files?.[0] ?? null)} className="sr-only" />
+            </label>
 
-          {checked?.ok && (
-            <div className="mt-3 flex flex-col gap-3">
-              <Alert tone="brand">
-                This file has {checked.rows!.toLocaleString()} rows across {checked.companies!.length} {checked.companies!.length === 1 ? "company" : "companies"}: {checked.companies!.join(", ")}.
-              </Alert>
+            {file && !checked && (
               <div>
-                <Button variant="primary" onClick={restore} disabled={busy}>
-                  {busy ? "Restoring…" : "Add as new company"}
+                <Button onClick={() => send("check")} disabled={busy}>
+                  {busy ? "Checking…" : "Check file"}
                 </Button>
               </div>
-            </div>
-          )}
-
-          {restored && (
-            <div className="mt-3">
+            )}
+            {error && <Alert tone="bad">{error}</Alert>}
+            {checked?.ok && (
+              <>
+                <Alert tone="brand">
+                  {checked.rows!.toLocaleString()} rows · {checked.companies!.join(", ")}
+                </Alert>
+                <div>
+                  <Button variant="primary" onClick={restore} disabled={busy}>
+                    {busy ? "Restoring…" : checked.companies!.length === 1 ? "Add as new company" : `Add ${checked.companies!.length} new companies`}
+                  </Button>
+                </div>
+              </>
+            )}
+            {restored && (
               <Alert tone="good">
-                Restored {restored.rows.toLocaleString()} rows as {restored.companies.length === 1 ? "a new company" : "new companies"}: {restored.companies.join(", ")}. Switch to it from the company menu at the top of the page.
+                Restored {restored.companies.join(", ")}. Switch to it from the company menu at the top.
               </Alert>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </Panel>
   );
 }

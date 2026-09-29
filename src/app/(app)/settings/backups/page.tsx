@@ -4,16 +4,22 @@ import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { backupOverview } from "@/server/backups";
+import { backupFirmIds } from "@/server/data-backup";
+import { firms } from "@/db/schema";
+import { asc, inArray } from "drizzle-orm";
 
 export const metadata = { title: "Backups" };
 
 export default async function BackupsPage() {
   const user = await requireUser("backups.manage");
-  const o = await backupOverview(await getDb());
+  const db = await getDb();
+  const o = await backupOverview(db);
+  const ids = await backupFirmIds(db, user);
+  const companies = ids.length ? await db.select({ id: firms.id, name: firms.name }).from(firms).where(inArray(firms.id, ids)).orderBy(asc(firms.id)) : [];
   const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
   return (
     <div className="flex flex-col gap-4">
-      <ExcelBackupPanel canRestore={can(user, "companies.manage")} />
+      <ExcelBackupPanel companies={companies} canRestore={can(user, "companies.manage")} />
       <BackupPanel
         lastSnapshotOk={o.lastSnapshotOk ? { at: iso(o.lastSnapshotOk.finishedAt ?? o.lastSnapshotOk.startedAt)!, file: o.lastSnapshotOk.fileName, size: o.lastSnapshotOk.sizeBytes } : null}
         lastSnapshotFailed={o.lastSnapshot && !o.lastSnapshot.ok ? { at: iso(o.lastSnapshot.startedAt)!, message: o.lastSnapshot.message } : null}

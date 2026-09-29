@@ -10,15 +10,25 @@ export const runtime = "nodejs";
 
 const MAX_BYTES = 50 * 1024 * 1024;
 
-export async function GET() {
+/** ?company=<id> backs up one company; no parameter (or ?company=all) backs up every company this person may open. */
+export async function GET(req: Request) {
   const a = await apiUser("backups.manage");
   if (a.res) return a.res;
   const db = await getDb();
-  const firmIds = await backupFirmIds(db, a.user);
+  const allowed = await backupFirmIds(db, a.user);
+  const pick = new URL(req.url).searchParams.get("company");
+  let firmIds = allowed;
+  if (pick && pick !== "all") {
+    const id = Number(pick);
+    if (!allowed.includes(id)) return new Response("You don't have access to that company.", { status: 403 });
+    firmIds = [id];
+  }
   const { buffer, companies, rows } = await exportAllData(db, firmIds, a.user);
-  await audit(db, { firmId: a.user.firmId, userId: a.user.id, action: "export", entity: "backup", summary: `Downloaded a full Excel backup (${companies.length} ${companies.length === 1 ? "company" : "companies"}, ${rows} rows)` });
+  const which = companies.length === 1 ? `"${companies[0]}"` : `${companies.length} companies`;
+  await audit(db, { firmId: a.user.firmId, userId: a.user.id, action: "export", entity: "backup", summary: `Downloaded an Excel backup of ${which} (${rows} rows)` });
   const stamp = new Date().toISOString().slice(0, 10);
-  return xlsxResponse(buffer, `billing-backup-${stamp}.xlsx`);
+  const slug = companies.length === 1 ? companies[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40).replace(/^-+|-+$/g, "") || "company" : "all-companies";
+  return xlsxResponse(buffer, `backup-${slug}-${stamp}.xlsx`);
 }
 
 async function readUpload(req: Request) {

@@ -4,7 +4,7 @@ import type { DB } from "@/db";
 import { firms, locations } from "@/db/schema";
 import { createUser, listRoles } from "@/server/admin";
 import { saveItem, saveParty } from "@/server/masters";
-import { BACKUP_FORMAT, BACKUP_TABLES, countRows, exportAllData, inspectBackup, restoreAllData } from "@/server/data-backup";
+import { BACKUP_FORMAT, BACKUP_TABLES, backupFirmIds, countRows, exportAllData, inspectBackup, restoreAllData } from "@/server/data-backup";
 import { dashboard, dayBook, partyBalances, stockSummary } from "@/server/reports";
 import { cancelVoucher, deleteVoucher, listDeletedVouchers, restoreVoucher, saveVoucher } from "@/server/vouchers";
 import { runFirstSetup } from "@/server/setup";
@@ -118,6 +118,26 @@ describe("round trip", () => {
     const after = await db.select().from(userFirms).where(eq(userFirms.userId, staffId));
     expect(after.length).toBe(before.length + 1);
     expect(after.some((r) => r.firmId === result.companies[0].id)).toBe(true);
+  });
+});
+
+describe("choosing which company to back up", () => {
+  it("a one-company backup holds only that company, even with several in the database", async () => {
+    const all = await db.select({ id: firms.id, name: firms.name }).from(firms).orderBy(asc(firms.id));
+    expect(all.length).toBeGreaterThan(1); // the round-trip tests above added restored companies
+    const target = all[all.length - 1];
+    const { buffer, companies } = await exportAllData(db, [target.id], owner);
+    expect(companies).toEqual([target.name]);
+    const info = await inspectBackup(buffer);
+    expect(info.companies).toEqual([target.name]);
+    const counts = await countRows(db, [target.id]);
+    expect(info.rows).toBe(Object.values(counts).reduce((a, n) => a + n, 0));
+  });
+
+  it("the owner may back up every company; staff only the ones they can open", async () => {
+    const all = (await db.select({ id: firms.id }).from(firms).orderBy(asc(firms.id))).map((f) => f.id);
+    expect(await backupFirmIds(db, { isOwner: true, firms: [] })).toEqual(all);
+    expect(await backupFirmIds(db, { isOwner: false, firms: [{ id: firmId }] })).toEqual([firmId]);
   });
 });
 

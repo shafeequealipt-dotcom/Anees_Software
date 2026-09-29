@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ListFilters } from "@/components/filters";
-import { Badge, Empty, LinkButton, Money, PageHeader, Panel, StatusBadge, Table, td, th } from "@/components/ui";
+import { HoverMenu } from "@/components/hover-menu";
+import { ListToolbar, type ToolbarTab } from "@/components/list-toolbar";
+import { Badge, LinkButton, Money, PageHeader, StatusBadge, cx } from "@/components/ui";
 import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { formatDate, todayIST } from "@/lib/dates";
@@ -18,6 +19,17 @@ export async function generateMetadata({ params }: { params: Promise<{ section: 
   return { title: type ? VOUCHER_INFO[type].plural : "Not found" };
 }
 
+/** A soft, stable colour per party so the same customer always looks the same. */
+const AVATAR = ["bg-brand-100 text-brand-700", "bg-accent-100 text-accent-600", "bg-good-bg text-good", "bg-sky-100 text-sky-700", "bg-rose-100 text-rose-700", "bg-teal-100 text-teal-700", "bg-violet-100 text-violet-700", "bg-amber-100 text-amber-700"];
+const avatarClass = (name: string) => AVATAR[[...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % AVATAR.length];
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("") || "?";
+
 export default async function VoucherListPage({ params, searchParams }: { params: Promise<{ section: string }>; searchParams: Promise<SP> }) {
   const { section } = await params;
   const type = typeFromPath(section);
@@ -26,60 +38,108 @@ export default async function VoucherListPage({ params, searchParams }: { params
   const user = await requireUser(["money_adjustment", "money_transfer", "other_income"].includes(type) ? "money.view" : undefined);
   const sp = await searchParams;
   const { presets, from, to } = resolvePeriod(sp, info.takesPayment ? "month" : "fy");
-  const status = (sp.status ?? "all") as "open" | "paid" | "overdue" | "cancelled" | "all";
   const db = await getDb();
+  // Every status at once, so each tab can show its count; the chosen tab is filtered here.
   const list = await listVouchers(db, user.firmId, {
     types: [type],
     from,
     to,
     q: sp.q,
-    status,
+    status: "all",
     ...(user.allLocations ? {} : { locationIds: user.locations.map((l) => l.id), createdBy: user.id }),
   });
-  const isTransfer = type === "stock_transfer";
-  const myLocationIds = new Set(user.locations.map((l) => l.id));
-  const view = isTransfer ? (sp.view === "incoming" || sp.view === "outgoing" ? sp.view : "all") : "all";
-  const visible =
-    view === "incoming"
-      ? list.filter((r) => r.status === "active" && !r.received_at && (user.allLocations || (r.to_location_id != null && myLocationIds.has(r.to_location_id))))
-      : view === "outgoing"
-        ? list.filter((r) => user.allLocations || (r.location_id != null && myLocationIds.has(r.location_id)))
-        : list;
-  const active = visible.filter((r) => r.status === "active");
-  const sum = (f: (r: (typeof list)[number]) => number) => active.reduce((s, r) => s + f(r), 0);
+
   const today = todayIST();
+  const isTransfer = type === "stock_transfer";
   const showBalance = info.takesPayment;
   const showConverted = info.convertsTo.length > 0 && !info.posts;
-  const exportHref = `/api/export/vouchers?type=${type}&from=${from}&to=${to}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ""}${sp.status ? `&status=${sp.status}` : ""}`;
-  const tabHref = (v: string) => {
-    const params = new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => e[1] != null));
-    if (v === "all") params.delete("view");
-    else params.set("view", v);
-    return `${info.path}?${params.toString()}`;
+  const myLocationIds = new Set(user.locations.map((l) => l.id));
+  type Row = (typeof list)[number];
+  const active = (r: Row) => r.status === "active";
+
+  const filters: { key: string; label: string; test: (r: Row) => boolean; alert?: boolean }[] = [{ key: "all", label: "All", test: () => true }];
+  if (isTransfer) {
+    filters.push(
+      { key: "incoming", label: "Incoming", test: (r) => active(r) && !r.received_at && (user.allLocations || (r.to_location_id != null && myLocationIds.has(r.to_location_id))), alert: true },
+      { key: "outgoing", label: "Outgoing", test: (r) => user.allLocations || (r.location_id != null && myLocationIds.has(r.location_id)) },
+    );
+  } else if (showBalance) {
+    filters.push(
+      { key: "open", label: "Unpaid", test: (r) => active(r) && r.balance_paise > 0 },
+      { key: "overdue", label: "Overdue", test: (r) => active(r) && r.balance_paise > 0 && !!r.due_date && r.due_date < today, alert: true },
+      { key: "paid", label: "Paid", test: (r) => active(r) && r.balance_paise <= 0 },
+    );
+  } else if (showConverted) {
+    filters.push({ key: "pending", label: "Open", test: (r) => active(r) && !r.converted }, { key: "converted", label: "Converted", test: (r) => active(r) && r.converted });
+  }
+  filters.push({ key: "cancelled", label: "Cancelled", test: (r) => r.status === "cancelled" });
+
+  // Stock transfers have always used ?view= (the dashboard links to ?view=incoming); everything else uses ?status=.
+  const param = isTransfer ? "view" : "status";
+  const chosen = filters.find((f) => f.key === (isTransfer ? sp.view : sp.status)) ?? filters[0];
+  const visible = list.filter(chosen.test);
+  const tabHref = (key: string) => {
+    const p = new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => e[1] != null && e[0] !== "saved"));
+    p.delete("status");
+    p.delete("view");
+    if (key !== "all") p.set(param, key);
+    const s = p.toString();
+    return s ? `${info.path}?${s}` : info.path;
   };
-  const waitingCount = list.filter((r) => r.status === "active" && !r.received_at && (user.allLocations || (r.to_location_id != null && myLocationIds.has(r.to_location_id)))).length;
+  const tabs: ToolbarTab[] = filters.map((f) => ({ key: f.key, label: f.label, count: list.filter(f.test).length, href: tabHref(f.key), active: f.key === chosen.key, alert: f.alert }));
+
+  const counted = visible.filter(active);
+  const sum = (f: (r: Row) => number) => counted.reduce((s, r) => s + f(r), 0);
+  const total = sum((r) => r.total_paise);
+  const unpaid = sum((r) => Math.max(0, r.balance_paise));
+  const received = Math.max(0, total - unpaid);
+  // Settled money is "received" when it comes to us, "paid" when it goes out (purchases, expenses, refunds to customers).
+  const settledLabel = type === "sale_invoice" || type === "debit_note" || type === "other_income" ? "Received" : "Paid";
+  const showTax = info.hasLines && type !== "stock_adjustment" && type !== "stock_transfer";
+  const exportStatus = ["open", "overdue", "paid", "cancelled"].includes(chosen.key) ? `&status=${chosen.key}` : "";
+  const exportHref = `/api/export/vouchers?type=${type}&from=${from}&to=${to}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ""}${exportStatus}`;
   const warehouseId = isTransfer ? (await listLocations(db, user.firmId)).find((l) => l.kind === "warehouse")?.id : undefined;
+  const noun = (n: number) => `${n} ${n === 1 ? info.label.toLowerCase() : info.plural.toLowerCase()}`;
+
+  const more = [
+    can(user, "reports.sales") && { href: exportHref, label: "Export to Excel", download: true },
+    (type === "sale_invoice" || type === "purchase_bill") && can(user, "vouchers.create") && { href: `${info.path}/combine`, label: type === "sale_invoice" ? "Combine orders & challans" : "Combine orders" },
+    isTransfer && warehouseId && can(user, "vouchers.create") && { href: `${info.path}/new?to=${warehouseId}`, label: "Return to warehouse" },
+  ].filter(Boolean) as { href: string; label: string; download?: boolean }[];
 
   return (
     <>
       <PageHeader
         title={info.plural}
+        subtitle={`${formatDate(from)} – ${formatDate(to)}`}
         actions={
           <>
-            {can(user, "reports.sales") && (
-              <a href={exportHref} className="text-sm text-brand-600 hover:underline">
-                Export to Excel
-              </a>
-            )}
-            {(type === "sale_invoice" || type === "purchase_bill") && can(user, "vouchers.create") && (
-              <LinkButton href={`${info.path}/combine`} variant="secondary">
-                {type === "sale_invoice" ? "Combine orders & challans" : "Combine orders"}
-              </LinkButton>
-            )}
-            {isTransfer && warehouseId && can(user, "vouchers.create") && (
-              <LinkButton href={`${info.path}/new?to=${warehouseId}`} variant="secondary">
-                Return to warehouse
-              </LinkButton>
+            {more.length > 0 && (
+              <HoverMenu
+                panelClassName="pt-1.5"
+                trigger={
+                  <span className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-panel px-3 text-sm font-medium text-ink hover:border-brand-200">
+                    More
+                    <svg viewBox="0 0 20 20" className="size-3.5 text-faint" aria-hidden="true">
+                      <path d="M5.5 7.5 10 12l4.5-4.5" stroke="currentColor" strokeWidth={1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                }
+              >
+                <div className="w-60 rounded-xl border border-line bg-panel p-1.5 shadow-lg shadow-ink/10">
+                  {more.map((m) =>
+                    m.download ? (
+                      <a key={m.href} href={m.href} className="block rounded-lg px-2.5 py-2 text-sm text-ink hover:bg-ground">
+                        {m.label}
+                      </a>
+                    ) : (
+                      <Link key={m.href} href={m.href} className="block rounded-lg px-2.5 py-2 text-sm text-ink hover:bg-ground">
+                        {m.label}
+                      </Link>
+                    ),
+                  )}
+                </div>
+              </HoverMenu>
             )}
             <LinkButton href={`${info.path}/new`} variant="primary">
               + New {info.label.toLowerCase()}
@@ -87,160 +147,182 @@ export default async function VoucherListPage({ params, searchParams }: { params
           </>
         }
       />
-      {sp.saved && <p className="mb-3 rounded-md bg-good-bg px-3 py-2 text-sm text-good">Saved {sp.saved}.</p>}
-      {isTransfer && (
-        <div className="mb-4 flex gap-2">
-          {[
-            { key: "all", label: "All" },
-            { key: "incoming", label: `Incoming${waitingCount > 0 ? ` (${waitingCount} waiting)` : ""}` },
-            { key: "outgoing", label: "Outgoing" },
-          ].map((t) => (
-            <Link
-              key={t.key}
-              href={tabHref(t.key)}
-              className={
-                "rounded-full px-3 py-1.5 text-sm font-medium " +
-                (view === t.key ? "bg-brand-600 text-white" : "border border-line bg-panel text-muted hover:bg-ground")
-              }
-            >
-              {t.label}
-            </Link>
-          ))}
+      {sp.saved && <p className="mb-4 rounded-lg border-l-4 border-good bg-good-bg px-3 py-2 text-sm text-good">Saved {sp.saved}.</p>}
+
+      <section className="mb-4 rounded-xl border border-line bg-panel px-4 py-4 shadow-sm shadow-ink/[0.03] sm:px-5">
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+          <div>
+            <div className="text-xs font-medium text-muted">{chosen.key === "all" ? "Total" : `Total · ${chosen.label.toLowerCase()}`}</div>
+            <div className="num mt-0.5 text-2xl font-semibold tracking-tight text-ink">
+              <Money paise={total} />
+            </div>
+            <div className="mt-0.5 text-xs text-faint">
+              {noun(counted.length)}
+              {showTax && sum((r) => r.tax_paise) > 0 && (
+                <>
+                  {" · tax "}
+                  <Money paise={sum((r) => r.tax_paise)} />
+                </>
+              )}
+            </div>
+          </div>
+          {showBalance && total > 0 && (
+            <div className="flex gap-6 sm:gap-8">
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted">
+                  <span className="size-2 rounded-full bg-good" />
+                  {settledLabel}
+                </div>
+                <div className="num mt-0.5 text-base font-semibold text-good sm:text-lg">
+                  <Money paise={received} />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted">
+                  <span className="size-2 rounded-full bg-accent-500" />
+                  Unpaid
+                </div>
+                <div className={cx("num mt-0.5 text-base font-semibold sm:text-lg", unpaid > 0 ? "text-accent-600" : "text-faint")}>
+                  <Money paise={unpaid} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-      <ListFilters
-        presets={presets}
-        from={from}
-        to={to}
-        q={sp.q}
-        status={sp.status}
-        searchPlaceholder="Search party, number, note…"
-        statusOptions={
-          showBalance
-            ? [
-                { value: "all", label: "All" },
-                { value: "open", label: "Unpaid" },
-                { value: "overdue", label: "Overdue" },
-                { value: "paid", label: "Paid" },
-                { value: "cancelled", label: "Cancelled" },
-              ]
-            : [
-                { value: "all", label: "All" },
-                { value: "cancelled", label: "Cancelled" },
-              ]
-        }
-      />
-
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Tile label="Count" value={active.length.toString()} />
-        <Tile label="Total" value={<Money paise={sum((r) => r.total_paise)} />} />
-        {info.hasLines && type !== "stock_adjustment" && type !== "stock_transfer" && <Tile label="Tax" value={<Money paise={sum((r) => r.tax_paise)} />} />}
-        {showBalance && <Tile label="Unpaid" value={<Money paise={sum((r) => Math.max(0, r.balance_paise))} className="text-bad" />} />}
-      </div>
-
-      <Panel padded={false}>
-        {visible.length === 0 ? (
-          <Empty title={`No ${info.plural.toLowerCase()} in this period`} action={<LinkButton href={`${info.path}/new`} variant="primary">+ New {info.label.toLowerCase()}</LinkButton>}>
-            Change the dates above, or create a new one.
-          </Empty>
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <th className={th}>Date</th>
-                <th className={th}>Number</th>
-                {info.partySide !== "none" && <th className={th}>Party</th>}
-                {isTransfer && <th className={th}>From</th>}
-                {isTransfer && <th className={th}>To</th>}
-                {(type === "expense" || type === "other_income") && <th className={th}>Category</th>}
-                {!info.hasLines && <th className={th}>Account</th>}
-                <th className={th + " text-right"}>Total</th>
-                {showBalance && <th className={th + " text-right"}>Unpaid</th>}
-                <th className={th}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((r) => {
-                const st =
-                  r.status === "cancelled"
-                    ? "cancelled"
-                    : showBalance && r.party_id
-                      ? r.balance_paise <= 0
-                        ? "paid"
-                        : r.due_date && r.due_date < today
-                          ? "overdue"
-                          : r.balance_paise < r.total_paise
-                            ? "partial"
-                            : "unpaid"
-                      : showConverted
-                        ? r.converted
-                          ? "converted"
-                          : "open"
-                        : null;
-                return (
-                  <tr key={r.id} className={"hover:bg-ground/60 " + (r.status === "cancelled" ? "text-faint line-through" : "")}>
-                    <td className={td + " whitespace-nowrap"}>{formatDate(r.date)}</td>
-                    <td className={td}>
-                      <Link href={`${info.path}/${r.id}`} className="font-medium text-brand-600 hover:underline">
-                        {r.prefix}
-                        {r.number}
-                      </Link>
-                      {r.supplier_invoice_no && <div className="text-xs text-faint">Supplier bill {r.supplier_invoice_no}</div>}
-                    </td>
-                    {info.partySide !== "none" && (
-                      <td className={td}>
-                        {r.party_id ? (
-                          <Link href={`/parties/${r.party_id}`} className="hover:underline">
-                            {r.party_name}
-                          </Link>
-                        ) : (
-                          <span className="text-muted">{r.party_name || "Cash"}</span>
-                        )}
-                      </td>
-                    )}
-                    {isTransfer && <td className={td}>{r.location_name ?? "—"}</td>}
-                    {isTransfer && <td className={td}>{r.to_location_name ?? "—"}</td>}
-                    {(type === "expense" || type === "other_income") && <td className={td}>{r.category_name ?? "—"}</td>}
-                    {!info.hasLines && <td className={td}>{r.account_name}{r.payment_mode && <span className="text-xs text-faint"> · {r.payment_mode}</span>}</td>}
-                    <td className={td + " text-right"}>
-                      <Money paise={r.total_paise} />
-                    </td>
-                    {showBalance && (
-                      <td className={td + " text-right"}>
-                        <Money paise={Math.max(0, r.balance_paise)} blankZero />
-                      </td>
-                    )}
-                    <td className={td}>
-                      {r.status === "cancelled" ? (
-                        <StatusBadge status="cancelled" />
-                      ) : isTransfer ? (
-                        <Badge tone={r.received_at ? "good" : "warn"}>{r.received_at ? "Received" : "In transit"}</Badge>
-                      ) : st ? (
-                        <StatusBadge status={st} />
-                      ) : r.status === "active" ? (
-                        <Badge tone="good">Saved</Badge>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
+        {showBalance && total > 0 && (
+          <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-accent-100" title={`${Math.round((received / total) * 100)}% ${settledLabel.toLowerCase()}`}>
+            <div className="h-full rounded-full bg-good transition-all" style={{ width: `${(received / total) * 100}%` }} />
+          </div>
         )}
-      </Panel>
-      {visible.length >= 1000 && <p className="mt-2 text-xs text-muted">Showing the latest 1,000. Narrow the dates to see older entries.</p>}
-      <p className="mt-2 text-xs text-faint">
-        {formatDate(from)} – {formatDate(to)}
-      </p>
-    </>
-  );
-}
+      </section>
 
-function Tile({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-line bg-panel px-3 py-2">
-      <div className="text-xs text-muted">{label}</div>
-      <div className="num mt-0.5 font-semibold">{value}</div>
-    </div>
+      {/* No overflow-hidden here: it would clip the period menu that opens out of the toolbar. */}
+      <section className="rounded-xl border border-line bg-panel shadow-sm shadow-ink/[0.03]">
+        <ListToolbar tabs={tabs} presets={presets} from={from} to={to} q={sp.q} searchPlaceholder={info.partySide !== "none" ? "Search party, number, note…" : "Search number, note…"} />
+        {visible.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+            <div className="mb-1 flex size-12 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="size-6" aria-hidden="true">
+                <path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20V3.5Z" strokeLinejoin="round" />
+                <path d="M14 3.5V8h4M10 12.5h5M10 16h3" strokeLinecap="round" />
+              </svg>
+            </div>
+            <p className="font-medium text-ink">{sp.q ? `Nothing matches “${sp.q}”` : chosen.key === "all" ? `No ${info.plural.toLowerCase()} in this period` : `No ${chosen.label.toLowerCase()} ${info.plural.toLowerCase()} here`}</p>
+            <p className="max-w-sm text-sm text-muted">{sp.q ? "Try a different word, or clear the search." : "Try another period, or create a new one."}</p>
+            {!sp.q && chosen.key === "all" && (
+              <div className="mt-2">
+                <LinkButton href={`${info.path}/new`} variant="primary">
+                  + New {info.label.toLowerCase()}
+                </LinkButton>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-b-xl">
+            {/* On a phone only the first column shows, so a fixed layout lets long party names truncate instead of pushing the amount off-screen. */}
+            <table className="w-full border-collapse text-sm max-sm:table-fixed">
+              <thead className="max-sm:hidden">
+                <tr className="text-left text-xs font-medium text-faint">
+                  <th className="px-4 py-2.5 font-medium sm:pl-5">{info.partySide !== "none" ? "Party" : "Entry"}</th>
+                  {isTransfer && <th className="px-4 py-2.5 font-medium max-sm:hidden">From → To</th>}
+                  {(type === "expense" || type === "other_income") && <th className="px-4 py-2.5 font-medium max-sm:hidden">Category</th>}
+                  {!info.hasLines && <th className="px-4 py-2.5 font-medium max-sm:hidden">Account</th>}
+                  <th className="px-4 py-2.5 text-right font-medium max-sm:hidden">Amount</th>
+                  {showBalance && <th className="px-4 py-2.5 text-right font-medium max-sm:hidden">Unpaid</th>}
+                  <th className="px-4 py-2.5 font-medium max-sm:hidden sm:pr-5">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((r) => {
+                  const cancelled = r.status === "cancelled";
+                  const st =
+                    cancelled
+                      ? "cancelled"
+                      : showBalance
+                        ? r.balance_paise <= 0
+                          ? "paid"
+                          : r.due_date && r.due_date < today
+                            ? "overdue"
+                            : r.balance_paise < r.total_paise
+                              ? "partial"
+                              : "unpaid"
+                        : showConverted
+                          ? r.converted
+                            ? "converted"
+                            : "open"
+                          : null;
+                  const name = info.partySide !== "none" ? r.party_name || "Cash" : `${r.prefix}${r.number}`;
+                  const href = `${info.path}/${r.id}`;
+                  const badge = cancelled ? (
+                    <StatusBadge status="cancelled" />
+                  ) : isTransfer ? (
+                    <Badge tone={r.received_at ? "good" : "warn"}>{r.received_at ? "Received" : "In transit"}</Badge>
+                  ) : st ? (
+                    <StatusBadge status={st} />
+                  ) : r.status === "active" ? (
+                    <Badge tone="good">Saved</Badge>
+                  ) : null;
+                  return (
+                    <tr key={r.id} className={cx("group relative border-t border-line/70 transition-colors hover:bg-brand-50/40", cancelled && "opacity-55")}>
+                      <td className="px-4 py-3 sm:pl-5">
+                        <div className="flex items-center gap-2.5 sm:gap-3">
+                          <span className={cx("flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold sm:size-9", info.partySide !== "none" && r.party_id ? avatarClass(name) : "bg-ground text-muted")}>
+                            {info.partySide !== "none" ? initials(name) : "#"}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <Link href={href} className={cx("block truncate font-medium text-ink after:absolute after:inset-0 group-hover:text-brand-700", cancelled && "line-through")}>
+                              {name}
+                            </Link>
+                            <div className="truncate text-xs text-faint">
+                              {info.partySide !== "none" && (
+                                <>
+                                  <span className="font-medium text-muted">
+                                    {r.prefix}
+                                    {r.number}
+                                  </span>
+                                  {" · "}
+                                </>
+                              )}
+                              {formatDate(r.date)}
+                              {r.supplier_invoice_no && ` · bill ${r.supplier_invoice_no}`}
+                            </div>
+                          </div>
+                          <div className="ml-auto flex shrink-0 flex-col items-end gap-1 sm:hidden">
+                            <Money paise={r.total_paise} className="font-semibold text-ink" />
+                            {badge}
+                          </div>
+                        </div>
+                      </td>
+                      {isTransfer && (
+                        <td className="px-4 py-3 text-muted max-sm:hidden">
+                          {r.location_name ?? "—"} <span className="text-faint">→</span> {r.to_location_name ?? "—"}
+                        </td>
+                      )}
+                      {(type === "expense" || type === "other_income") && <td className="px-4 py-3 text-muted max-sm:hidden">{r.category_name ?? "—"}</td>}
+                      {!info.hasLines && (
+                        <td className="px-4 py-3 text-muted max-sm:hidden">
+                          {r.account_name}
+                          {r.payment_mode && <span className="text-xs text-faint"> · {r.payment_mode}</span>}
+                        </td>
+                      )}
+                      <td className="px-4 py-3 text-right font-semibold text-ink max-sm:hidden">
+                        <Money paise={r.total_paise} />
+                      </td>
+                      {showBalance && (
+                        <td className="px-4 py-3 text-right text-accent-600 max-sm:hidden">
+                          <Money paise={Math.max(0, r.balance_paise)} blankZero />
+                        </td>
+                      )}
+                      <td className="px-4 py-3 max-sm:hidden sm:pr-5">{badge}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {list.length >= 1000 && <p className="mt-2 text-xs text-muted">Showing the latest 1,000. Pick a shorter period to see older entries.</p>}
+    </>
   );
 }
