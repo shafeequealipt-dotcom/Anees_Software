@@ -1,4 +1,5 @@
 import { getDb } from "@/db";
+import { can } from "@/lib/permissions";
 import { formatDate, todayIST } from "@/lib/dates";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { apiUser } from "@/server/api";
@@ -22,6 +23,7 @@ export async function GET(req: Request) {
     q: q.get("q") || undefined,
     status,
     limit: 20000,
+    hideSalaries: !can(a.user, "staff.manage"),
     ...(a.user.allLocations ? {} : { locationIds: a.user.locations.map((l) => l.id), createdBy: a.user.id }),
   });
   const info = VOUCHER_INFO[type];

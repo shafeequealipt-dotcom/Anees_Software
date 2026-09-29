@@ -201,6 +201,21 @@ Verified = automated test passes, or manually clicked through in the dev server.
   trial balance, invoice numbers/PDF, audit trail) in `tests/data-backup.test.ts`,
   and manually via the real Settings → Backups screen in the dev server.
 
+### Staff & salaries — built 2026-09-30 (migration `0020_staff_salaries.sql`)
+- [x] Accounts → Staff & salaries (`/staff`): monthly salary sheet per month — salary, extra pay /
+  deductions (per employee per month, `salary_adjustments`), advances, paid, still due, with Pay and
+  Advance buttons. Employee pages (`/staff/[id]`) with payment history; add/edit; "All staff" list incl.
+  people who've left. `src/server/staff.ts`, `src/components/staff.tsx`, `src/app/actions/staff.ts`.
+- [x] Every payment is an ordinary expense (category "Salaries & wages", found by name or recreated)
+  tagged with `vouchers.employee_id / pay_month / pay_kind`, so cash, bank, P&L and the GL need nothing
+  extra. Advances given in a month come off that month's salary. A salary payment can't exceed what's
+  due (bonus goes under Extra first). Amounts are exact (no round-off).
+- [x] Privacy: new permission `staff.manage` (Owner always; Accountant via the migration). Without it,
+  salary entries are hidden from expense lists, day book, search, Excel export, and can't be opened
+  (`canSeeVoucher`). Aggregate totals (P&L, dashboard) still include them.
+- Not built: pro-rating for mid-month joiners/leavers (enter it as a deduction), PF/ESI/TDS on salary,
+  payslips. Tests: `tests/staff.test.ts`.
+
 ### Dev tooling
 - [x] Vitest test suite (`npm test`), TypeScript strict mode (`npm run typecheck`),
   embedded PostgreSQL for local dev with no Docker (`@electric-sql/pglite`) so

@@ -21,6 +21,7 @@ export const PERMISSION_GROUPS = [
       { key: "masters.delete", label: "Delete parties and items" },
       { key: "money.view", label: "Open Cash & bank and Other income", hint: "Also shows money totals on the home page." },
       { key: "money.edit", label: "Record cash & bank transfers, adjustments and other income" },
+      { key: "staff.manage", label: "Staff & salaries", hint: "See employees and what they're paid, give advances and pay salaries. Without this, salaries stay private." },
     ],
   },
   {

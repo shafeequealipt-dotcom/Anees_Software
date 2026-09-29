@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { monthLabel } from "@/server/staff";
 import { notFound, redirect } from "next/navigation";
 import { Alert, Badge, Money, PageHeader, Panel, StatusBadge, Table, td, th } from "@/components/ui";
 import { ReceiveTransferForm } from "@/components/receive-transfer-form";
@@ -142,7 +143,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
             <Panel padded={false}>
               <div className="grid gap-4 border-b border-line p-4 sm:grid-cols-2">
                 <div>
-                  <div className="text-xs font-medium uppercase text-muted">{info.partySide === "supplier" ? "Supplier" : info.partySide === "none" ? "" : "Bill to"}</div>
+                  <div className="text-xs font-medium uppercase text-muted">{v.employeeId ? "Paid to" : info.partySide === "supplier" ? "Supplier" : info.partySide === "none" ? "" : "Bill to"}</div>
                   {v.partyId ? (
                     <Link href={`/parties/${v.partyId}`} className="font-medium text-brand-600 hover:underline">
                       {v.partyName}
@@ -167,6 +168,16 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   {v.ewayBillNo && <Pair k="E-way bill" v={v.ewayBillNo} />}
                   {v.vehicleNo && <Pair k="Vehicle" v={v.vehicleNo} />}
                   {category && <Pair k="Category" v={category.name} />}
+                  {v.employeeId && v.payMonth && (
+                    <Pair
+                      k={v.payKind === "advance" ? "Salary advance" : "Salary"}
+                      v={
+                        <Link href={`/staff/${v.employeeId}`} className="text-brand-600 hover:underline">
+                          {v.partyName} · {monthLabel(v.payMonth)}
+                        </Link>
+                      }
+                    />
+                  )}
                   {v.type === "stock_adjustment" && <Pair k="Adjustment" v={v.direction === -1 ? "Stock reduced" : "Stock added"} />}
                   {v.withoutTax && info.outward && <Pair k="Type" v={R.usesStates ? "Bill of supply" : "No VAT charged"} />}
                   {v.reverseCharge && <Pair k="Reverse charge" v="Yes" />}

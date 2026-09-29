@@ -18,6 +18,7 @@ const AR: Record<string, string> = {
   "Amounts in": "المبالغ بعملة",
   "Bill to": "فاتورة إلى",
   Supplier: "المورد",
+  "Paid to": "مدفوع إلى",
   "Deliver to": "تسليم إلى",
   "Invoice no.": "رقم الفاتورة",
   Date: "التاريخ",

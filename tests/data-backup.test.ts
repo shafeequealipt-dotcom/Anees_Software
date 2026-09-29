@@ -121,6 +121,33 @@ describe("round trip", () => {
   });
 });
 
+describe("coverage", () => {
+  it("every table in the database is either backed up or deliberately left out", async () => {
+    const schema = await import("@/db/schema");
+    const { getTableName, is } = await import("drizzle-orm");
+    const { PgTable } = await import("drizzle-orm/pg-core");
+    const all = Object.values(schema).filter((t) => is(t, PgTable)).map((t) => getTableName(t as never));
+    const { EXCLUDED_TABLES } = await import("@/server/data-backup");
+    const missing = all.filter((t) => !BACKUP_TABLES.includes(t) && !EXCLUDED_TABLES.includes(t));
+    expect(missing).toEqual([]); // a new table must be added to SPECS (or EXCLUDED_TABLES) in data-backup.ts
+  });
+
+  it("staff, their monthly adjustments and their salary payments survive a round trip", async () => {
+    const { saveEmployee, payEmployee, saveSalaryAdjustment, salarySheet } = await import("@/server/staff");
+    const cashId = (await db.select({ id: (await import("@/db/schema")).accounts.id }).from((await import("@/db/schema")).accounts).where(eq((await import("@/db/schema")).accounts.firmId, firmId)))[0].id;
+    const emp = await saveEmployee(db, firmId, { name: "Asha", monthlySalaryPaise: 1_200_000, joinedOn: "2026-01-01", locationId: warehouseId }, owner.id);
+    await saveSalaryAdjustment(db, firmId, { employeeId: emp, month: "2026-09", extraPaise: 50_000, deductionPaise: 0, note: "overtime" }, owner.id);
+    await payEmployee(db, firmId, { employeeId: emp, month: "2026-09", kind: "advance", amountPaise: 200_000, date: "2026-09-05", accountId: cashId }, owner.id);
+
+    const before = (await salarySheet(db, firmId, "2026-09")).rows.find((r) => r.name === "Asha")!;
+    const { buffer } = await exportAllData(db, [firmId], owner);
+    const restored = await restoreAllData(db, buffer, { id: owner.id, isOwner: true });
+    const after = (await salarySheet(db, restored.companies[0].id, "2026-09")).rows.find((r) => r.name === "Asha")!;
+    expect({ ...after, employeeId: 0 }).toEqual({ ...before, employeeId: 0 });
+    expect(after.employeeId).not.toBe(before.employeeId);
+  });
+});
+
 describe("choosing which company to back up", () => {
   it("a one-company backup holds only that company, even with several in the database", async () => {
     const all = await db.select({ id: firms.id, name: firms.name }).from(firms).orderBy(asc(firms.id));

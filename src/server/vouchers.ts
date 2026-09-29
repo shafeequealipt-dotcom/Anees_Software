@@ -5,6 +5,7 @@ import type { DB, Tx } from "@/db";
 import {
   accounts,
   allocations,
+  employees,
   firms,
   items,
   ledgerCategories,
@@ -120,6 +121,10 @@ export const voucherSchema = z.object({
   notes: optText(2000),
   terms: optText(4000),
   lines: z.array(lineSchema).max(500).default([]),
+  /** Salary expenses only (set by the Staff screens): who was paid, for which month, advance or salary. */
+  employeeId: int.positive().nullish(),
+  payMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullish(),
+  payKind: z.enum(["advance", "salary"]).nullish(),
   /** For payments: bills to settle. Omit to settle the oldest open bills automatically. */
   allocations: z.array(z.object({ toVoucherId: int.positive(), amountPaise: nonNeg })).optional(),
 });
@@ -176,6 +181,18 @@ export async function saveVoucher(
     }
     if (["payment_in", "payment_out"].includes(input.type) && !party) {
       throw new VoucherError("Choose the party for this payment.", "partyId");
+    }
+
+    // ── Salary link. Only the Staff screens send these; the generic Edit screen doesn't, so an edit
+    // there keeps whatever link the expense already had instead of wiping it.
+    const employeeId = input.employeeId !== undefined ? input.employeeId : (existing?.employeeId ?? null);
+    const payMonth = input.payMonth !== undefined ? input.payMonth : (existing?.payMonth ?? null);
+    const payKind = input.payKind !== undefined ? input.payKind : (existing?.payKind ?? null);
+    if (employeeId) {
+      if (input.type !== "expense") throw new VoucherError("Only an expense can be a salary payment.");
+      const [emp] = await tx.select({ id: employees.id }).from(employees).where(and(eq(employees.id, employeeId), eq(employees.firmId, firmId)));
+      if (!emp) throw new VoucherError("That employee no longer exists.");
+      if (!payMonth || !payKind) throw new VoucherError("A salary payment needs its month and whether it's an advance.");
     }
 
     // ── Lines and tax
@@ -390,6 +407,9 @@ export async function saveVoucher(
       categoryId: input.categoryId ?? null,
       sourceVoucherId: sourceIds[0] ?? existing?.sourceVoucherId ?? null,
       itcEligible: input.itcEligible,
+      employeeId,
+      payMonth: employeeId ? payMonth : null,
+      payKind: employeeId ? payKind : null,
       tcsBp,
       tcsPaise,
       tdsBp,

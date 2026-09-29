@@ -405,6 +405,44 @@ export const accounts = pgTable("accounts", {
   createdAt: createdAt(),
 });
 
+/** People the business pays a monthly salary. Their pay is booked as "Salaries & wages" expenses linked back here. */
+export const employees = pgTable(
+  "employees",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    phone: varchar("phone", { length: 30 }),
+    /** Job title, e.g. "Cashier", "Delivery". */
+    role: varchar("role", { length: 80 }),
+    /** The shop or warehouse they work at; their salary shows as that location's cost. */
+    locationId: integer("location_id").references(() => locations.id, { onDelete: "set null" }),
+    monthlySalaryPaise: paise("monthly_salary_paise").notNull().default(0),
+    joinedOn: date("joined_on"),
+    leftOn: date("left_on"),
+    notes: text("notes"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("employees_firm_idx").on(t.firmId)],
+);
+
+/** One month's extra pay (bonus, overtime) and deductions (unpaid leave) for one employee. */
+export const salaryAdjustments = pgTable(
+  "salary_adjustments",
+  {
+    employeeId: integer("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+    /** "2026-09" */
+    month: varchar("month", { length: 7 }).notNull(),
+    extraPaise: paise("extra_paise").notNull().default(0),
+    deductionPaise: paise("deduction_paise").notNull().default(0),
+    note: varchar("note", { length: 200 }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.employeeId, t.month] })],
+);
+
 export const ledgerCategories = pgTable("ledger_categories", {
   id: serial("id").primaryKey(),
   firmId: integer("firm_id").notNull().references(() => firms.id),
@@ -492,6 +530,10 @@ export const vouchers = pgTable(
     deletedSnapshot: jsonb("deleted_snapshot"),
     /** Expenses: is the tax on this bill claimable as input tax credit? */
     itcEligible: boolean("itc_eligible").notNull().default(true),
+    /** Salary expenses: who was paid, for which month ("2026-09"), and whether it was an advance or the salary itself. */
+    employeeId: integer("employee_id").references(() => employees.id),
+    payMonth: varchar("pay_month", { length: 7 }),
+    payKind: varchar("pay_kind", { length: 10 }),
     /** India: tax collected at source by the seller (added to the bill total). */
     tcsBp: integer("tcs_bp").notNull().default(0),
     tcsPaise: paise("tcs_paise").notNull().default(0),
@@ -506,6 +548,7 @@ export const vouchers = pgTable(
     index("vouchers_type_date_idx").on(t.type, t.date),
     index("vouchers_party_idx").on(t.partyId),
     index("vouchers_date_idx").on(t.date),
+    index("vouchers_employee_idx").on(t.employeeId, t.payMonth),
   ],
 );
 

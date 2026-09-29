@@ -11,6 +11,7 @@ export async function searchAction(q: string) {
   const db = await getDb();
   const r = await globalSearch(db, user.firmId, q.slice(0, 100), {
     partyContact: can(user, "see.partyContact"),
+    hideSalaries: !can(user, "staff.manage"),
     access: user.allLocations ? undefined : { locationIds: user.locations.map((l) => l.id), createdBy: user.id },
   });
   return {

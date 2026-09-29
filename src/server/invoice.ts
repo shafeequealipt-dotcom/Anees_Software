@@ -157,7 +157,7 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
   }
 
   const partyModel = {
-    heading: L(info.partySide === "supplier" ? "Supplier" : v.type === "delivery_challan" ? "Deliver to" : "Bill to"),
+    heading: L(v.employeeId ? "Paid to" : info.partySide === "supplier" ? "Supplier" : v.type === "delivery_challan" ? "Deliver to" : "Bill to"),
     name: v.partyName || (info.partySide === "none" ? "" : L("Cash")),
     nameAr: ar ? (party?.nameAr ?? null) : null,
     linesAr: ar ? clean([party?.addressAr]) : [],

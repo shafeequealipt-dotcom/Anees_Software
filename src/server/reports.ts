@@ -58,7 +58,7 @@ function locationAccessWhere(locationIds: number[] | undefined, createdBy: numbe
 export async function listVouchers(
   db: DB,
   firmId: number,
-  f: { types: VoucherType[]; from?: string; to?: string; partyId?: number; q?: string; status?: "open" | "paid" | "overdue" | "cancelled" | "all"; limit?: number; accountId?: number; categoryId?: number; locationIds?: number[]; createdBy?: number },
+  f: { types: VoucherType[]; from?: string; to?: string; partyId?: number; q?: string; status?: "open" | "paid" | "overdue" | "cancelled" | "all"; limit?: number; accountId?: number; categoryId?: number; locationIds?: number[]; createdBy?: number; hideSalaries?: boolean },
 ): Promise<VoucherRow[]> {
   const where: SQL[] = [sql`v.firm_id = ${firmId}`, sql`v.status <> 'deleted'`, sql`v.type in (${sql.join(f.types.map((t) => sql`${t}`), sql`, `)})`];
   if (f.from) where.push(sql`v.date >= ${f.from}`);
@@ -74,6 +74,7 @@ export async function listVouchers(
   else if (f.status && f.status !== "all") where.push(sql`v.status = 'active'`);
   const locWhere = locationAccessWhere(f.locationIds, f.createdBy);
   if (locWhere) where.push(locWhere);
+  if (f.hideSalaries) where.push(sql`v.employee_id is null`);
 
   const list = await rows<VoucherRow>(
     db,
@@ -493,8 +494,9 @@ export async function accountStatement(db: DB, accountId: number, from: string, 
 
 // ─── Day book ────────────────────────────────────────────────────────────────
 
-export async function dayBook(db: DB, firmId: number, from: string, to: string, access?: { locationIds: number[]; createdBy: number }) {
+export async function dayBook(db: DB, firmId: number, from: string, to: string, access?: { locationIds: number[]; createdBy: number }, opts: { hideSalaries?: boolean } = {}) {
   const where: SQL[] = [sql`v.firm_id = ${firmId}`, sql`v.status <> 'deleted'`, sql`v.date between ${from} and ${to}`];
+  if (opts.hideSalaries) where.push(sql`v.employee_id is null`);
   const locWhere = locationAccessWhere(access?.locationIds, access?.createdBy);
   if (locWhere) where.push(locWhere);
   const list = nums(
@@ -673,7 +675,7 @@ export async function taxReport(db: DB, firmId: number, from: string, to: string
 
 // ─── Global search ───────────────────────────────────────────────────────────
 
-export async function globalSearch(db: DB, firmId: number, q: string, opts: { partyContact?: boolean; access?: { locationIds: number[]; createdBy: number } } = {}) {
+export async function globalSearch(db: DB, firmId: number, q: string, opts: { partyContact?: boolean; access?: { locationIds: number[]; createdBy: number }; hideSalaries?: boolean } = {}) {
   const contact = opts.partyContact ?? true;
   const term = q.trim().toLowerCase();
   if (term.length < 2) return { parties: [], items: [], vouchers: [] };
@@ -685,6 +687,7 @@ export async function globalSearch(db: DB, firmId: number, q: string, opts: { pa
   ];
   const locWhere = opts.access ? locationAccessWhere(opts.access.locationIds, opts.access.createdBy) : null;
   if (locWhere) voucherWhere.push(locWhere);
+  if (opts.hideSalaries) voucherWhere.push(sql`v.employee_id is null`);
   const [p, i, v] = await Promise.all([
     rows<{ id: number; name: string; phone: string | null }>(
       db,

@@ -141,6 +141,13 @@
       "when": 1790285177001,
       "tag": "0019_transfer_receive",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790707365071,
+      "tag": "0020_staff_salaries",
+      "breakpoints": true
     }
   ]
 }
