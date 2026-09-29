@@ -412,6 +412,25 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="grid gap-4 rounded-lg border border-line bg-panel p-4 lg:grid-cols-[1fr_auto]">
         <div className="flex flex-col gap-3">
+          {!showPartyBlock && (data.type === "stock_transfer" || data.type === "stock_adjustment") && (
+            // No party on these, so use the space to say plainly what saving will do.
+            <div className="flex items-start gap-3 rounded-lg bg-brand-50/60 px-3 py-3 text-sm text-muted">
+              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700" aria-hidden="true">
+                {data.type === "stock_transfer" ? "⇄" : "±"}
+              </span>
+              <p>
+                {data.type === "stock_transfer" ? (
+                  <>
+                    <span className="font-medium text-ink">Moves stock between your shops and warehouse.</span> It leaves the sender as soon as you save and shows as <span className="font-medium text-ink">In transit</span> until the receiving shop confirms what arrived.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium text-ink">Corrects stock at one location</span> — goods found, lost, used in the shop or written off. It changes stock only, not money.
+                  </>
+                )}
+              </p>
+            </div>
+          )}
           {showPartyBlock && (
             <>
               <Field label={info.partySide === "supplier" ? "Supplier" : info.partySide === "customer" ? "Customer" : "Party"} htmlFor="party">
@@ -503,7 +522,15 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
           </Field>
           {wantsLocation(data.type) && shopOptions.length > 1 && (
             <Field label={data.type === "stock_transfer" ? "From" : "Shop"} className={data.type === "stock_transfer" ? "col-span-1" : "col-span-2"}>
-              <Select value={locationId ?? ""} onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : null)}>
+              <Select
+                value={locationId ?? ""}
+                onChange={(e) => {
+                  const next = e.target.value ? Number(e.target.value) : null;
+                  setLocationId(next);
+                  // Sending to where it's already from isn't a transfer; make them pick a destination again.
+                  if (next !== null && next === toLocationId) setToLocationId(null);
+                }}
+              >
                 <option value="">Choose…</option>
                 {shopOptions.map((l) => (
                   <option key={l.id} value={l.id}>

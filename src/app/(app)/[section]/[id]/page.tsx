@@ -108,9 +108,11 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
           <VoucherActions
             id={v.id}
             path={info.path}
-            editable={can(user, "vouchers.edit")}
-            canCancel={can(user, "vouchers.cancel") && info.posts}
-            canDelete={can(user, "vouchers.delete")}
+            // Offer only what the server will actually allow: a received transfer can't be edited, and
+            // an invoice already issued to ZATCA can't be edited, cancelled or deleted.
+            editable={can(user, "vouchers.edit") && !zrec && !(v.type === "stock_transfer" && v.receivedAt)}
+            canCancel={can(user, "vouchers.cancel") && info.posts && !zrec}
+            canDelete={can(user, "vouchers.delete") && !zrec}
             cancelled={v.status === "cancelled"}
             pdf={info.hasLines || v.type === "payment_in" || v.type === "payment_out"}
             share={info.outward || v.type === "payment_in" ? { phone: v.partyPhone, text: shareText } : undefined}
@@ -159,7 +161,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                   {v.originalInvoiceNo && <Pair k="Against bill" v={`${v.originalInvoiceNo}${v.originalInvoiceDate ? `, ${formatDate(v.originalInvoiceDate)}` : ""}`} />}
                   {v.type === "stock_transfer" && fromLocation && <Pair k="From" v={fromLocation.name} />}
                   {v.type === "stock_transfer" && toLocation && <Pair k="To" v={toLocation.name} />}
-                  {v.type === "stock_transfer" && v.receivedAt && <Pair k="Received" v={`${formatDate(v.receivedAt.toISOString().slice(0, 10))}${receiver ? ` by ${receiver.name}` : ""}`} />}
+                  {v.type === "stock_transfer" && v.receivedAt && <Pair k="Received" v={`${formatDateTime(v.receivedAt)}${receiver ? ` by ${receiver.name}` : ""}`} />}
                   {v.returnReason && <Pair k="Reason for return" v={returnReasonLabel(v.returnReason)} />}
                   {v.poNumber && <Pair k="PO number" v={v.poNumber} />}
                   {v.ewayBillNo && <Pair k="E-way bill" v={v.ewayBillNo} />}

@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import type { DB } from "@/db";
 import { firms, notifications, parties } from "@/db/schema";
-import { daysBetween, formatDate, todayIST } from "@/lib/dates";
+import { daysBetween, formatDate, localDate, todayIST } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
@@ -47,7 +47,7 @@ export async function runPaymentReminders(db: DB, firmId: number): Promise<{ que
     const bills = byParty.get(p.id)!.sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
     const oldest = bills[0].due_date!;
     const h = past.get(p.id);
-    const lastDay = h ? new Date(h.last).toISOString().slice(0, 10) : null;
+    const lastDay = h ? localDate(h.last) : null;
     const due = h ? daysBetween(lastDay!, today) >= cfg.reminderEveryDays : daysBetween(oldest, today) >= cfg.reminderFirstAfterDays;
     if (!due) continue;
     if ((h?.n ?? 0) >= cfg.reminderMaxCount) continue;

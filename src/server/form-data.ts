@@ -194,7 +194,15 @@ export async function loadVoucherFormData(
     damagedLocationId: damagedLocation?.id ?? null,
     damagedLocationName: damagedLocation?.name ?? null,
     // Returns default to the shop the original bill was at, same as the server falls back to on save.
-    defaultLocationId: opts.locationId ?? existing?.voucher.locationId ?? (isReturn ? sources[0]?.voucher.locationId : null) ?? myLocations[0]?.id ?? null,
+    // A transfer with a preset destination ("Return to warehouse") must start from somewhere else,
+    // or the destination would be hidden from its own list and the form couldn't be saved.
+    defaultLocationId:
+      opts.locationId ??
+      existing?.voucher.locationId ??
+      (isReturn ? sources[0]?.voucher.locationId : null) ??
+      (opts.toLocationId ? myLocations.find((l) => l.id !== opts.toLocationId)?.id : null) ??
+      myLocations[0]?.id ??
+      null,
     presetToLocationId: existing?.voucher.toLocationId ?? opts.toLocationId ?? null,
   };
 }

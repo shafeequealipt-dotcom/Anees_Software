@@ -2,6 +2,7 @@ import { getDb } from "@/db";
 import { can } from "@/lib/permissions";
 import { apiUser } from "@/server/api";
 import { audit } from "@/lib/audit";
+import { todayIST } from "@/lib/dates";
 import { xlsxResponse } from "@/server/excel";
 import { backupFirmIds, exportAllData, inspectBackup, restoreAllData } from "@/server/data-backup";
 
@@ -26,7 +27,7 @@ export async function GET(req: Request) {
   const { buffer, companies, rows } = await exportAllData(db, firmIds, a.user);
   const which = companies.length === 1 ? `"${companies[0]}"` : `${companies.length} companies`;
   await audit(db, { firmId: a.user.firmId, userId: a.user.id, action: "export", entity: "backup", summary: `Downloaded an Excel backup of ${which} (${rows} rows)` });
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = todayIST();
   const slug = companies.length === 1 ? companies[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40).replace(/^-+|-+$/g, "") || "company" : "all-companies";
   return xlsxResponse(buffer, `backup-${slug}-${stamp}.xlsx`);
 }

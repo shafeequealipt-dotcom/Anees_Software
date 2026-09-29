@@ -6,9 +6,13 @@ import { region } from "./region";
 const tz = () => region().timezone;
 
 export function todayIST(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: tz(), year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    new Date(),
-  );
+  return localDate(new Date());
+}
+
+/** The calendar date (YYYY-MM-DD) of a moment in the business's own time zone. Not `toISOString()`,
+ * which gives the UTC date: just after midnight in India that's still yesterday. */
+export function localDate(d: Date | string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz(), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d));
 }
 
 /** Current time of day ("HH:MM", 24-hour) in the business's own time zone — for "has it passed 9:30 pm yet" checks. */
