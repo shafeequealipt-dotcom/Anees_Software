@@ -314,7 +314,7 @@ export async function deleteItem(db: DB, firmId: number, id: number, userId: num
     if (!it) return;
     if (used.n > 0) {
       await tx.update(items).set({ active: false, updatedAt: new Date() }).where(eq(items.id, id));
-      await audit(tx, { userId, action: "update", entity: "item", entityId: id, summary: `Deactivated item ${it.name} (on ${used.n} bill lines)` });
+      await audit(tx, { firmId, userId, action: "update", entity: "item", entityId: id, summary: `Deactivated item ${it.name} (on ${used.n} bill lines)` });
       return "deactivated" as const;
     }
     await tx.delete(items).where(eq(items.id, id));

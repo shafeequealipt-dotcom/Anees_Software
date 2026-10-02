@@ -35,8 +35,8 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
   const fy = financialYear(todayIST());
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();
-  const st = await partyStatement(db, p.id, from, to);
-  const [{ balance }] = [{ balance: (await partyStatement(db, p.id, "1900-01-01", "9999-12-31")).closingPaise }];
+  const st = await partyStatement(db, user.firmId, p.id, from, to);
+  const [{ balance }] = [{ balance: (await partyStatement(db, user.firmId, p.id, "1900-01-01", "9999-12-31")).closingPaise }];
   const openBills = (await listVouchers(db, user.firmId, { types: ["sale_invoice", "purchase_bill"], partyId: p.id, status: "open" })).slice(0, 20);
   const isCustomer = p.kind !== "supplier";
   const reminder = settings.reminderMessage

@@ -148,6 +148,13 @@
       "when": 1790707365071,
       "tag": "0020_staff_salaries",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790959907842,
+      "tag": "0021_company_owner_role",
+      "breakpoints": true
     }
   ]
 }

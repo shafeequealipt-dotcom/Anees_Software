@@ -17,7 +17,7 @@ export default async function CashBankPage() {
       sql`select a.id, a.kind, a.name, a.bank_name as "bankName", a.account_no as "accountNo", a.active, a.is_default as "isDefault",
             coalesce(sum(m.amount_paise), 0) as balance
           from accounts a left join money_ledger m on m.account_id = a.id
-          where a.active
+          where a.active and a.firm_id = ${user.firmId}
           group by a.id order by a.kind, lower(a.name)`,
     ),
     ["balance"],

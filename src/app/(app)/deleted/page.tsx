@@ -3,6 +3,7 @@ import { RestoreButton } from "@/components/restore-button";
 import { Empty, Money, PageHeader, Panel, Table, td, th } from "@/components/ui";
 import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { listDeletedVouchers } from "@/server/vouchers";
@@ -11,7 +12,7 @@ export const metadata = { title: "Deleted entries" };
 
 export default async function DeletedPage() {
   const user = await requireUser("vouchers.restore");
-  const list = await listDeletedVouchers(await getDb(), user.firmId);
+  const list = await listDeletedVouchers(await getDb(), user.firmId, { hideSalaries: !can(user, "staff.manage") });
   return (
     <>
       <PageHeader title="Deleted entries" subtitle="Deleted bills and entries are kept here. Restoring one puts it back exactly as it was, with the same number." />

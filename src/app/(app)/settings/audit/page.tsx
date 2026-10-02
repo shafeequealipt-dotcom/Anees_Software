@@ -8,14 +8,22 @@ import { formatDateTime } from "@/lib/dates";
 export const metadata = { title: "Activity log" };
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ entity?: string; id?: string }> }) {
-  await requireUser("audit.view");
+  const user = await requireUser("audit.view");
   const sp = await searchParams;
   const db = await getDb();
   const list = await db
     .select({ id: auditLog.id, at: auditLog.at, action: auditLog.action, entity: auditLog.entity, summary: auditLog.summary, ip: auditLog.ip, user: users.name })
     .from(auditLog)
     .leftJoin(users, eq(users.id, auditLog.userId))
-    .where(and(sp.entity ? eq(auditLog.entity, sp.entity) : sql`true`, sp.id ? eq(auditLog.entityId, Number(sp.id) || 0) : sql`true`))
+    .where(
+      and(
+        // This company's activity only. Entries tied to no company (sign-ins, user and role changes)
+        // span every company, so only an owner sees those.
+        user.isOwner ? sql`(${auditLog.firmId} = ${user.firmId} or ${auditLog.firmId} is null)` : eq(auditLog.firmId, user.firmId),
+        sp.entity ? eq(auditLog.entity, sp.entity) : sql`true`,
+        sp.id ? eq(auditLog.entityId, Number(sp.id) || 0) : sql`true`,
+      ),
+    )
     .orderBy(desc(auditLog.id))
     .limit(300);
   return (

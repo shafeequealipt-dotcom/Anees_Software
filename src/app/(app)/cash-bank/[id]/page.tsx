@@ -25,7 +25,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
   const fy = financialYear(todayIST());
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();
-  const st = await accountStatement(db, a.id, from, to);
+  const st = await accountStatement(db, user.firmId, a.id, from, to);
 
   return (
     <>

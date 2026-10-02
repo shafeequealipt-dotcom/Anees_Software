@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   const from = q.get("from") ?? "";
   const to = q.get("to") ?? "";
   if (!isIsoDate(from) || !isIsoDate(to)) return new Response("Bad dates", { status: 400 });
-  const st = await partyStatement(db, p.id, from, to);
+  const st = await partyStatement(db, a.user.firmId, p.id, from, to);
   const rows = [
     { date: formatDate(from), entry: "Opening balance", debit: null, credit: null, balance: st.openingPaise / 100 },
     ...st.entries.map((e) => ({

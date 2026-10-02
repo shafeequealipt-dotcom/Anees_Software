@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/db";
 import { RoleForm } from "@/components/role-form";
 import { PageHeader } from "@/components/ui";
@@ -8,9 +8,11 @@ import { listRoles } from "@/server/admin";
 export const metadata = { title: "Edit role" };
 
 export default async function EditRolePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser("users.manage");
+  const me = await requireUser("users.manage");
+  // Roles are shared by every company, so only an owner may change them.
+  if (!me.isOwner) redirect("/settings/users");
   const id = Number((await params).id);
-  const role = (await listRoles(await getDb())).find((r) => r.id === id);
+  const role = (await listRoles(await getDb(), me)).find((r) => r.id === id);
   if (!role) notFound();
   return (
     <>

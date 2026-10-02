@@ -966,7 +966,7 @@ export async function restoreVoucher(db: DB, firmId: number, id: number, userId:
   });
 }
 
-export async function listDeletedVouchers(db: DB, firmId: number) {
+export async function listDeletedVouchers(db: DB, firmId: number, opts: { hideSalaries?: boolean } = {}) {
   return db
     .select({
       id: vouchers.id,
@@ -981,7 +981,7 @@ export async function listDeletedVouchers(db: DB, firmId: number) {
     })
     .from(vouchers)
     .leftJoin(users, eq(users.id, vouchers.deletedBy))
-    .where(and(eq(vouchers.firmId, firmId), eq(vouchers.status, "deleted")))
+    .where(and(eq(vouchers.firmId, firmId), eq(vouchers.status, "deleted"), opts.hideSalaries ? sql`${vouchers.employeeId} is null` : undefined))
     .orderBy(desc(vouchers.deletedAt));
 }
 

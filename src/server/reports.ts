@@ -283,7 +283,14 @@ export interface StatementRow {
 }
 
 /** Party ledger with running balance. Debit = party owes more; credit = party owes less. */
-export async function partyStatement(db: DB, partyId: number, from: string, to: string) {
+/** Statements take a record id from the URL: refuse one that belongs to another company, whatever the caller already checked. */
+async function assertOwned(db: DB, table: "parties" | "items" | "accounts", id: number, firmId: number) {
+  const hit = await rows<{ ok: number }>(db, sql`select 1 as ok from ${sql.raw(table)} where id = ${id} and firm_id = ${firmId}`);
+  if (hit.length === 0) throw new Error(`That ${table === "parties" ? "party" : table === "items" ? "item" : "account"} isn't in this company.`);
+}
+
+export async function partyStatement(db: DB, firmId: number, partyId: number, from: string, to: string) {
+  await assertOwned(db, "parties", partyId, firmId);
   const [opening] = nums(
     await rows<{ b: number }>(db, sql`select coalesce(sum(amount_paise), 0) as b from party_ledger where party_id = ${partyId} and date < ${from}`),
     ["b"],
@@ -378,7 +385,8 @@ export async function stockSummary(db: DB, firmId: number, f: { asOf?: string; q
   return f.lowOnly ? list.filter((r) => r.low) : list;
 }
 
-export async function itemMovements(db: DB, itemId: number, from: string, to: string) {
+export async function itemMovements(db: DB, firmId: number, itemId: number, from: string, to: string) {
+  await assertOwned(db, "items", itemId, firmId);
   const [opening] = nums(
     await rows<{ q: number }>(db, sql`select coalesce(sum(qty_milli), 0) as q from stock_ledger where item_id = ${itemId} and date < ${from}`),
     ["q"],
@@ -467,7 +475,8 @@ export async function transfersReport(db: DB, firmId: number, from: string, to: 
 
 // ─── Cash & bank ─────────────────────────────────────────────────────────────
 
-export async function accountStatement(db: DB, accountId: number, from: string, to: string) {
+export async function accountStatement(db: DB, firmId: number, accountId: number, from: string, to: string) {
+  await assertOwned(db, "accounts", accountId, firmId);
   const [opening] = nums(
     await rows<{ b: number }>(db, sql`select coalesce(sum(amount_paise), 0) as b from money_ledger where account_id = ${accountId} and date < ${from}`),
     ["b"],

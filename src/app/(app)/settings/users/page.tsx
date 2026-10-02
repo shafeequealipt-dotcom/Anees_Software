@@ -9,7 +9,7 @@ export const metadata = { title: "Users" };
 
 export default async function UsersPage() {
   const me = await requireUser("users.manage");
-  const list = await listUsers(await getDb());
+  const list = await listUsers(await getDb(), me);
   return (
     <Panel
       title={`Users (${list.length})`}

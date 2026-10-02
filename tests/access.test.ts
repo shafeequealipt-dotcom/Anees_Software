@@ -7,6 +7,7 @@ import { saveItem, saveParty } from "@/server/masters";
 import { dashboard, dayBook, globalSearch, listVouchers } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
 import { saveVoucher } from "@/server/vouchers";
+import { todayIST } from "@/lib/dates";
 import { testDb } from "./helpers/db";
 
 let db: DB;
@@ -125,6 +126,10 @@ describe("shop-scoped listings", () => {
   });
 
   it("dashboard's month totals and overdue list are scoped the same way", async () => {
+    // The dashboard covers the current month, so make one sale at each place today rather than on a fixed date.
+    const today = todayIST();
+    await saveVoucher(db, firmId, { type: "sale_invoice", date: today, locationId: shopId, partyName: "Today shop", lines: [{ itemId: widget, description: "Widget", qtyMilli: 1_000, ratePaise: 1_000 }] }, staffId);
+    await saveVoucher(db, firmId, { type: "sale_invoice", date: today, locationId: warehouseId, partyName: "Today warehouse", lines: [{ itemId: widget, description: "Widget", qtyMilli: 1_000, ratePaise: 1_000 }] }, staffId);
     const restricted = await dashboard(db, firmId, { locationIds: [shopId], createdBy: staffId });
     const unrestricted = await dashboard(db, firmId);
     // The shop-only view can't see more sales than the whole company did.

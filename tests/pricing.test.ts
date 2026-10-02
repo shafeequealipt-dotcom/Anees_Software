@@ -42,7 +42,7 @@ describe("price list data", () => {
     db = await testDb();
     await runFirstSetup(db, { businessName: "Test Traders", stateCode: "27", ownerName: "Owner", email: "o@t.example", password: "Tulsi-Garden-4471" });
     [{ id: firmId }] = await db.select({ id: firms.id }).from(firms);
-    other = await createCompany(db, { name: "Other Co", country: "IN" }, 1);
+    other = await createCompany(db, { name: "Other Co", country: "IN" }, { id: 1, isOwner: true, firms: [], permissions: [] });
     itemId = await saveItem(db, firmId, { name: "Rice", salePricePaise: 5_000 }, 1);
     partyId = await saveParty(db, firmId, { name: "Ravi", kind: "customer" }, 1);
     retail = await savePriceList(db, firmId, { name: "Retail" });

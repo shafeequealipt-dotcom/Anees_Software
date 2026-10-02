@@ -36,7 +36,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
   const fy = financialYear(todayIST());
   const from = sp.from ?? fy.from;
   const to = sp.to ?? todayIST();
-  const mv = isGoods ? await itemMovements(db, item.id, from, to) : null;
+  const mv = isGoods ? await itemMovements(db, user.firmId, item.id, from, to) : null;
   const defaultLowMilli = (await getSettings(db, user.firmId)).defaultLowStock * 1000;
   const effectiveMinMilli = item.minStockMilli > 0 ? item.minStockMilli : defaultLowMilli;
   const low = isGoods && (mv?.closingMilli ?? 0) <= effectiveMinMilli;

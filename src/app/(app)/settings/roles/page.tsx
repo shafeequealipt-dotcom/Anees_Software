@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getDb } from "@/db";
 import { Badge, LinkButton, Panel, Table, td, th } from "@/components/ui";
@@ -8,8 +9,10 @@ import { listRoles } from "@/server/admin";
 export const metadata = { title: "Roles & access" };
 
 export default async function RolesPage() {
-  await requireUser("users.manage");
-  const list = await listRoles(await getDb());
+  const me = await requireUser("users.manage");
+  // Roles are shared by every company, so only an owner may change them.
+  if (!me.isOwner) redirect("/settings/users");
+  const list = await listRoles(await getDb(), me);
   return (
     <Panel
       title="Roles & access"

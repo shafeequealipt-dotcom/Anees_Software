@@ -355,12 +355,15 @@ describe("7 · end of month: every number adds up", () => {
     expect(debit).toBeGreaterThan(0);
   });
 
-  it("each shop's sales for the month", async () => {
-    const byShop = new Map((await dashboard(db, F)).monthByShop.map((s) => [s.locationName, s]));
-    expect(byShop.get("Retail shop")?.bills).toBe(2); // the cancelled bill isn't counted
-    expect(byShop.get("Wholesale counter")?.bills).toBe(2);
-    expect(byShop.get("Online store")?.bills).toBe(3);
-    expect(byShop.get("Wholesale counter")?.returnsPaise).toBeGreaterThan(0);
+  it("each shop's sales for September", async () => {
+    // By date range, not the dashboard's "this month", so the test doesn't depend on today's date.
+    const sales = (await listVouchers(db, F, { types: ["sale_invoice"], from: "2026-09-01", to: "2026-09-30" })).filter((v) => v.status === "active");
+    const bills = (loc: number) => sales.filter((v) => v.location_id === loc).length;
+    expect(bills(RETAIL)).toBe(2); // the cancelled bill isn't counted
+    expect(bills(WHOLESALE)).toBe(2);
+    expect(bills(ONLINE)).toBe(3);
+    const returns = await listVouchers(db, F, { types: ["credit_note"], from: "2026-09-01", to: "2026-09-30" });
+    expect(returns.some((v) => v.location_id === WHOLESALE)).toBe(true);
   });
 
   it("the transfers report shows the missing oil and the unsold-stock return", async () => {

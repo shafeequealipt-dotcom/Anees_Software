@@ -12,9 +12,9 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   const me = await requireUser("users.manage");
   const id = Number((await params).id);
   const db = await getDb();
-  const [u] = (await listUsers(db)).filter((x) => x.id === id);
+  const [u] = (await listUsers(db, me)).filter((x) => x.id === id);
   if (!u) notFound();
-  const [roles, companies, locations] = await Promise.all([listRoles(db), listCompanies(db), listAllLocations(db)]);
+  const [roles, companies, locations] = await Promise.all([listRoles(db, me), listCompanies(db, me), listAllLocations(db, me)]);
   return (
     <>
       <PageHeader title={u.name} subtitle={u.email} back={{ href: "/settings/users", label: "Users" }} />
@@ -23,6 +23,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           roles={roles.map((r) => ({ id: r.id, name: r.name, description: r.description, isOwner: r.isOwner, allLocations: can(r, "locations.all") }))}
           companies={companies.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name }))}
           locations={locations}
+          canEditRoles={me.isOwner}
           isSelf={u.id === me.id}
           initial={{ id: u.id, name: u.name, email: u.email, phone: u.phone ?? "", roleId: u.roleId, active: u.active, firmIds: u.firmIds, locationIds: u.locationIds }}
         />

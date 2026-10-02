@@ -15,6 +15,9 @@ let accountantRole: number;
 let staffRole: number;
 let ownerRole: number;
 
+/** The signed-in owner, as the admin functions see whoever is acting. */
+const asOwner = () => ({ id: ownerId, isOwner: true, firms: [] as { id: number }[], permissions: [] });
+
 beforeAll(async () => {
   db = await testDb();
   ownerId = await runFirstSetup(db, {
@@ -25,7 +28,7 @@ beforeAll(async () => {
     password: "Tulsi-Garden-4471",
   } as never);
   [{ id: firmId }] = await db.select({ id: firms.id }).from(firms);
-  const r = await listRoles(db);
+  const r = await listRoles(db, asOwner());
   ownerRole = r.find((x) => x.isOwner)!.id;
   accountantRole = r.find((x) => x.name === "Accountant")!.id;
   staffRole = r.find((x) => x.name === "Billing staff")!.id;
@@ -37,21 +40,21 @@ const fails = async (p: Promise<unknown>, part: string) => {
 };
 
 describe("roles and permissions", () => {
-  it("seeds an owner, accountant and staff role", async () => {
-    const r = await listRoles(db);
-    expect(r.map((x) => x.name)).toEqual(["Owner", "Accountant", "Billing staff"]);
+  it("seeds an owner, accountant, staff and company-owner role", async () => {
+    const r = await listRoles(db, asOwner());
+    expect(r.map((x) => x.name)).toEqual(["Owner", "Accountant", "Billing staff", "Company owner"]);
     expect(r[0].isOwner).toBe(true);
   });
 
   it("counts the users in each role correctly", async () => {
-    const r = await listRoles(db);
-    const total = (await listUsers(db)).length;
+    const r = await listRoles(db, asOwner());
+    const total = (await listUsers(db, asOwner())).length;
     expect(r.reduce((n, x) => n + x.userCount, 0)).toBe(total);
     expect(r.find((x) => x.isOwner)!.userCount).toBe(1);
   });
 
   it("owner can do everything; others only what is ticked", async () => {
-    const r = await listRoles(db);
+    const r = await listRoles(db, asOwner());
     const owner = { isOwner: true, permissions: [] as string[] };
     const acc = { isOwner: false, permissions: r.find((x) => x.name === "Accountant")!.permissions };
     const staff = { isOwner: false, permissions: r.find((x) => x.name === "Billing staff")!.permissions };
@@ -65,60 +68,61 @@ describe("roles and permissions", () => {
   });
 
   it("creates a custom role, dropping unknown permission keys", async () => {
-    const id = await saveRole(db, { name: "Shop counter", permissions: ["vouchers.create", "see.partyBalance", "not.a.permission"] }, ownerId);
-    const [role] = (await listRoles(db)).filter((x) => x.id === id);
+    const id = await saveRole(db, { name: "Shop counter", permissions: ["vouchers.create", "see.partyBalance", "not.a.permission"] }, asOwner());
+    const [role] = (await listRoles(db, asOwner())).filter((x) => x.id === id);
     expect(role.permissions.sort()).toEqual(["see.partyBalance", "vouchers.create"]);
-    await fails(saveRole(db, { name: "shop COUNTER", permissions: [] }, ownerId), "already exists");
+    await fails(saveRole(db, { name: "shop COUNTER", permissions: [] }, asOwner()), "already exists");
   });
 
   it("never lets the Owner role be edited, or built-in roles deleted", async () => {
-    await fails(saveRole(db, { id: ownerRole, name: "Owner", permissions: [] }, ownerId), "Owner role");
-    await fails(deleteRole(db, staffRole, ownerId), "Built-in");
+    await fails(saveRole(db, { id: ownerRole, name: "Owner", permissions: [] }, asOwner()), "Owner role");
+    await fails(deleteRole(db, staffRole, asOwner()), "Built-in");
   });
 
   it("won't delete a role that still has users", async () => {
-    const id = await saveRole(db, { name: "Temp role", permissions: [] }, ownerId);
-    const uid = await createUser(db, { name: "Temp", email: "temp@example.com", roleId: id, password: "Blue-Lantern-2291", firmIds: [firmId] }, ownerId);
-    await fails(deleteRole(db, id, ownerId), "still using");
-    await updateUser(db, { id: uid, name: "Temp", phone: "", roleId: staffRole, active: true, firmIds: [firmId] }, ownerId);
-    await deleteRole(db, id, ownerId);
-    expect((await listRoles(db)).some((r) => r.id === id)).toBe(false);
+    const id = await saveRole(db, { name: "Temp role", permissions: [] }, asOwner());
+    const uid = await createUser(db, { name: "Temp", email: "temp@example.com", roleId: id, password: "Blue-Lantern-2291", firmIds: [firmId] }, asOwner());
+    await fails(deleteRole(db, id, asOwner()), "still using");
+    await updateUser(db, { id: uid, name: "Temp", phone: "", roleId: staffRole, active: true, firmIds: [firmId] }, asOwner());
+    await deleteRole(db, id, asOwner());
+    expect((await listRoles(db, asOwner())).some((r) => r.id === id)).toBe(false);
   });
 });
 
 describe("users", () => {
   it("adds a user with a temporary password they must change", async () => {
-    const id = await createUser(db, { name: "Farah", email: "Farah@Example.com", roleId: accountantRole, password: "Blue-Lantern-2291", firmIds: [firmId] }, ownerId);
-    const [u] = (await listUsers(db)).filter((x) => x.id === id);
+    const id = await createUser(db, { name: "Farah", email: "Farah@Example.com", roleId: accountantRole, password: "Blue-Lantern-2291", firmIds: [firmId] }, asOwner());
+    const [u] = (await listUsers(db, asOwner())).filter((x) => x.id === id);
     expect(u.email).toBe("farah@example.com");
     expect(u.mustChangePassword).toBe(true);
     expect(u.roleName).toBe("Accountant");
   });
 
   it("rejects weak passwords and duplicate emails", async () => {
-    await fails(createUser(db, { name: "X", email: "x@example.com", roleId: staffRole, password: "short" }, ownerId), "10 characters");
-    await fails(createUser(db, { name: "X", email: "FARAH@example.com", roleId: staffRole, password: "Blue-Lantern-2291", firmIds: [firmId] }, ownerId), "already exists");
+    await fails(createUser(db, { name: "X", email: "x@example.com", roleId: staffRole, password: "short" }, asOwner()), "10 characters");
+    await fails(createUser(db, { name: "X", email: "FARAH@example.com", roleId: staffRole, password: "Blue-Lantern-2291", firmIds: [firmId] }, asOwner()), "already exists");
   });
 
   it("protects the last active owner and the acting user", async () => {
-    await fails(updateUser(db, { id: ownerId, name: "Owner", phone: "", roleId: staffRole, active: true, firmIds: [firmId] }, ownerId), "own role");
-    await fails(updateUser(db, { id: ownerId, name: "Owner", phone: "", roleId: ownerRole, active: false, firmIds: [firmId] }, ownerId), "yourself");
-    const second = await createUser(db, { name: "Second Owner", email: "second@example.com", roleId: ownerRole, password: "Blue-Lantern-2291", firmIds: [firmId] }, ownerId);
+    await fails(updateUser(db, { id: ownerId, name: "Owner", phone: "", roleId: staffRole, active: true, firmIds: [firmId] }, asOwner()), "own role");
+    await fails(updateUser(db, { id: ownerId, name: "Owner", phone: "", roleId: ownerRole, active: false, firmIds: [firmId] }, asOwner()), "yourself");
+    const second = await createUser(db, { name: "Second Owner", email: "second@example.com", roleId: ownerRole, password: "Blue-Lantern-2291", firmIds: [firmId] }, asOwner());
     // With two owners the second may step down…
-    await updateUser(db, { id: second, name: "Second Owner", phone: "", roleId: staffRole, active: true, firmIds: [firmId] }, ownerId);
+    await updateUser(db, { id: second, name: "Second Owner", phone: "", roleId: staffRole, active: true, firmIds: [firmId] }, asOwner());
     // …but nobody can remove the only remaining owner.
-    const acting = await createUser(db, { name: "Manager", email: "mgr@example.com", roleId: accountantRole, password: "Blue-Lantern-2291", firmIds: [firmId] }, ownerId);
-    await fails(updateUser(db, { id: ownerId, name: "Owner", phone: "", roleId: staffRole, active: true, firmIds: [firmId] }, acting), "at least one active owner");
+    const acting = await createUser(db, { name: "Manager", email: "mgr@example.com", roleId: accountantRole, password: "Blue-Lantern-2291", firmIds: [firmId] }, asOwner());
+    // A non-owner can't touch an owner at all, so the last owner can't be demoted from below either.
+    await fails(updateUser(db, { id: ownerId, name: "Owner", phone: "", roleId: staffRole, active: true, firmIds: [firmId] }, { id: acting, isOwner: false, firms: [{ id: firmId }], permissions: [] }), "don't have access");
   });
 
   it("resets another user's password but not your own", async () => {
-    const [u] = (await listUsers(db)).filter((x) => x.email === "farah@example.com");
+    const [u] = (await listUsers(db, asOwner())).filter((x) => x.email === "farah@example.com");
     const before = (await db.select().from(users).where(eq(users.id, u.id)))[0].passwordHash;
-    await resetUserPassword(db, u.id, "Green-Harbour-7710", ownerId);
+    await resetUserPassword(db, u.id, "Green-Harbour-7710", asOwner());
     const after = (await db.select().from(users).where(eq(users.id, u.id)))[0];
     expect(after.passwordHash).not.toBe(before);
     expect(after.mustChangePassword).toBe(true);
-    await fails(resetUserPassword(db, ownerId, "Green-Harbour-7710", ownerId), "My account");
+    await fails(resetUserPassword(db, ownerId, "Green-Harbour-7710", asOwner()), "My account");
   });
 });
 
@@ -142,7 +146,7 @@ describe("multiple companies", () => {
   beforeAll(async () => {
     const { createCompany } = await import("@/server/admin");
     saudi = firmId;
-    india = await createCompany(db, { name: "Pune Traders", country: "IN", taxId: "", stateCode: "27" }, ownerId);
+    india = await createCompany(db, { name: "Pune Traders", country: "IN", taxId: "", stateCode: "27" }, asOwner());
   });
 
   it("gives each company its own tax rates, units, cash account and categories", async () => {
@@ -195,16 +199,16 @@ describe("multiple companies", () => {
   });
 
   it("only lets a non-owner open the companies they were given", async () => {
-    const id = await createUser(db, { name: "Pune Clerk", email: "clerk@example.com", roleId: staffRole, password: "Blue-Lantern-2291", firmIds: [india] }, ownerId);
-    const [u] = (await listUsers(db)).filter((x) => x.id === id);
+    const id = await createUser(db, { name: "Pune Clerk", email: "clerk@example.com", roleId: staffRole, password: "Blue-Lantern-2291", firmIds: [india] }, asOwner());
+    const [u] = (await listUsers(db, asOwner())).filter((x) => x.id === id);
     expect(u.firmIds).toEqual([india]);
-    await fails(createUser(db, { name: "No Company", email: "none@example.com", roleId: staffRole, password: "Blue-Lantern-2291", firmIds: [] }, ownerId), "at least one company");
+    await fails(createUser(db, { name: "No Company", email: "none@example.com", roleId: staffRole, password: "Blue-Lantern-2291", firmIds: [] }, asOwner()), "at least one company");
   });
 
   it("won't hide the last active company", async () => {
     const { setCompanyActive } = await import("@/server/admin");
-    await setCompanyActive(db, india, false, ownerId);
-    await fails(setCompanyActive(db, saudi, false, ownerId), "At least one company");
-    await setCompanyActive(db, india, true, ownerId);
+    await setCompanyActive(db, india, false, asOwner());
+    await fails(setCompanyActive(db, saudi, false, asOwner()), "At least one company");
+    await setCompanyActive(db, india, true, asOwner());
   });
 });

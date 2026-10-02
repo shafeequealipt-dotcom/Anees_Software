@@ -42,7 +42,7 @@ export async function saveFirmAction(input: z.input<typeof firmSchema>): Promise
 export async function createUserAction(input: z.input<typeof newUserSchema>): Promise<Result<{ id: number }>> {
   try {
     const user = await assertUser("users.manage");
-    const id = await createUser(await getDb(), input, user.id);
+    const id = await createUser(await getDb(), input, user);
     revalidatePath("/settings/users");
     return { ok: true, id };
   } catch (e) {
@@ -53,7 +53,7 @@ export async function createUserAction(input: z.input<typeof newUserSchema>): Pr
 export async function updateUserAction(input: z.input<typeof editUserSchema>): Promise<Result> {
   try {
     const user = await assertUser("users.manage");
-    await updateUser(await getDb(), input, user.id);
+    await updateUser(await getDb(), input, user);
     revalidatePath("/settings/users");
     return { ok: true };
   } catch (e) {
@@ -64,7 +64,7 @@ export async function updateUserAction(input: z.input<typeof editUserSchema>): P
 export async function resetPasswordAction(id: number, password: string): Promise<Result> {
   try {
     const user = await assertUser("users.manage");
-    await resetUserPassword(await getDb(), id, password, user.id);
+    await resetUserPassword(await getDb(), id, password, user);
     revalidatePath("/settings/users");
     return { ok: true };
   } catch (e) {
@@ -75,7 +75,7 @@ export async function resetPasswordAction(id: number, password: string): Promise
 export async function saveRoleAction(input: z.input<typeof roleSchema>): Promise<Result<{ id: number }>> {
   try {
     const user = await assertUser("users.manage");
-    const id = await saveRole(await getDb(), input, user.id);
+    const id = await saveRole(await getDb(), input, user);
     revalidatePath("/settings/roles");
     revalidatePath("/settings/users");
     return { ok: true, id };
@@ -87,7 +87,7 @@ export async function saveRoleAction(input: z.input<typeof roleSchema>): Promise
 export async function deleteRoleAction(id: number): Promise<Result> {
   try {
     const user = await assertUser("users.manage");
-    await deleteRole(await getDb(), id, user.id);
+    await deleteRole(await getDb(), id, user);
     revalidatePath("/settings/roles");
     return { ok: true };
   } catch (e) {
@@ -129,7 +129,7 @@ export async function switchCompanyAction(firmId: number): Promise<Result> {
 export async function createCompanyAction(input: z.input<typeof companySchema>): Promise<Result<{ id: number }>> {
   try {
     const user = await assertUser("companies.manage");
-    const id = await createCompany(await getDb(), input, user.id);
+    const id = await createCompany(await getDb(), input, user);
     revalidatePath("/settings/companies");
     return { ok: true, id };
   } catch (e) {
@@ -140,7 +140,7 @@ export async function createCompanyAction(input: z.input<typeof companySchema>):
 export async function setCompanyActiveAction(firmId: number, active: boolean): Promise<Result> {
   try {
     const user = await assertUser("companies.manage");
-    await setCompanyActive(await getDb(), firmId, active, user.id);
+    await setCompanyActive(await getDb(), firmId, active, user);
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
@@ -261,6 +261,8 @@ export async function deleteCategoryAction(kind: CategoryKind, id: number): Prom
 export async function requestBackupAction(): Promise<Result> {
   try {
     const user = await assertUser("backups.manage");
+    // A server backup copies every company, so only an owner may start one.
+    if (!user.isOwner) throw new AuthError("Only an owner can start a full server backup. Use the Excel backup for your company.");
     await requestBackup(await getDb(), user.id);
     revalidatePath("/settings/backups");
     return { ok: true };

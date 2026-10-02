@@ -40,12 +40,15 @@ export function UserForm({
   locations,
   initial,
   isSelf,
+  canEditRoles = true,
 }: {
   roles: RoleOpt[];
   companies: CompanyOpt[];
   locations: LocationOpt[];
   initial?: { id: number; name: string; email: string; phone: string; roleId: number; active: boolean; firmIds: number[]; locationIds: number[] };
   isSelf?: boolean;
+  /** Only an owner can change roles (they're shared by every company), so others aren't sent to a page they can't open. */
+  canEditRoles?: boolean;
 }) {
   const router = useRouter();
   const [v, setV] = useState({
@@ -111,7 +114,13 @@ export function UserForm({
             ))}
           </Select>
           <p className="text-xs text-faint">
-            What each role can do and see is set under <a className="text-brand-600 underline" href="/settings/roles">Roles &amp; access</a>.
+            {canEditRoles ? (
+              <>
+                What each role can do and see is set under <a className="text-brand-600 underline" href="/settings/roles">Roles &amp; access</a>.
+              </>
+            ) : (
+              "Roles are set up by the owner."
+            )}
           </p>
         </Field>
         <Field label="Companies this person can open" error={err("firmIds")} className="sm:col-span-2">

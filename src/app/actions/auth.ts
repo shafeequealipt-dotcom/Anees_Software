@@ -101,6 +101,7 @@ export async function businessName(): Promise<string> {
   const user = await currentUser();
   if (user?.firm.name) return user.firm.name;
   const db = await getDb();
-  const [f] = await db.select({ name: firms.name }).from(firms).orderBy(asc(firms.id)).limit(1);
-  return f?.name ?? "Billing";
+  // Before sign-in we don't know whose company this is: name it only when there is just one.
+  const two = await db.select({ name: firms.name }).from(firms).where(eq(firms.active, true)).orderBy(asc(firms.id)).limit(2);
+  return two.length === 1 ? two[0].name : "Billing";
 }

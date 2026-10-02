@@ -239,7 +239,7 @@ export async function sendVoucherAction(voucherId: number): Promise<ActionResult
       refId: voucherId,
     });
     if (target.channel === "whatsapp" && !channelStatus().whatsappApi) return { ok: true, mode: "manual", link: whatsappLink(target.toAddress, text), to: target.toAddress };
-    await processOutbox(db, { limit: 5 });
+    await processOutbox(db, { limit: 5, firmId: user.firmId });
     const [m] = id ? await db.select({ status: notifications.status }).from(notifications).where(eq(notifications.id, id)) : [];
     return { ok: true, mode: m?.status === "sent" ? "sent" : "queued", to: target.toAddress };
   } catch (e) {

@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { firms, parties } from "@/db/schema";
 import { buildEwayBill } from "@/lib/eway";
 import { voucherNumber } from "@/lib/voucher-types";
+import { canSeeVoucher } from "@/lib/auth";
 import { apiUser } from "@/server/api";
 import { getVoucher } from "@/server/vouchers";
 
@@ -13,7 +14,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (a.res) return a.res;
   const db = await getDb();
   const data = await getVoucher(db, a.user.firmId, Number((await ctx.params).id) || 0);
-  if (!data || data.voucher.type !== "sale_invoice" || data.voucher.status !== "active") return new Response("Not found", { status: 404 });
+  if (!data || !canSeeVoucher(a.user, data.voucher) || data.voucher.type !== "sale_invoice" || data.voucher.status !== "active") return new Response("Not found", { status: 404 });
   const [firm] = await db.select().from(firms).where(eq(firms.id, a.user.firmId));
   if (!firm || firm.country !== "IN") return new Response("E-way bills are for Indian GST businesses.", { status: 400 });
   const v = data.voucher;

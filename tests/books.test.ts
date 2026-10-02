@@ -126,7 +126,7 @@ describe("books end to end", () => {
     expect(pay.settles.reduce((s, a) => s + a.amountPaise, 0)).toBe(16_000);
     const open = await openBills(db, customer, ["sale_invoice"]);
     expect(open).toHaveLength(0);
-    const st = await partyStatement(db, customer, "2026-09-01", "2026-09-30");
+    const st = await partyStatement(db, firmId, customer, "2026-09-01", "2026-09-30");
     expect(st.openingPaise).toBe(100_000);
     expect(st.closingPaise).toBe(100_000 + 16_000 - 20_000);
   });
@@ -185,9 +185,9 @@ describe("books end to end", () => {
 
   it("cancelling removes the effect but keeps the record", async () => {
     const r = await saveVoucher(db, firmId, { type: "expense", date: "2026-09-07", roundOff: false, accountId: cashId, lines: [{ description: "Shop rent", qtyMilli: 1_000, ratePaise: 200_000 }] }, 1);
-    const cashBefore = (await accountStatement(db, cashId, "2026-01-01", "2026-12-31")).closingPaise;
+    const cashBefore = (await accountStatement(db, firmId, cashId, "2026-01-01", "2026-12-31")).closingPaise;
     await cancelVoucher(db, firmId, r.id, 1);
-    const cashAfter = (await accountStatement(db, cashId, "2026-01-01", "2026-12-31")).closingPaise;
+    const cashAfter = (await accountStatement(db, firmId, cashId, "2026-01-01", "2026-12-31")).closingPaise;
     expect(cashAfter - cashBefore).toBe(200_000);
     expect((await getVoucher(db, firmId, r.id))!.voucher.status).toBe("cancelled");
   });

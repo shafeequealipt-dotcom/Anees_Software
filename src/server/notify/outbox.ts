@@ -62,11 +62,12 @@ export async function enqueueOwnerAlert(db: DB, firmId: number, country: "IN" | 
 }
 
 /** Sends what is waiting. Safe to run often; each message is tried a few times, then marked failed. */
-export async function processOutbox(db: DB, opts: { limit?: number } = {}) {
+/** Sends what's due. With `firmId`, only that company's messages (for a send triggered by someone working in it); the scheduled job omits it to cover everyone. */
+export async function processOutbox(db: DB, opts: { limit?: number; firmId?: number } = {}) {
   const due = await db
     .select()
     .from(notifications)
-    .where(and(eq(notifications.status, "pending"), lte(notifications.scheduledFor, new Date())))
+    .where(and(eq(notifications.status, "pending"), lte(notifications.scheduledFor, new Date()), opts.firmId ? eq(notifications.firmId, opts.firmId) : undefined))
     .orderBy(asc(notifications.id))
     .limit(opts.limit ?? 50);
   const out = { sent: 0, failed: 0, retry: 0 };

@@ -26,8 +26,8 @@ beforeAll(async () => {
   await runFirstSetup(db, { businessName: "Backup Traders", stateCode: "27", ownerName: "Owner", email: "o@t.example", password: "Tulsi-Garden-4471" });
   [{ id: firmId }] = await db.select({ id: firms.id }).from(firms);
   warehouseId = (await db.select().from(locations).where(eq(locations.firmId, firmId)).orderBy(asc(locations.sort)))[0].id;
-  const staffRole = (await listRoles(db)).find((r) => r.name === "Billing staff")!.id;
-  staffId = await createUser(db, { name: "Staff", email: "staff@t.example", roleId: staffRole, password: "Tulsi-Garden-4471", firmIds: [firmId] } as never, owner.id);
+  const staffRole = (await listRoles(db, { id: owner.id, isOwner: true, firms: [], permissions: [] })).find((r) => r.name === "Billing staff")!.id;
+  staffId = await createUser(db, { name: "Staff", email: "staff@t.example", roleId: staffRole, password: "Tulsi-Garden-4471", firmIds: [firmId] } as never, { id: owner.id, isOwner: true, firms: [], permissions: [] });
 
   widgetId = await saveItem(db, firmId, { name: "Widget", salePricePaise: 2_000, purchasePricePaise: 1_000, minStockMilli: 5_000 }, owner.id);
   partyId = await saveParty(db, firmId, { name: "Acme Retail", kind: "customer", openingBalancePaise: 10_000 }, owner.id);

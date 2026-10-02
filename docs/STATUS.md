@@ -216,6 +216,28 @@ Verified = automated test passes, or manually clicked through in the dev server.
 - Not built: pro-rating for mid-month joiners/leavers (enter it as a deduction), PF/ESI/TDS on salary,
   payslips. Tests: `tests/staff.test.ts`.
 
+### Company isolation — tightened 2026-10-02 (migration `0021_company_owner_role.sql`)
+- Rule: only the **Owner** role works across companies. Everyone else sees and changes only the
+  companies ticked on them — never another company's name, shops, accounts, people or activity.
+- New built-in role **Company owner**: every permission except "Add and hide companies"; limited to
+  its ticked companies. Roles are shared by all companies, so only an Owner can add/change roles
+  (Roles & access tab and pages are owner-only).
+- `src/server/admin.ts` functions take an `Actor` (the signed-in user): `listUsers`, `listCompanies`,
+  `listAllLocations`, `listRoles` are scoped to it; `createUser`/`updateUser`/`resetUserPassword`
+  refuse people outside the actor's companies (or shared with another company), refuse granting the
+  Owner role or any role with permissions the actor lacks, and refuse giving another company's access
+  or shop. A shop can only be assigned to someone who works in its company (even by an owner).
+- Fixed leaks: Cash & bank list showed every company's accounts; Activity log showed every company
+  (now this company only; company-less entries owner-only); Users/new-user form listed all users,
+  companies and shops; server backup panel and "Back up now" now owner-only; the sign-in page no
+  longer names a company when there are several; a bill save no longer sends other companies'
+  queued messages. Party/item/account statements verify the record's company themselves.
+- Tests: `tests/company-isolation.test.ts`; checked in the browser as a Company owner (every other
+  company's record id → 404, its backup → 403, no trace on any list page).
+- Known, not yet fixed: the display region (currency/tax wording, GSTIN vs VAT checks in `saveParty`
+  / `saveFirm`) is a module-level value, so two people working at the same instant in an Indian and a
+  Saudi company can briefly get each other's rules (see "Multiple companies" above).
+
 ### Dev tooling
 - [x] Vitest test suite (`npm test`), TypeScript strict mode (`npm run typecheck`),
   embedded PostgreSQL for local dev with no Docker (`@electric-sql/pglite`) so
