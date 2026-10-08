@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { formatDate, todayIST } from "@/lib/dates";
 import { can } from "@/lib/permissions";
 import { listServiceReminders } from "@/server/notify/service";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Service reminders" };
 
@@ -38,7 +39,7 @@ export default async function ServicesPage() {
                     {formatDate(r.dueDate)} {r.dueDate < today && <Badge tone="bad">Overdue</Badge>}
                   </td>
                   <td className={td}>{r.partyId ? <Link href={`/parties/${r.partyId}`} className="text-brand-600 hover:underline">{r.partyName}</Link> : r.partyName}</td>
-                  <td className={td}>{r.itemName}</td>
+                  <td className={td}><ProductName code={r.itemCode} name={r.itemName} /></td>
                   <td className={td}>
                     <Link href={`/sales/${r.voucherId}`} className="text-brand-600 hover:underline">
                       {r.vPrefix}

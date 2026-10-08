@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { formatQty } from "@/lib/money";
 import { stockSummary } from "@/server/reports";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Stock summary" };
 
@@ -64,9 +65,8 @@ export default async function StockSummaryPage({ searchParams }: { searchParams:
                 <tr key={i.id} className={"hover:bg-ground/60 " + (i.qty_milli < 0 ? "text-bad" : "")}>
                   <td className={td}>
                     <Link href={`/items/${i.id}`} className="font-medium text-brand-600 hover:underline">
-                      {i.name}
+                      <ProductName code={i.code} name={i.name} />
                     </Link>
-                    <div className="text-xs text-faint">{i.code}</div>
                   </td>
                   <td className={td}>{i.category_name}</td>
                   <td className={td + " text-right"}>

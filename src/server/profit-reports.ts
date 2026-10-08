@@ -90,6 +90,7 @@ export async function voucherProfit(db: DB, firmId: number, voucherId: number) {
 
 export interface BatchRow {
   item_id: number;
+  item_code: string;
   item_name: string;
   batch_no: string;
   expiry_date: string | null;
@@ -103,13 +104,13 @@ export async function batchStock(db: DB, firmId: number, opts: { includeEmpty?: 
   const list = nums(
     await rows<BatchRow>(
       db,
-      sql`select i.id as item_id, i.name as item_name, coalesce(s.batch_no, '(no batch)') as batch_no, max(s.expiry_date)::text as expiry_date,
+      sql`select i.id as item_id, i.code as item_code, i.name as item_name, coalesce(s.batch_no, '(no batch)') as batch_no, max(s.expiry_date)::text as expiry_date,
             sum(s.qty_milli) as qty_milli, u.code as unit_code
           from stock_ledger s
           join items i on i.id = s.item_id
           left join units u on u.id = i.unit_id
           where i.firm_id = ${firmId} and (i.track_batches or s.batch_no is not null)
-          group by i.id, i.name, coalesce(s.batch_no, '(no batch)'), u.code
+          group by i.id, i.code, i.name, coalesce(s.batch_no, '(no batch)'), u.code
           ${opts.includeEmpty ? sql`` : sql`having sum(s.qty_milli) <> 0`}
           order by max(s.expiry_date) nulls last, i.name`,
     ),
@@ -122,6 +123,7 @@ export async function batchStock(db: DB, firmId: number, opts: { includeEmpty?: 
 
 export interface SerialRow {
   item_id: number;
+  item_code: string;
   item_name: string;
   serial: string;
   status: "in_stock" | "sold";
@@ -132,9 +134,9 @@ export interface SerialRow {
 
 /** Every serial number ever recorded, with whether it is still in stock and where it went. */
 export async function serialReport(db: DB, firmId: number, opts: { itemId?: number; q?: string } = {}): Promise<SerialRow[]> {
-  const lines = await rows<{ item_id: number; item_name: string; serials: string[]; type: string; direction: number | null; date: string; prefix: string; number: number; party_name: string | null }>(
+  const lines = await rows<{ item_id: number; item_code: string; item_name: string; serials: string[]; type: string; direction: number | null; date: string; prefix: string; number: number; party_name: string | null }>(
     db,
-    sql`select l.item_id, i.name as item_name, l.serial_numbers as serials, v.type, v.direction, v.date::text, v.prefix, v.number, v.party_name
+    sql`select l.item_id, i.code as item_code, i.name as item_name, l.serial_numbers as serials, v.type, v.direction, v.date::text, v.prefix, v.number, v.party_name
         from voucher_lines l
         join vouchers v on v.id = l.voucher_id
         join items i on i.id = l.item_id
@@ -149,13 +151,13 @@ export async function serialReport(db: DB, firmId: number, opts: { itemId?: numb
     const status = inward(l.type, l.direction) ? "in_stock" : outward(l.type, l.direction) ? "sold" : null;
     if (!status) continue;
     for (const serial of l.serials) {
-      last.set(`${l.item_id}|${serial}`, { item_id: l.item_id, item_name: l.item_name, serial, status, last_date: l.date, last_ref: `${l.prefix}${l.number}`, party_name: l.party_name });
+      last.set(`${l.item_id}|${serial}`, { item_id: l.item_id, item_code: l.item_code, item_name: l.item_name, serial, status, last_date: l.date, last_ref: `${l.prefix}${l.number}`, party_name: l.party_name });
     }
   }
   let out = [...last.values()];
   if (opts.q) {
     const q = opts.q.toLowerCase();
-    out = out.filter((r) => r.serial.toLowerCase().includes(q) || r.item_name.toLowerCase().includes(q));
+    out = out.filter((r) => r.serial.toLowerCase().includes(q) || r.item_name.toLowerCase().includes(q) || r.item_code.toLowerCase().includes(q));
   }
   return out.sort((a, b) => a.item_name.localeCompare(b.item_name) || a.serial.localeCompare(b.serial));
 }

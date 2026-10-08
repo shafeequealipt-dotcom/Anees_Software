@@ -7,6 +7,7 @@ import { formatQty } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { stockSummary } from "@/server/reports";
 import { and, eq } from "drizzle-orm";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Damaged goods" };
 
@@ -67,9 +68,8 @@ export default async function DamagedGoodsPage() {
                 <tr key={i.id} className="hover:bg-ground/60">
                   <td className={td}>
                     <Link href={`/items/${i.id}`} className="font-medium text-brand-600 hover:underline">
-                      {i.name}
+                      <ProductName code={i.code} name={i.name} />
                     </Link>
-                    <div className="text-xs text-faint">{i.code}</div>
                   </td>
                   <td className={td + " text-right"}>
                     {formatQty(i.qty_milli)} {i.unit_code}

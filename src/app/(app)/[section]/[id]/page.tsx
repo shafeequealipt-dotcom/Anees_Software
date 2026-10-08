@@ -20,6 +20,7 @@ import { returnReasonLabel, typeFromPath, VOUCHER_INFO, voucherNumber } from "@/
 import { voucherProfit } from "@/server/profit-reports";
 import { zatcaForVoucher } from "@/server/zatca";
 import { getVoucher, paymentStatus, returnStatus } from "@/server/vouchers";
+import { ProductName } from "@/components/product-name";
 
 export async function generateMetadata({ params }: { params: Promise<{ section: string; id: string }> }) {
   const { section } = await params;
@@ -204,7 +205,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                       <td className={td}>
                         {l.itemId ? (
                           <Link href={`/items/${l.itemId}`} className="hover:underline">
-                            {l.description}
+                            <ProductName code={l.itemCode} name={l.description} />
                           </Link>
                         ) : (
                           l.description
@@ -292,7 +293,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
           {canReceive && (
             <ReceiveTransferForm
               voucherId={v.id}
-              lines={data.lines.filter((l) => l.itemId).map((l) => ({ id: l.id, description: l.description, qtyMilli: l.qtyMilli, unitCode: l.unitCode }))}
+              lines={data.lines.filter((l) => l.itemId).map((l) => ({ id: l.id, itemCode: l.itemCode, description: l.description, qtyMilli: l.qtyMilli, unitCode: l.unitCode }))}
             />
           )}
 

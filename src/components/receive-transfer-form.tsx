@@ -4,9 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { receiveTransferAction } from "@/app/actions/vouchers";
 import { formatQty, milliToQty, toMilli } from "@/lib/money";
+import { ProductName } from "./product-name";
 import { Alert, Button, Panel, Table, Textarea, td, th } from "./ui";
 
-type Line = { id: number; description: string; qtyMilli: number; unitCode: string | null };
+type Line = { id: number; itemCode: string | null; description: string; qtyMilli: number; unitCode: string | null };
 
 export function ReceiveTransferForm({ voucherId, lines }: { voucherId: number; lines: Line[] }) {
   const router = useRouter();
@@ -44,7 +45,7 @@ export function ReceiveTransferForm({ voucherId, lines }: { voucherId: number; l
         <tbody>
           {lines.map((l) => (
             <tr key={l.id}>
-              <td className={td}>{l.description}</td>
+              <td className={td}><ProductName code={l.itemCode} name={l.description} /></td>
               <td className={td + " num text-right text-muted"}>
                 {formatQty(l.qtyMilli)} {l.unitCode}
               </td>

@@ -11,6 +11,9 @@ interface Values {
   creditLimitMode: "off" | "warn" | "block";
   allowNegativeStock: boolean;
   defaultLowStock: number;
+  productIdMode: "auto" | "manual";
+  productIdPrefix: string;
+  productIdDigits: number;
   roundOff: boolean;
   lineDiscount: boolean;
   billDiscount: boolean;
@@ -30,7 +33,7 @@ interface Values {
 
 const NUMBERED: VoucherType[] = ["sale_invoice", "credit_note", "quotation", "sales_order", "delivery_challan", "purchase_bill", "debit_note", "purchase_order", "payment_in", "payment_out", "expense", "other_income"];
 
-export function PreferencesForm({ initial, india }: { initial: Values; india: boolean }) {
+export function PreferencesForm({ initial, india, nextProductId }: { initial: Values; india: boolean; nextProductId: string }) {
   const router = useRouter();
   const [v, setV] = useState<Values>(initial);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +83,42 @@ export function PreferencesForm({ initial, india }: { initial: Values; india: bo
               <option value="block">Don&apos;t let the bill be saved</option>
             </Select>
           </Field>
+        </div>
+      </Panel>
+
+      <Panel title="Product IDs">
+        <p className="mb-3 max-w-2xl text-sm text-muted">
+          Every product has its own ID, shown in front of its name on bills, printouts and reports (for example <span className="font-medium text-ink">132 iphone bag</span>). This choice is for this company only.
+        </p>
+        <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
+          <Field label="How a new product gets its ID" className="sm:col-span-2">
+            <Select value={v.productIdMode} onChange={(e) => set("productIdMode", e.target.value as Values["productIdMode"])}>
+              <option value="auto">Automatic: the next number is given when the product is added</option>
+              <option value="manual">Choose your own: type an ID for every new product</option>
+            </Select>
+          </Field>
+          {v.productIdMode === "auto" && (
+            <>
+              <Field label="Text before the number (optional)" hint="For example P- to get P-145. Leave empty for a plain number.">
+                <Input value={v.productIdPrefix} maxLength={12} onChange={(e) => set("productIdPrefix", e.target.value)} placeholder="none" />
+              </Field>
+              <Field label="At least this many digits" hint="4 turns 12 into 0012. Use 0 for no extra zeros.">
+                <Input type="number" min={0} max={9} step={1} value={v.productIdDigits} onChange={(e) => set("productIdDigits", Math.min(9, Math.max(0, Math.round(Number(e.target.value) || 0))))} />
+              </Field>
+              <p className="text-sm text-muted sm:col-span-2">
+                {v.productIdPrefix === initial.productIdPrefix && v.productIdDigits === initial.productIdDigits ? (
+                  <>
+                    The next new product will get <span className="font-semibold text-ink">{nextProductId}</span>, continuing from your highest number.
+                  </>
+                ) : (
+                  <>
+                    IDs will look like <span className="font-semibold text-ink">{v.productIdPrefix + "12".padStart(v.productIdDigits, "0")}</span>. Save to see the exact next ID.
+                  </>
+                )}
+              </p>
+            </>
+          )}
+          {v.productIdMode === "manual" && <p className="text-sm text-muted sm:col-span-2">The app won&apos;t save a product without an ID, or with an ID another product already has.</p>}
         </div>
       </Panel>
 

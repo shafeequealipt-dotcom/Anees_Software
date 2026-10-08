@@ -47,8 +47,11 @@ export function ItemForm({
   taxRates,
   hidePurchase,
   customFields = [],
+  productId,
 }: {
   initial?: ItemFormValue;
+  /** How this company's Product IDs work, and (Automatic) the one a new product would get right now. */
+  productId: { mode: "auto" | "manual"; next: string };
   hidePurchase?: boolean;
   customFields?: { id: number; name: string; kind: string }[];
   categories: { id: number; name: string }[];
@@ -165,9 +168,16 @@ export function ItemForm({
             <Input value={v.nameAr} onChange={(e) => set("nameAr", e.target.value)} dir="rtl" />
           </Field>
         )}
-        <Field label="Item code" error={err("code")} hint="Optional. Must be unique.">
-          <Input value={v.code} onChange={(e) => set("code", e.target.value)} />
-        </Field>
+        {!initial && productId.mode === "auto" ? (
+          // Shown, not sent: two people adding products see the same number, and the save decides who gets it.
+          <Field label="Product ID" error={err("code")} hint="Given automatically when you save.">
+            <Input value={productId.next} readOnly disabled />
+          </Field>
+        ) : (
+          <Field label="Product ID" error={err("code")} hint={initial ? "Shown on every bill and printout. No two products can share one." : "Type this product's own number or code. No two products can share one."}>
+            <Input value={v.code} onChange={(e) => set("code", e.target.value)} maxLength={60} />
+          </Field>
+        )}
         {region().usesHsn && <Field label="HSN / SAC code" error={err("hsn")} hint="4–8 digits, for GST returns.">
           <Input value={v.hsn} onChange={(e) => set("hsn", e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
         </Field>}

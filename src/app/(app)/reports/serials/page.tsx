@@ -6,6 +6,7 @@ import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { formatDate } from "@/lib/dates";
 import { serialReport } from "@/server/profit-reports";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Serial numbers" };
 
@@ -39,7 +40,7 @@ export default async function SerialsPage({ searchParams }: { searchParams: Prom
             <tbody>
               {list.map((r) => (
                 <tr key={`${r.item_id}-${r.serial}`} className="hover:bg-ground/60">
-                  <td className={td}><Link href={`/items/${r.item_id}`} className="text-brand-600 hover:underline">{r.item_name}</Link></td>
+                  <td className={td}><Link href={`/items/${r.item_id}`} className="text-brand-600 hover:underline"><ProductName code={r.item_code} name={r.item_name} /></Link></td>
                   <td className={td + " font-mono text-xs"}>{r.serial}</td>
                   <td className={td}><Badge tone={r.status === "in_stock" ? "good" : "neutral"}>{r.status === "in_stock" ? "In stock" : "Sold"}</Badge></td>
                   <td className={td}>{r.last_ref} · {formatDate(r.last_date)}</td>

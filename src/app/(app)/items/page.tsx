@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { formatQty } from "@/lib/money";
 import { stockSummary } from "@/server/reports";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Items & stock" };
 
@@ -67,7 +68,7 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
             options={[{ value: "", label: "All shops" }, ...user.locations.map((l) => ({ value: String(l.id), label: l.name }))]}
           />
         )}
-        <SearchBox q={sp.q} placeholder="Name or item code" />
+        <SearchBox q={sp.q} placeholder="Name or Product ID" />
       </div>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:max-w-md">
         <div className="rounded-lg border border-line bg-panel px-3 py-2">
@@ -102,17 +103,13 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
                 <tr key={i.id} className="hover:bg-ground/60">
                   <td className={td}>
                     <Link href={`/items/${i.id}`} className="font-medium text-brand-600 hover:underline">
-                      {i.name}
+                      <ProductName code={i.code} name={i.name} />
                     </Link>
-                    <div className="text-xs text-faint">
-                      {i.code}
-                      {!i.active && (
-                        <>
-                          {" "}
-                          <Badge>Inactive</Badge>
-                        </>
-                      )}
-                    </div>
+                    {!i.active && (
+                      <div className="text-xs text-faint">
+                        <Badge>Inactive</Badge>
+                      </div>
+                    )}
                   </td>
                   <td className={td}>{i.category_name}</td>
                   <td className={td + " text-right"}>

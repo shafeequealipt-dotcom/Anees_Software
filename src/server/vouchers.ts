@@ -34,6 +34,7 @@ import { defaultLocationId, systemLocationId } from "./locations";
 import { isZatcaIssued, ZATCA_LOCKED_MESSAGE } from "./zatca-lock";
 import { syncServiceReminders } from "./notify/service";
 import { SETTLES, VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
+import { productLabel } from "@/lib/product-id";
 
 export class VoucherError extends Error {
   constructor(message: string, public field?: string) {
@@ -571,9 +572,9 @@ export async function saveVoucher(
           if (qty < 0) {
             const item = itemMap.get(s.itemId)!;
             if (!cfg.allowNegativeStock) {
-              throw new VoucherError(`Not enough stock of "${item.name}" at this shop. Stock would go to ${qty / 1000}.`);
+              throw new VoucherError(`Not enough stock of "${productLabel(item.code, item.name)}" at this shop. Stock would go to ${qty / 1000}.`);
             }
-            warnings.push(`Stock of "${item.name}" at this shop is now ${qty / 1000} (below zero).`);
+            warnings.push(`Stock of "${productLabel(item.code, item.name)}" at this shop is now ${qty / 1000} (below zero).`);
           }
         }
       }
@@ -988,7 +989,9 @@ export async function listDeletedVouchers(db: DB, firmId: number, opts: { hideSa
 export async function getVoucher(db: DB | Tx, firmId: number, id: number) {
   const [v] = await db.select().from(vouchers).where(and(eq(vouchers.id, id), eq(vouchers.firmId, firmId), ne(vouchers.status, "deleted")));
   if (!v) return null;
-  const lines = await db.select().from(voucherLines).where(eq(voucherLines.voucherId, id)).orderBy(asc(voucherLines.lineNo));
+  // Each line carries its product's current ID (free-text lines have none). Looked up, not stored: it follows the product if the ID is changed.
+  const lineRows = await db.select({ line: voucherLines, itemCode: items.code }).from(voucherLines).leftJoin(items, eq(items.id, voucherLines.itemId)).where(eq(voucherLines.voucherId, id)).orderBy(asc(voucherLines.lineNo));
+  const lines = lineRows.map((r) => ({ ...r.line, itemCode: r.itemCode }));
   const settledBy = await db
     .select({ id: vouchers.id, type: vouchers.type, prefix: vouchers.prefix, number: vouchers.number, date: vouchers.date, amountPaise: allocations.amountPaise })
     .from(allocations)

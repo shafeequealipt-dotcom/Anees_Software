@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { formatQty } from "@/lib/money";
 import { stockSummary } from "@/server/reports";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Low stock" };
 
@@ -47,9 +48,8 @@ export default async function LowStockPage({ searchParams }: { searchParams: Pro
                 <tr key={i.id} className="hover:bg-ground/60">
                   <td className={td}>
                     <Link href={`/items/${i.id}`} className="font-medium text-brand-600 hover:underline">
-                      {i.name}
+                      <ProductName code={i.code} name={i.name} />
                     </Link>
-                    <div className="text-xs text-faint">{i.code}</div>
                   </td>
                   <td className={td + " text-right"}>
                     <span className="font-medium text-warn">

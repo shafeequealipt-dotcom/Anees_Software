@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { financialYear, formatDate, todayIST } from "@/lib/dates";
 import { formatQty } from "@/lib/money";
 import { itemSales } from "@/server/reports";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Item-wise sales" };
 
@@ -46,7 +47,7 @@ export default async function ItemSalesPage({ searchParams }: { searchParams: Pr
             <tbody>
               {list.map((r) => (
                 <tr key={r.item_id ?? r.name} className="hover:bg-ground/60">
-                  <td className={td}>{r.item_id ? <Link href={`/items/${r.item_id}`} className="text-brand-600 hover:underline">{r.name}</Link> : r.name}</td>
+                  <td className={td}>{r.item_id ? <Link href={`/items/${r.item_id}`} className="text-brand-600 hover:underline"><ProductName code={r.code} name={r.name} /></Link> : r.name}</td>
                   <td className={td + " text-right"}>
                     {formatQty(r.qty_milli)} {r.unit_code}
                   </td>

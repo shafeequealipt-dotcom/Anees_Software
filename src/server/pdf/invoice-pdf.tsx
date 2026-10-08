@@ -1,5 +1,6 @@
 import { Document, Image, Page, renderToBuffer, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { InvoiceModel } from "../invoice";
+import { productLabel } from "@/lib/product-id";
 import { FAMILY, MM } from "./fonts";
 
 const ink = "#1a2230";
@@ -153,7 +154,7 @@ function Sheet({ m }: { m: InvoiceModel }) {
               <View key={l.no} style={[s.row, i % 2 ? s.rowAlt : {}]} wrap={false}>
                 <Cell s={s} w={w.no}>{l.no}</Cell>
                 <View style={[s.cell, { width: `${desc}%` }]}>
-                  <Text>{l.desc}</Text>
+                  <Text>{productLabel(l.code, l.desc)}</Text>
                   {l.descAr && <Text style={s.ar}>{l.descAr}</Text>}
                 </View>
                 {c.hsn && <Cell s={s} w={w.hsn}>{l.hsn}</Cell>}
@@ -307,7 +308,11 @@ function Receipt({ m }: { m: InvoiceModel }) {
     logo: { maxHeight: 40, maxWidth: (mm - 4) * MM * 0.7, objectFit: "contain", alignSelf: "center", marginBottom: 3 },
     qr: { width: wide ? 90 : 70, height: wide ? 90 : 70, alignSelf: "center", marginTop: 4 },
   });
-  const height = 150 + m.lines.length * (wide ? 30 : 38) + m.totals.length * 13 + m.meta.length * 11 + (m.qr ? 110 : 0) + (m.terms ? 50 : 0) + m.seller.lines.length * 11 + (m.taxSummary.length ? 40 + m.taxSummary.length * 12 : 0) + (m.words.length / (wide ? 40 : 28)) * 11 + m.lines.filter((l) => l.received || l.damaged).length * 11;
+  // The allowance per line below fits a name of one row (two on the narrow roll); the Product ID in
+  // front can push a long name onto another row, so make room for each extra one.
+  const perRow = wide ? 40 : 28;
+  const extraRows = m.lines.reduce((n, l) => n + Math.max(0, Math.ceil((l.no.length + 2 + productLabel(l.code, l.desc).length) / perRow) - (wide ? 1 : 2)), 0);
+  const height = extraRows * 11 + 150 + m.lines.length * (wide ? 30 : 38) + m.totals.length * 13 + m.meta.length * 11 + (m.qr ? 110 : 0) + (m.terms ? 50 : 0) + m.seller.lines.length * 11 + (m.taxSummary.length ? 40 + m.taxSummary.length * 12 : 0) + (m.words.length / (wide ? 40 : 28)) * 11 + m.lines.filter((l) => l.received || l.damaged).length * 11;
 
   return (
     <Document title={m.title} author={m.seller.name}>
@@ -346,7 +351,7 @@ function Receipt({ m }: { m: InvoiceModel }) {
           m.lines.map((l) => (
             <View key={l.no} style={s.item} wrap={false}>
               <Text style={s.bold}>
-                {l.no}. {l.desc}
+                {l.no}. {productLabel(l.code, l.desc)}
               </Text>
               {l.descAr && <Text style={{ textAlign: "right" }}>{l.descAr}</Text>}
               <View style={s.row}>

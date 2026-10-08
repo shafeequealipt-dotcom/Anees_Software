@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { savePriceListAction, setItemPricesAction, setPartyRatesAction } from "@/app/actions/admin";
 import { formatMoney, toBasisPoints, toPaise } from "@/lib/money";
+import { productLabel } from "@/lib/product-id";
 import { region } from "@/lib/region";
+import { ProductName } from "./product-name";
 import { Alert, Badge, Button, Checkbox, Field, Input, Panel, Select, Table, td, th } from "./ui";
 
 // ─── Settings: the price lists themselves ────────────────────────────────────
@@ -137,15 +139,16 @@ export function ItemPricesPanel({ itemId, normalPricePaise, rows }: { itemId: nu
 
 interface Rate {
   itemId: number;
+  itemCode: string;
   itemName: string;
   rate: string;
   disc: string;
   normalPaise: number;
 }
 
-export function PartyRatesPanel({ partyId, items, initial }: { partyId: number; items: { id: number; name: string; salePricePaise: number }[]; initial: { itemId: number; itemName: string; ratePaise: number | null; discountBp: number | null; salePricePaise: number }[] }) {
+export function PartyRatesPanel({ partyId, items, initial }: { partyId: number; items: { id: number; code: string; name: string; salePricePaise: number }[]; initial: { itemId: number; itemCode: string; itemName: string; ratePaise: number | null; discountBp: number | null; salePricePaise: number }[] }) {
   const router = useRouter();
-  const [rates, setRates] = useState<Rate[]>(() => initial.map((r) => ({ itemId: r.itemId, itemName: r.itemName, rate: r.ratePaise === null ? "" : String(r.ratePaise / 100), disc: r.discountBp === null ? "" : String(r.discountBp / 100), normalPaise: r.salePricePaise })));
+  const [rates, setRates] = useState<Rate[]>(() => initial.map((r) => ({ itemId: r.itemId, itemCode: r.itemCode, itemName: r.itemName, rate: r.ratePaise === null ? "" : String(r.ratePaise / 100), disc: r.discountBp === null ? "" : String(r.discountBp / 100), normalPaise: r.salePricePaise })));
   const [pick, setPick] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -184,7 +187,7 @@ export function PartyRatesPanel({ partyId, items, initial }: { partyId: number; 
             {rates.map((r, i) => (
               <tr key={r.itemId}>
                 <td className={td}>
-                  {r.itemName}
+                  <ProductName code={r.itemCode} name={r.itemName} />
                   <div className="text-xs text-faint">Normal {formatMoney(r.normalPaise)}</div>
                 </td>
                 <td className={td}>
@@ -208,7 +211,7 @@ export function PartyRatesPanel({ partyId, items, initial }: { partyId: number; 
           <option value="">Add an item…</option>
           {available.map((i) => (
             <option key={i.id} value={i.id}>
-              {i.name}
+              {productLabel(i.code, i.name)}
             </option>
           ))}
         </Select>
@@ -217,7 +220,7 @@ export function PartyRatesPanel({ partyId, items, initial }: { partyId: number; 
           disabled={!pick}
           onClick={() => {
             const it = items.find((i) => i.id === Number(pick));
-            if (it) setRates((x) => [...x, { itemId: it.id, itemName: it.name, rate: "", disc: "", normalPaise: it.salePricePaise }]);
+            if (it) setRates((x) => [...x, { itemId: it.id, itemCode: it.code, itemName: it.name, rate: "", disc: "", normalPaise: it.salePricePaise }]);
             setPick("");
           }}
         >

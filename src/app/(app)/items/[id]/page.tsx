@@ -17,6 +17,7 @@ import { region } from "@/lib/region";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { itemMovements, stockByLocation } from "@/server/reports";
 import { getSettings } from "@/lib/settings";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Item" };
 
@@ -53,10 +54,10 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
         back={{ href: "/items", label: "Items & stock" }}
         title={
           <span className="flex items-center gap-2">
-            {item.name} {!item.active && <Badge>Inactive</Badge>}
+            <span><ProductName code={item.code} name={item.name} /></span> {!item.active && <Badge>Inactive</Badge>}
           </span>
         }
-        subtitle={item.kind === "service" ? "Service" : `${item.code ? `${item.code} · ` : ""}${category?.name ?? "No category"}`}
+        subtitle={item.kind === "service" ? "Service" : (category?.name ?? "No category")}
         actions={
           <>
             {isGoods && <LinkButton size="sm" href={`/stock-transfers/new?item=${item.id}`}>Transfer stock</LinkButton>}

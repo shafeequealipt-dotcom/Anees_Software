@@ -154,14 +154,17 @@ export async function importParties(db: DB, firmId: number, table: Table, userId
 
 // ─── Items (also used for bulk updates: export, edit in Excel, import again) ──
 
+/** The app's own row number, used to match a re-imported row. Named so nobody takes it for the Product ID (older files call it "ID"). */
+const ROW_ID_HEADER = "Row ID (do not edit)";
+
 export function itemColumns(opts: { purchase: boolean; custom?: { id: number; name: string }[]; locations?: { id: number; name: string }[] }): Column[] {
   const r = region();
   // Only worth a column each once there's more than one shop/warehouse to tell apart.
   const stockLocations = (opts.locations ?? []).length > 1 ? opts.locations! : [];
   return [
-    { header: "ID", key: "id", width: 8 },
+    { header: ROW_ID_HEADER, key: "id", width: 10 },
     { header: "Name", key: "name", width: 32 },
-    { header: "Item code", key: "code" },
+    { header: "Product ID", key: "code" },
     { header: "Type", key: "type", width: 10 },
     ...(r.usesHsn ? [{ header: "HSN/SAC", key: "hsn" }] : []),
     { header: "Category", key: "category", width: 18 },
@@ -243,11 +246,11 @@ export async function importItems(db: DB, firmId: number, table: Table, userId: 
 
     for (const { line, cells } of table.rows) {
       try {
-        const idText = pick(cells, "ID");
-        const code = pick(cells, "Item code", "Code");
+        const idText = pick(cells, ROW_ID_HEADER, "ID");
+        const code = pick(cells, "Product ID", "Item code", "Code");
         const name = pick(cells, "Name", "Item name");
         let cur = idText ? byId.get(Number(idText)) : undefined;
-        if (idText && !cur) throw new MasterError(`ID ${idText} doesn't belong to an item in this company.`);
+        if (idText && !cur) throw new MasterError(`Row ID ${idText} doesn't belong to an item in this company.`);
         cur ??= (code && byCode.get(code.toLowerCase())) || (name ? byName.get(name.toLowerCase()) : undefined);
         if (!cur && !name) throw new MasterError("Name is missing.");
 

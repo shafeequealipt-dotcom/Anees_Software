@@ -255,7 +255,8 @@ export const items = pgTable(
     kind: itemKind("kind").notNull().default("goods"),
     name: varchar("name", { length: 200 }).notNull(),
     nameAr: varchar("name_ar", { length: 200 }),
-    code: varchar("code", { length: 60 }),
+    /** The Product ID: typed by the user or handed out automatically (Settings → Billing). Never blank; unique per company ignoring case. */
+    code: varchar("code", { length: 60 }).notNull(),
     hsn: varchar("hsn", { length: 10 }),
     description: text("description"),
     categoryId: integer("category_id").references(() => itemCategories.id, { onDelete: "set null" }),
@@ -286,7 +287,7 @@ export const items = pgTable(
   },
   (t) => [
     index("items_name_idx").on(sql`lower(${t.name})`),
-    uniqueIndex("items_code_key").on(t.firmId, t.code).where(sql`${t.code} is not null`),
+    uniqueIndex("items_code_lower_key").on(t.firmId, sql`lower(${t.code})`),
   ],
 );
 

@@ -12,6 +12,11 @@ export const DEFAULT_SETTINGS = {
   showLowStockWarning: true,
   /** Whole units. Used for any item (or item+shop) that doesn't have its own low-stock level set. */
   defaultLowStock: 5,
+  /** How a new product gets its Product ID: "auto" hands out the next number, "manual" makes the user type one. */
+  productIdMode: "auto" as "auto" | "manual",
+  /** Automatic IDs only: text in front of the number (may be empty) and the least number of digits, zero-padded (0 = no padding). */
+  productIdPrefix: "",
+  productIdDigits: 0,
   defaultPriceIncludesTax: false,
   lineDiscount: true,
   billDiscount: true,

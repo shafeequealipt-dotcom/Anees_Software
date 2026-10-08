@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { searchAction } from "@/app/actions/search";
 import { formatINR } from "@/lib/money";
+import { productLabel } from "@/lib/product-id";
 
 type Results = Awaited<ReturnType<typeof searchAction>>;
 
@@ -66,7 +67,7 @@ export function GlobalSearch() {
           ))}
           {res.items.length > 0 && <Heading>Items</Heading>}
           {res.items.map((i) => (
-            <Row key={`i${i.id}`} onClick={() => go(`/items/${i.id}`)} main={i.name} side={i.code ?? ""} />
+            <Row key={`i${i.id}`} onClick={() => go(`/items/${i.id}`)} main={productLabel(i.code, i.name)} side="" />
           ))}
           {res.vouchers.length > 0 && <Heading>Bills & entries</Heading>}
           {res.vouchers.map((v) => (

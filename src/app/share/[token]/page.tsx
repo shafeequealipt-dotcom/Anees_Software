@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getDb } from "@/db";
+import { productLabel } from "@/lib/product-id";
 import { loadInvoiceModel } from "@/server/invoice";
 import { resolveShare } from "@/server/share";
 
@@ -77,7 +78,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
               <tbody>
                 {model.lines.map((l) => (
                   <tr key={l.no} className="border-b border-line">
-                    <td className="px-3 py-2">{l.desc}</td>
+                    <td className="px-3 py-2">{productLabel(l.code, l.desc)}</td>
                     <td className="px-3 py-2 text-right">{l.qty}</td>
                     <td className="num px-3 py-2 text-right">{l.rate}</td>
                     <td className="num px-3 py-2 text-right font-medium">{l.total}</td>

@@ -74,7 +74,7 @@ export async function getPartyRates(db: DB, firmId: number, partyId: number) {
   const [p] = await db.select({ id: parties.id }).from(parties).where(and(eq(parties.id, partyId), eq(parties.firmId, firmId)));
   if (!p) throw new MasterError("This party no longer exists.");
   return db
-    .select({ itemId: partyRates.itemId, itemName: items.name, ratePaise: partyRates.ratePaise, discountBp: partyRates.discountBp, salePricePaise: items.salePricePaise })
+    .select({ itemId: partyRates.itemId, itemCode: items.code, itemName: items.name, ratePaise: partyRates.ratePaise, discountBp: partyRates.discountBp, salePricePaise: items.salePricePaise })
     .from(partyRates)
     .innerJoin(items, eq(items.id, partyRates.itemId))
     .where(eq(partyRates.partyId, partyId))

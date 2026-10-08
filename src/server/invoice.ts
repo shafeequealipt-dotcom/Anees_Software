@@ -40,7 +40,8 @@ export interface InvoiceModel {
   meta: { k: string; v: string }[];
   party: { heading: string; name: string; nameAr: string | null; lines: string[]; linesAr: string[]; taxId: string | null; taxIdLabel: string };
   columns: { hsn: boolean; discount: boolean; tax: boolean; transferStatus: boolean };
-  lines: { no: string; desc: string; descAr: string | null; hsn: string; qty: string; rate: string; discount: string; taxable: string; taxRate: string; tax: string; total: string; received: string; damaged: string }[];
+  /** `code` is the product's ID ("" on a free-text line); it is printed in front of `desc`. */
+  lines: { no: string; code: string; desc: string; descAr: string | null; hsn: string; qty: string; rate: string; discount: string; taxable: string; taxRate: string; tax: string; total: string; received: string; damaged: string }[];
   taxSummary: { rate: string; taxable: string; cgst: string; sgst: string; igst: string; total: string }[];
   taxLabels: { cgst: string; sgst: string; igst: string };
   split: boolean;
@@ -168,6 +169,7 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
 
   const lines = data.lines.map((l, i) => ({
     no: String(i + 1),
+    code: l.itemCode ?? "",
     descAr: ar && l.itemId ? (itemAr.get(l.itemId) ?? null) : null,
     desc: [l.description, ...printFields.map((f) => { const val = l.itemId ? itemExtras.get(l.itemId)?.[String(f.id)] : ""; return val ? `${f.name}: ${f.kind === "yesno" ? (val === "yes" ? "Yes" : "No") : val}` : ""; }).filter(Boolean)].join("\n"),
     hsn: l.hsn ?? "",

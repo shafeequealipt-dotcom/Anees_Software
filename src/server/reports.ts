@@ -631,9 +631,9 @@ export async function profitAndLoss(db: DB, firmId: number, from: string, to: st
 export async function itemSales(db: DB, firmId: number, from: string, to: string, side: "sale" | "purchase" = "sale") {
   const [fwd, ret] = side === "sale" ? ["sale_invoice", "credit_note"] : ["purchase_bill", "debit_note"];
   return nums(
-    await rows<{ item_id: number | null; name: string; qty_milli: number; taxable_paise: number; total_paise: number; unit_code: string | null }>(
+    await rows<{ item_id: number | null; code: string | null; name: string; qty_milli: number; taxable_paise: number; total_paise: number; unit_code: string | null }>(
       db,
-      sql`select l.item_id, coalesce(i.name, l.description) as name, max(l.unit_code) as unit_code,
+      sql`select l.item_id, max(i.code) as code, coalesce(i.name, l.description) as name, max(l.unit_code) as unit_code,
             sum(case when v.type = ${fwd} then l.qty_milli * l.unit_factor_milli / 1000 else -l.qty_milli * l.unit_factor_milli / 1000 end) as qty_milli,
             sum(case when v.type = ${fwd} then l.taxable_paise else -l.taxable_paise end) as taxable_paise,
             sum(case when v.type = ${fwd} then l.total_paise else -l.total_paise end) as total_paise
@@ -730,7 +730,7 @@ export interface DailySalesReport {
   paymentsReceivedPaise: number;
   unpaidPaise: number;
   byPaymentMode: { mode: string; amountPaise: number }[];
-  topItems: { itemId: number | null; name: string; qtyMilli: number; unitCode: string | null; amountPaise: number }[];
+  topItems: { itemId: number | null; code: string | null; name: string; qtyMilli: number; unitCode: string | null; amountPaise: number }[];
   byStaff: { userId: number | null; name: string; bills: number; salesPaise: number; returnsPaise: number }[];
 }
 
@@ -783,9 +783,9 @@ export async function dailySalesReport(db: DB, firmId: number, date: string, loc
     ["amount"],
   );
   const topItems = nums(
-    await rows<{ item_id: number | null; name: string; qty_milli: number; unit_code: string | null; amount: number }>(
+    await rows<{ item_id: number | null; code: string | null; name: string; qty_milli: number; unit_code: string | null; amount: number }>(
       db,
-      sql`select l.item_id, coalesce(i.name, l.description) as name, sum(l.qty_milli * l.unit_factor_milli / 1000) as qty_milli, max(u.code) as unit_code, sum(l.total_paise) as amount
+      sql`select l.item_id, max(i.code) as code, coalesce(i.name, l.description) as name, sum(l.qty_milli * l.unit_factor_milli / 1000) as qty_milli, max(u.code) as unit_code, sum(l.total_paise) as amount
           from voucher_lines l
           join vouchers v on v.id = l.voucher_id
           left join items i on i.id = l.item_id
@@ -827,7 +827,7 @@ export async function dailySalesReport(db: DB, firmId: number, date: string, loc
     paymentsReceivedPaise: paymentsIn?.amount ?? 0,
     unpaidPaise: totals?.unpaid ?? 0,
     byPaymentMode: byPaymentMode.map((r) => ({ mode: r.mode, amountPaise: r.amount })),
-    topItems: topItems.map((r) => ({ itemId: r.item_id, name: r.name, qtyMilli: r.qty_milli, unitCode: r.unit_code, amountPaise: r.amount })),
+    topItems: topItems.map((r) => ({ itemId: r.item_id, code: r.code, name: r.name, qtyMilli: r.qty_milli, unitCode: r.unit_code, amountPaise: r.amount })),
     byStaff: byStaff.map((r) => ({ userId: r.user_id, name: r.name, bills: r.bills, salesPaise: r.sales, returnsPaise: r.returns })),
   };
 }

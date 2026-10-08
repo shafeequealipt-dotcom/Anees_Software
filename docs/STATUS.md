@@ -238,6 +238,28 @@ Verified = automated test passes, or manually clicked through in the dev server.
   / `saveFirm`) is a module-level value, so two people working at the same instant in an Indian and a
   Saudi company can briefly get each other's rules (see "Multiple companies" above).
 
+### Product IDs — added 2026-10-08 (migration `0022_product_ids.sql`)
+- Every product has a **Product ID** — the old optional "Item code" (`items.code`), now `NOT NULL` and
+  unique per company **ignoring case** (index `items_code_lower_key` on `(firm_id, lower(code))`).
+  There is no second ID field.
+- Per company, Settings → Billing → "Product IDs": **Automatic** (the default; next number after the
+  company's highest, optional prefix and minimum digits) or **Choose your own** (must be typed).
+  Settings keys `productIdMode`, `productIdPrefix`, `productIdDigits`.
+- Rules live in `saveItem` (`src/server/masters.ts`): it takes `pg_advisory_xact_lock('item:<firm>')`,
+  so two saves can't get the same ID; a typed ID is accepted in both modes; an edit with a blank ID
+  keeps the existing one. Only IDs of prefix + 1–9 digits count towards the sequence, so a barcode
+  typed as an ID doesn't hijack it (`src/lib/product-id.ts`).
+- Shown as **ID then name on one line** ("132 iphone bag") everywhere a product is named: use
+  `productLabel()` for text and `<ProductName>` on screen. Bills look the ID up live
+  (`getVoucher` lines carry `itemCode`; the invoice model's lines carry `code`, `desc` unchanged) —
+  nothing is stored on `voucher_lines`, so changing a product's ID changes it on old bills too.
+- Excel: items sheet heading is "Product ID" ("Item code" still read); the app's own row number is
+  "Row ID (do not edit)" ("ID" still read). Restoring a backup made before this numbers any product
+  without an ID and stops on two products sharing one.
+- Deliberately unchanged: ZATCA XML, e-way bill JSON, and no scannable barcode images (see
+  `docs/future-features.md`).
+- Tests: `tests/product-id.test.ts` (includes running migration 0022 on live-shaped data).
+
 ### Dev tooling
 - [x] Vitest test suite (`npm test`), TypeScript strict mode (`npm run typecheck`),
   embedded PostgreSQL for local dev with no Docker (`@electric-sql/pglite`) so

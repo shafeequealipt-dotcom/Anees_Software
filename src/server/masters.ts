@@ -22,6 +22,8 @@ import {
 } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { financialYear, isIsoDate, todayIST } from "@/lib/dates";
+import { formatProductId, type ProductIdFormat } from "@/lib/product-id";
+import { getSettings } from "@/lib/settings";
 import { checkGstin } from "@/lib/gst/gstin";
 import { checkTrn } from "@/lib/gst/trn";
 import { region } from "@/lib/region";
@@ -226,20 +228,36 @@ export async function saveItem(db: DB, firmId: number, raw: z.input<typeof itemS
   }
 
   return db.transaction(async (tx) => {
+    // One product save at a time per company. It makes the name and ID checks below race-free and
+    // lets automatic IDs be handed out in order (the same approach bill numbers use).
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`item:${firmId}`}))`);
+
+    let before: typeof items.$inferSelect | undefined;
+    if (input.id) {
+      [before] = await tx.select().from(items).where(and(eq(items.id, input.id), eq(items.firmId, firmId)));
+      if (!before) throw new MasterError("This item no longer exists.");
+    }
+
+    // The Product ID: what was typed; else the one it already has; else the next number (Automatic)
+    // or an error (Choose your own). It is never blank.
+    let code = input.code;
+    if (!code) {
+      if (before) code = before.code;
+      else {
+        const cfg = await getSettings(tx, firmId);
+        if (cfg.productIdMode === "manual") throw new MasterError("Enter a Product ID for this product.", "code");
+        code = await nextFreeProductId(tx, firmId, { prefix: cfg.productIdPrefix, digits: cfg.productIdDigits });
+      }
+    }
+
     const dupe = await tx
       .select({ id: items.id, name: items.name, code: items.code })
       .from(items)
-      .where(
-        and(
-          eq(items.firmId, firmId),
-          input.code ? sql`(lower(${items.name}) = ${input.name.toLowerCase()} or ${items.code} = ${input.code})` : sql`lower(${items.name}) = ${input.name.toLowerCase()}`,
-          input.id ? sql`${items.id} <> ${input.id}` : sql`true`,
-        ),
-      );
+      .where(and(eq(items.firmId, firmId), sql`(lower(${items.name}) = lower(${input.name}) or lower(${items.code}) = lower(${code}))`, input.id ? sql`${items.id} <> ${input.id}` : sql`true`));
     if (dupe.length) {
-      const d = dupe[0];
-      throw d.code && d.code === input.code
-        ? new MasterError(`Item code "${input.code}" is already used by "${d.name}".`, "code")
+      const byCode = dupe.find((d) => d.code.toLowerCase() === code.toLowerCase());
+      throw byCode
+        ? new MasterError(`Product ID "${code}" is already used by "${byCode.name}".`, "code")
         : new MasterError(`An item named "${input.name}" already exists.`, "name");
     }
 
@@ -255,14 +273,11 @@ export async function saveItem(db: DB, firmId: number, raw: z.input<typeof itemS
       if (!ok) throw new MasterError(`Choose a ${label} from this company.`);
     }
     const customValues = input.customValues === undefined ? undefined : await cleanCustomValues(tx as unknown as DB, firmId, input.customValues);
-    const values = { ...input, customValues, firmId, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
+    const values = { ...input, code, customValues, firmId, openingDate: input.openingDate ?? defaultOpeningDate(), updatedAt: new Date() };
     if (values.customValues === undefined) delete (values as { customValues?: unknown }).customValues;
     delete (values as { id?: number }).id;
     let id = input.id;
-    let before;
-    if (id) {
-      [before] = await tx.select().from(items).where(and(eq(items.id, id), eq(items.firmId, firmId)));
-      if (!before) throw new MasterError("This item no longer exists.");
+    if (id && before) {
       if (before.kind !== values.kind) {
         const [used] = await tx.select({ n: sql<number>`count(*)::int` }).from(voucherLines).where(eq(voucherLines.itemId, id));
         if (used.n > 0) throw new MasterError("This item is already on bills, so it can't switch between goods and service.", "kind");
@@ -305,6 +320,37 @@ export async function saveItem(db: DB, firmId: number, raw: z.input<typeof itemS
     });
     return id!;
   });
+}
+
+/** The highest number already used in this company's ID sequence (IDs made of the prefix plus 1-9 digits). */
+async function highestProductNumber(db: DB | Tx, firmId: number, prefix: string): Promise<number> {
+  const n = prefix.length;
+  const [row] = await db
+    .select({ max: sql<number>`coalesce(max(substr(${items.code}, ${n + 1})::int), 0)::int` })
+    .from(items)
+    .where(and(eq(items.firmId, firmId), sql`lower(left(${items.code}, ${n})) = lower(${prefix})`, sql`substr(${items.code}, ${n + 1}) ~ '^[0-9]{1,9}$'`));
+  return Number(row.max);
+}
+
+/** The next automatic Product ID that no product in the company has. Call inside the save lock when it must be final. */
+async function nextFreeProductId(db: DB | Tx, firmId: number, format: ProductIdFormat): Promise<string> {
+  for (let n = (await highestProductNumber(db, firmId, format.prefix)) + 1; ; n++) {
+    const id = formatProductId(n, format);
+    const [taken] = await db.select({ id: items.id }).from(items).where(and(eq(items.firmId, firmId), sql`lower(${items.code}) = lower(${id})`)).limit(1);
+    if (!taken) return id;
+  }
+}
+
+/** What the next new product would get in Automatic mode. A preview only: someone else may take it first. */
+export async function previewNextProductId(db: DB, firmId: number): Promise<string> {
+  const cfg = await getSettings(db, firmId);
+  return nextFreeProductId(db, firmId, { prefix: cfg.productIdPrefix, digits: cfg.productIdDigits });
+}
+
+/** For the product form: how this company's Product IDs work and what the next automatic one would be. */
+export async function productIdSetup(db: DB, firmId: number): Promise<{ mode: "auto" | "manual"; next: string }> {
+  const cfg = await getSettings(db, firmId);
+  return { mode: cfg.productIdMode, next: await nextFreeProductId(db, firmId, { prefix: cfg.productIdPrefix, digits: cfg.productIdDigits }) };
 }
 
 export async function deleteItem(db: DB, firmId: number, id: number, userId: number | null) {

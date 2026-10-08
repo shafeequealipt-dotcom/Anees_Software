@@ -155,6 +155,13 @@
       "when": 1790959907842,
       "tag": "0021_company_owner_role",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791456901668,
+      "tag": "0022_product_ids",
+      "breakpoints": true
     }
   ]
 }

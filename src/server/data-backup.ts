@@ -5,6 +5,7 @@ import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import type { DB, Tx } from "@/db";
 import * as s from "@/db/schema";
 import { audit } from "@/lib/audit";
+import { nextProductId } from "@/lib/product-id";
 import { MasterError } from "./errors";
 
 /*
@@ -516,6 +517,7 @@ export async function restoreAllData(db: DB, buf: Buffer, by: { id: number; isOw
           created.push({ id: r.id as number, name: r.name as string });
         }
       }
+      if (sp.key === "items") ensureProductIds(rows);
       await insertChunked(tx, sp.table, rows);
       rowCounts[sp.key] = rows.length;
     }
@@ -527,6 +529,33 @@ export async function restoreAllData(db: DB, buf: Buffer, by: { id: number; isOw
     }
     return { companies: created, rows: rowCounts };
   });
+}
+
+/**
+ * Every product needs a Product ID, unique in its company ignoring case. A backup made before that
+ * rule may hold products with none: they get the next numbers after the company's highest. Two
+ * products sharing an ID can't be guessed at, so that stops the restore with the names to fix.
+ */
+function ensureProductIds(rows: Row[]) {
+  const byFirm = new Map<number, Row[]>();
+  for (const r of rows) byFirm.set(r.firmId as number, [...(byFirm.get(r.firmId as number) ?? []), r]);
+  for (const list of byFirm.values()) {
+    const seen = new Map<string, Row>();
+    for (const r of list) {
+      const code = String(r.code ?? "").trim();
+      r.code = code;
+      if (!code) continue;
+      const other = seen.get(code.toLowerCase());
+      if (other) throw new MasterError(`Sheet "items": the Product ID "${code}" is on two products of the same company ("${String(other.name)}" and "${String(r.name)}"). Change one of them in the file, then restore again.`);
+      seen.set(code.toLowerCase(), r);
+    }
+    const codes = [...seen.values()].map((r) => r.code as string);
+    for (const r of list) {
+      if (r.code) continue;
+      r.code = nextProductId(codes, { prefix: "", digits: 0 });
+      codes.push(r.code as string);
+    }
+  }
 }
 
 async function allocateIds(tx: Tx, table: string, n: number): Promise<number[]> {

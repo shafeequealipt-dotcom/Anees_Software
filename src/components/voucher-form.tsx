@@ -11,6 +11,7 @@ import { wantsLocation } from "@/lib/posting";
 import { RETURN_REASONS, SUPPLIER_RETURN_REASONS, VOUCHER_INFO } from "@/lib/voucher-types";
 import type { ItemOpt, PartyOpt, VoucherFormData } from "@/server/form-data";
 import { Combobox } from "./combobox";
+import { ProductName } from "./product-name";
 import { Alert, Button, Checkbox, cx, Field, Input, Money, PartyBalance, Select, Textarea } from "./ui";
 import { saleRateFor } from "@/lib/pricing";
 
@@ -377,7 +378,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
         render: (
           <div className="flex items-baseline justify-between gap-3">
             <span className="truncate">
-              {i.name} {i.code && <span className="text-xs text-faint">{i.code}</span>}
+              <ProductName code={i.code} name={i.name} />
             </span>
             <span className="shrink-0 text-xs text-muted">
               {formatINR(info.priceSide === "sale" ? i.salePricePaise : i.purchasePricePaise)}
@@ -628,15 +629,21 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                     <tr key={l.key} className="border-b border-line align-top last:border-0">
                       <td className="px-2 py-2 text-xs text-faint">{idx + 1}</td>
                       <td className="px-2 py-1.5">
-                        <Combobox
-                          options={itemOptions}
-                          value={l.itemId}
-                          allowFreeText
-                          freeText={l.itemId ? undefined : l.description}
-                          onFreeText={(t) => pickItem(l.key, null, t)}
-                          onChange={(v) => pickItem(l.key, v ? (itemMap.get(v) ?? null) : null)}
-                          placeholder="Search item or type a description"
-                        />
+                        <div className="flex items-center gap-1.5">
+                          {/* The Product ID sits in front of the name; the box itself stays the name, so typing still searches. */}
+                          {item?.code && <span className="num max-w-24 shrink-0 truncate text-xs text-faint" title={`Product ID ${item.code}`}>{item.code}</span>}
+                          <div className="min-w-0 flex-1">
+                            <Combobox
+                              options={itemOptions}
+                              value={l.itemId}
+                              allowFreeText
+                              freeText={l.itemId ? undefined : l.description}
+                              onFreeText={(t) => pickItem(l.key, null, t)}
+                              onChange={(v) => pickItem(l.key, v ? (itemMap.get(v) ?? null) : null)}
+                              placeholder="Search item or type a description"
+                            />
+                          </div>
+                        </div>
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-faint">
                           {R.usesHsn && (item?.hsn || l.hsn) && <span>HSN {l.hsn || item?.hsn}</span>}
                           {item?.kind === "goods" && (

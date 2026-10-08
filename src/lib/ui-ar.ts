@@ -243,6 +243,8 @@ export const UI_AR: Record<string, string> = {
   "Bill date": "تاريخ الفاتورة",
   "Opening stock": "المخزون الافتتاحي",
   "Item code": "رمز الصنف",
+  "Product ID": "رقم المنتج",
+  "Product IDs": "أرقام المنتجات",
   "Item categories": "تصنيفات الأصناف",
   "Expense categories": "تصنيفات المصروفات",
   "Other-income categories": "تصنيفات الإيرادات الأخرى",

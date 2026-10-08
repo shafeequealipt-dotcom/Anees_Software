@@ -6,7 +6,9 @@ import { getDb } from "@/db";
 import { itemCategories, items, taxRates, units } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { listCustomFields } from "@/server/custom-fields";
+import { productIdSetup } from "@/server/masters";
 import { can } from "@/lib/permissions";
+import { productLabel } from "@/lib/product-id";
 
 export const metadata = { title: "Edit item" };
 
@@ -22,10 +24,11 @@ export default async function EditItemPage({ params }: { params: Promise<{ id: s
     db.select().from(units).where(and(eq(units.firmId, user.firmId), eq(units.active, true))).orderBy(asc(units.name)),
     db.select().from(taxRates).where(and(eq(taxRates.firmId, user.firmId), eq(taxRates.active, true))).orderBy(asc(taxRates.sort)),
   ]);
+  const productId = await productIdSetup(db, user.firmId);
   return (
     <>
-      <PageHeader title={`Edit ${item.name}`} back={{ href: `/items/${item.id}`, label: item.name }} />
-      <ItemForm customFields={(await listCustomFields(db, user.firmId, { activeOnly: true })).map((f) => ({ id: f.id, name: f.name, kind: f.kind }))} initial={hidePurchase ? { ...item, purchasePricePaise: 0 } : item} hidePurchase={hidePurchase} categories={categories} units={unitList} taxRates={taxList} />
+      <PageHeader title={`Edit ${productLabel(item.code, item.name)}`} back={{ href: `/items/${item.id}`, label: item.name }} />
+      <ItemForm productId={productId} customFields={(await listCustomFields(db, user.firmId, { activeOnly: true })).map((f) => ({ id: f.id, name: f.name, kind: f.kind }))} initial={hidePurchase ? { ...item, purchasePricePaise: 0 } : item} hidePurchase={hidePurchase} categories={categories} units={unitList} taxRates={taxList} />
     </>
   );
 }

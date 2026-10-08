@@ -9,6 +9,7 @@ import { setRegion } from "@/lib/region";
 import { getSettings } from "@/lib/settings";
 import { imageDataUrls } from "./company-images";
 import { dailySalesReport } from "./reports";
+import { productLabel } from "@/lib/product-id";
 
 export type ReportPaper = "A4" | "T80" | "T58";
 
@@ -68,7 +69,7 @@ export async function loadDailyReportModel(db: DB, firmId: number, date: string,
     logo: images.logo,
     summary,
     byPaymentMode: r.byPaymentMode.map((m) => ({ mode: m.mode, amount: money(m.amountPaise) })),
-    topItems: r.topItems.slice(0, 10).map((i) => ({ name: i.name, qty: `${formatQty(i.qtyMilli)} ${i.unitCode ?? ""}`.trim(), amount: money(i.amountPaise) })),
+    topItems: r.topItems.slice(0, 10).map((i) => ({ name: productLabel(i.code, i.name), qty: `${formatQty(i.qtyMilli)} ${i.unitCode ?? ""}`.trim(), amount: money(i.amountPaise) })),
     byStaff: r.byStaff.map((s) => ({ name: s.name, bills: String(s.bills), sales: money(s.salesPaise), returns: s.returnsPaise > 0 ? money(s.returnsPaise) : "" })),
     fileName: `daily-sales-${date}${r.locationName ? `-${r.locationName.replace(/[^A-Za-z0-9]+/g, "-")}` : ""}.pdf`,
   };

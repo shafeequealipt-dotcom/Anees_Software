@@ -27,6 +27,7 @@ export async function listServiceReminders(db: DB, firmId: number, opts: { statu
     .select({
       id: serviceReminders.id,
       itemName: serviceReminders.itemName,
+      itemCode: items.code,
       dueDate: serviceReminders.dueDate,
       status: serviceReminders.status,
       notifiedAt: serviceReminders.notifiedAt,
@@ -39,6 +40,7 @@ export async function listServiceReminders(db: DB, firmId: number, opts: { statu
     })
     .from(serviceReminders)
     .leftJoin(parties, eq(parties.id, serviceReminders.partyId))
+    .leftJoin(items, eq(items.id, serviceReminders.itemId))
     .innerJoin(vouchers, eq(vouchers.id, serviceReminders.voucherId))
     .where(and(eq(serviceReminders.firmId, firmId), opts.status ? eq(serviceReminders.status, opts.status) : undefined))
     .orderBy(asc(serviceReminders.dueDate), asc(serviceReminders.id))

@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { formatDate, todayIST } from "@/lib/dates";
 import { formatQty } from "@/lib/money";
 import { dailySalesReport } from "@/server/reports";
+import { ProductName } from "@/components/product-name";
 
 export const metadata = { title: "Daily sales" };
 
@@ -98,7 +99,7 @@ export default async function DailySalesPage({ searchParams }: { searchParams: P
               <tbody>
                 {r.topItems.map((i, idx) => (
                   <tr key={idx}>
-                    <td className={td}>{i.name}</td>
+                    <td className={td}><ProductName code={i.code} name={i.name} /></td>
                     <td className={td + " text-right"}>
                       {formatQty(i.qtyMilli)} {i.unitCode}
                     </td>

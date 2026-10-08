@@ -97,7 +97,7 @@ export default async function PartyPage({ params, searchParams }: { params: Prom
           {can(user, "masters.edit") && p.kind !== "supplier" && (
             <PartyRatesPanel
               partyId={p.id}
-              items={(await db.select({ id: items.id, name: items.name, salePricePaise: items.salePricePaise }).from(items).where(and(eq(items.firmId, user.firmId), eq(items.active, true))).orderBy(items.name))}
+              items={(await db.select({ id: items.id, code: items.code, name: items.name, salePricePaise: items.salePricePaise }).from(items).where(and(eq(items.firmId, user.firmId), eq(items.active, true))).orderBy(items.name))}
               initial={await getPartyRates(db, user.firmId, p.id)}
             />
           )}
