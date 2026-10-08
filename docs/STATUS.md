@@ -491,6 +491,12 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
 - WhatsApp: the button opens WhatsApp Web on the partner's number with a message and a private 90-day link
   (`/api/share/payout/<token>/pdf`, no sign-in); on phones the PDF itself goes through the share sheet.
 - Backup/restore carries partners, payouts and promotions (links excluded). Tests: `tests/partners.test.ts`.
-- Not done: scan of the WhatsApp button in a real browser, production build check, deploy. After deploy the
-  owner ticks Partners for OrpheusMedia, fills Payout invoice settings and uploads logo + signature
-  (files in `Documents/Anees/orpheus-assets/`, outside the code).
+- `/partners/overview`: how many partners there are and how the list has grown (`partnerGrowth` in
+  `src/server/partners.ts`, charts in `src/components/partner-growth.tsx`): total / national / international /
+  added this month, stacked columns of partners added per month, and a running-total line, last 12 months.
+  A partner counts from `joined_on`, or the day they were added when that is blank.
+- Pop-up boxes on the sheet (`Popover` in `src/components/staff.tsx`) take a `width` and, with `sheetOnPhone`,
+  become a panel across the top on phones. The sheet's extra columns (For views, Paid, Invoice) show only at
+  2xl; below that the invoice number sits under the partner's name, and the name column shrinks instead of
+  the table overflowing.
+- Not yet checked in a real browser: the WhatsApp button actually opening WhatsApp Web.

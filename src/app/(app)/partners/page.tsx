@@ -36,6 +36,9 @@ export default async function PartnersPage({ searchParams }: { searchParams: Pro
         subtitle={`${sheet.rows.length} ${sheet.rows.length === 1 ? "partner" : "partners"} on the ${label} sheet`}
         actions={
           <>
+            <LinkButton href="/partners/overview" variant="secondary">
+              Overview
+            </LinkButton>
             <LinkButton href="/partners/all" variant="secondary">
               All partners
             </LinkButton>
@@ -105,12 +108,12 @@ export default async function PartnersPage({ searchParams }: { searchParams: Pro
                 <tr className="text-left text-xs font-medium text-faint">
                   <th className="px-4 py-2.5 font-medium sm:pl-5">Partner</th>
                   <th className="px-3 py-2.5 text-right font-medium">Views</th>
-                  <th className="px-3 py-2.5 text-right font-medium max-xl:hidden">For views</th>
+                  <th className="px-3 py-2.5 text-right font-medium max-2xl:hidden">For views</th>
                   <th className="px-3 py-2.5 text-right font-medium">Promotions</th>
                   <th className="px-3 py-2.5 text-right font-medium">Total</th>
-                  <th className="px-3 py-2.5 text-right font-medium max-xl:hidden">Paid</th>
+                  <th className="px-3 py-2.5 text-right font-medium max-2xl:hidden">Paid</th>
                   <th className="px-3 py-2.5 text-right font-medium">Due</th>
-                  <th className="px-3 py-2.5 font-medium max-xl:hidden">Invoice</th>
+                  <th className="px-3 py-2.5 font-medium max-2xl:hidden">Invoice</th>
                   <th className="px-4 py-2.5 sm:pr-5" />
                 </tr>
               </thead>
@@ -161,7 +164,8 @@ export default async function PartnersPage({ searchParams }: { searchParams: Pro
                   );
                   return (
                     <tr key={r.partnerId} className="border-t border-line/70 align-middle transition-colors hover:bg-brand-50/30">
-                      <td className="px-4 py-3 sm:pl-5">
+                      {/* md and up: this column takes what's left and long names are cut short, so the table never outgrows the page. */}
+                      <td className="px-4 py-3 sm:pl-5 md:w-full md:max-w-0">
                         <div className="min-w-0">
                           <Link href={`/partners/${r.partnerId}`} className="block truncate font-medium text-ink hover:text-brand-700">
                             {who}
@@ -172,8 +176,8 @@ export default async function PartnersPage({ searchParams }: { searchParams: Pro
                             {r.channelName ? ` · ${r.name}` : ""} · {r.kind === "international" ? "International" : "National"}
                           </div>
                           {r.invoiceNo && r.payoutId && (
-                            <div className="mt-0.5 flex items-center gap-2 text-xs max-md:hidden xl:hidden">
-                              <a href={`/api/partners/payouts/${r.payoutId}/pdf`} target="_blank" rel="noopener" className="font-mono text-brand-600 hover:underline">
+                            <div className="mt-0.5 flex items-center gap-2 text-xs max-md:hidden 2xl:hidden">
+                              <a href={`/api/partners/payouts/${r.payoutId}/pdf`} target="_blank" rel="noopener" className="whitespace-nowrap font-mono text-brand-600 hover:underline">
                                 {r.invoiceNo}
                               </a>
                               <ShareInvoiceButton payoutId={r.payoutId} />
@@ -200,23 +204,23 @@ export default async function PartnersPage({ searchParams }: { searchParams: Pro
                         </div>
                       </td>
                       <td className="px-1 py-3 text-right max-md:hidden">{views}</td>
-                      <td className="px-3 py-3 text-right max-xl:hidden">
+                      <td className="px-3 py-3 text-right max-2xl:hidden">
                         <Money paise={r.viewsAmountPaise} blankZero />
                       </td>
                       <td className="px-1 py-3 text-right max-md:hidden">{promos}</td>
                       <td className="px-3 py-3 text-right font-medium max-md:hidden">
                         <Money paise={r.totalPaise} blankZero />
                       </td>
-                      <td className="px-3 py-3 text-right text-good max-xl:hidden">
+                      <td className="px-3 py-3 text-right text-good max-2xl:hidden">
                         <Money paise={r.paidPaise} blankZero />
                       </td>
                       <td className={cx("px-3 py-3 text-right font-semibold max-md:hidden", r.duePaise > 0 ? "text-accent-600" : "text-faint")}>
                         <Money paise={Math.max(0, r.duePaise)} blankZero />
                       </td>
-                      <td className="px-3 py-3 max-xl:hidden">
+                      <td className="px-3 py-3 max-2xl:hidden">
                         {r.invoiceNo && r.payoutId ? (
                           <div className="flex flex-col items-start gap-0.5">
-                            <a href={`/api/partners/payouts/${r.payoutId}/pdf`} target="_blank" rel="noopener" className="font-mono text-xs text-brand-600 hover:underline">
+                            <a href={`/api/partners/payouts/${r.payoutId}/pdf`} target="_blank" rel="noopener" className="whitespace-nowrap font-mono text-xs text-brand-600 hover:underline">
                               {r.invoiceNo}
                             </a>
                             <ShareInvoiceButton payoutId={r.payoutId} />

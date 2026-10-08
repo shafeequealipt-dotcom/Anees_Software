@@ -321,7 +321,7 @@ export function ViewsButton({ partnerId, name, month, monthLabel, views, rateUse
       <button type="button" onClick={() => (open ? setOpen(false) : show())} className="rounded-md px-1.5 py-0.5 text-right hover:bg-brand-50" title="Enter this month's views">
         {display}
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} align="left">
+      <Popover open={open} onClose={() => setOpen(false)} align="left" sheetOnPhone>
         <form onSubmit={submit} className="flex flex-col gap-2.5">
           <div>
             <div className="text-sm font-semibold text-ink">{name}</div>
@@ -387,7 +387,7 @@ export function PromotionsButton({ partnerId, name, month, monthLabel, promotion
       <button type="button" onClick={() => (setError(null), setOpen((o) => !o))} className="rounded-md px-1.5 py-0.5 text-right hover:bg-brand-50" title="Add or remove promotions">
         {display}
       </button>
-      <Popover open={open} onClose={() => setOpen(false)}>
+      <Popover open={open} onClose={() => setOpen(false)} sheetOnPhone>
         <div className="flex flex-col gap-2.5">
           <div>
             <div className="text-sm font-semibold text-ink">Promotions · {name}</div>
@@ -463,7 +463,7 @@ export function PayPartnerButton({ partnerId, name, month, monthLabel, dueLabel,
       >
         Pay
       </Button>
-      <Popover open={open} onClose={() => setOpen(false)}>
+      <Popover open={open} onClose={() => setOpen(false)} sheetOnPhone>
         <form onSubmit={submit} className="flex flex-col gap-2.5">
           <div>
             <div className="text-sm font-semibold text-ink">Pay {name}</div>
@@ -662,14 +662,14 @@ export function InvoiceButton({
       <Button size="sm" variant={existing ? "ghost" : "secondary"} disabled={disabled} onClick={() => (open ? setOpen(false) : show())} title={disabled ? "Enter views or add a promotion first" : undefined}>
         {existing ? "Edit invoice" : "Invoice"}
       </Button>
-      <Popover open={open} onClose={() => setOpen(false)}>
-        <div className="flex w-[19rem] max-w-[calc(100vw-3rem)] flex-col gap-2.5">
+      <Popover open={open} onClose={() => setOpen(false)} width="w-[22rem]" sheetOnPhone>
+        <div className="flex flex-col gap-2.5">
           <div>
             <div className="text-sm font-semibold text-ink">Payout invoice · {name}</div>
             <div className="text-xs text-muted">For {monthLabel}</div>
           </div>
           {error && !error.field && <Alert tone="bad">{error.msg}</Alert>}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
             <Field label="Invoice no." error={err("invoiceNo")}>
               <Input value={no} onChange={(e) => setNo(e.target.value)} className="font-mono text-xs" />
             </Field>
@@ -687,7 +687,7 @@ export function InvoiceButton({
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
           </Field>
           {info && <Alert tone="good">{info}</Alert>}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
             <Button variant="primary" disabled={busy !== null} onClick={saveAndDownload}>
               {busy === "save" ? "Saving…" : "Save & download"}
             </Button>

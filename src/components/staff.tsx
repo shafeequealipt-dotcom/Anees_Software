@@ -9,7 +9,23 @@ import { Alert, Button, Checkbox, Field, Input, Select, Textarea, cx } from "./u
 const rupees = (p: number | null | undefined) => (p ? String(p / 100) : "");
 
 /** A small panel that opens under its button on click and closes on an outside click or Escape. */
-export function Popover({ open, onClose, children, align = "right" }: { open: boolean; onClose: () => void; children: React.ReactNode; align?: "left" | "right" }) {
+export function Popover({
+  open,
+  onClose,
+  children,
+  align = "right",
+  width = "w-72",
+  sheetOnPhone = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  align?: "left" | "right";
+  /** Tailwind width class; the content inside must not set its own wider width. */
+  width?: string;
+  /** On phones, show as a panel across the top of the screen instead of hanging off the button (which may sit anywhere in the row). */
+  sheetOnPhone?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -26,7 +42,15 @@ export function Popover({ open, onClose, children, align = "right" }: { open: bo
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div ref={ref} className={cx("absolute top-full z-40 mt-1.5 w-72 rounded-xl border border-line bg-panel p-3 text-left shadow-lg shadow-ink/10", align === "right" ? "right-0" : "left-0")}>
+    <div
+      ref={ref}
+      className={cx(
+        "absolute top-full z-40 mt-1.5 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line bg-panel p-3 text-left shadow-lg shadow-ink/10",
+        width,
+        align === "right" ? "right-0" : "left-0",
+        sheetOnPhone && "max-md:fixed max-md:inset-x-3 max-md:top-20 max-md:mt-0 max-md:max-h-[calc(100dvh-6rem)] max-md:w-auto max-md:overflow-y-auto",
+      )}
+    >
       {children}
     </div>
   );

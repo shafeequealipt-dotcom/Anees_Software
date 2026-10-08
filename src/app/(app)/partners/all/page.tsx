@@ -32,9 +32,14 @@ export default async function AllPartnersPage({ searchParams }: { searchParams: 
         subtitle={`${count("all")} active${count("inactive") ? ` · ${count("inactive")} inactive` : ""}`}
         back={{ href: "/partners", label: "Partners" }}
         actions={
-          <LinkButton href="/partners/new" variant="primary">
-            + Add partner
-          </LinkButton>
+          <>
+            <LinkButton href="/partners/overview" variant="secondary">
+              Overview
+            </LinkButton>
+            <LinkButton href="/partners/new" variant="primary">
+              + Add partner
+            </LinkButton>
+          </>
         }
       />
 

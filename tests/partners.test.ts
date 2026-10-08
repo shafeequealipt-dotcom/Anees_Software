@@ -13,6 +13,7 @@ import {
   createPayoutLink,
   exportPartnerSheet,
   loadPayoutInvoice,
+  partnerGrowth,
   partnerHistory,
   partnerSheet,
   payPartner,
@@ -364,6 +365,31 @@ describe("privacy", () => {
     const book = await dayBook(db, firmId, "2026-10-01", "2026-10-31");
     const bookHidden = await dayBook(db, firmId, "2026-10-01", "2026-10-31", undefined, { hidePartners: true });
     expect(book.length).toBeGreaterThan(bookHidden.length);
+  });
+});
+
+describe("growth figures", () => {
+  it("counts partners by the month they joined, with a running total", async () => {
+    const co = await createCompany(db, { name: "Growth Co", country: "IN", taxId: "", stateCode: "32" }, { id: owner.id, isOwner: true, firms: [], permissions: [] });
+    await setPartnersEnabled(db, co, true, owner.id);
+    const mk = (name: string, joinedOn: string, extra: Record<string, unknown> = {}) => savePartner(db, co, { ...base, name, joinedOn, ...extra }, owner.id);
+    await mk("Old one", "2024-03-10");
+    await mk("A", "2026-08-05");
+    await mk("B", "2026-08-20", { kind: "international", country: "UAE" });
+    await mk("C", "2026-10-01");
+    const gone = await mk("D", "2026-10-07", { kind: "international", country: "UK" });
+    await savePartner(db, co, { ...base, id: gone, name: "D", kind: "international", country: "UK", joinedOn: "2026-10-07", active: false }, owner.id);
+
+    const g = await partnerGrowth(db, co, "2026-10-08");
+    expect(g).toMatchObject({ total: 5, active: 4, national: 3, international: 2, addedThisMonth: 2, addedLastMonth: 0 });
+    expect(g.months).toHaveLength(12);
+    expect(g.months[0].month).toBe("2025-11");
+    expect(g.months[0]).toMatchObject({ added: 0, total: 1 }); // the 2024 partner is already there
+    expect(g.months.find((m) => m.month === "2026-08")).toEqual({ month: "2026-08", national: 1, international: 1, added: 2, total: 3 });
+    expect(g.months.find((m) => m.month === "2026-09")).toMatchObject({ added: 0, total: 3 });
+    expect(g.months.at(-1)).toEqual({ month: "2026-10", national: 1, international: 1, added: 2, total: 5 });
+    // Another company's partners are not counted.
+    expect((await partnerGrowth(db, otherFirm, "2026-10-08")).total).toBe(0);
   });
 });
 

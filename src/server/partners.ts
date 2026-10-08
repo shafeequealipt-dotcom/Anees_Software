@@ -5,14 +5,14 @@ import { z } from "zod";
 import type { DB, Tx } from "@/db";
 import { firms, ledgerCategories, partnerPayoutLinks, partnerPayouts, partnerPromotions, partners, vouchers } from "@/db/schema";
 import { audit } from "@/lib/audit";
-import { monthRange } from "@/lib/dates";
+import { localDate, monthRange } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { compactViews, groupViews, nextInvoiceSequence, paymentToLine, payoutInvoiceNo, rupeesInWords, viewsAmountPaise } from "@/lib/payout";
 import { nextProductId } from "@/lib/product-id";
 import { getSettings, saveSettings } from "@/lib/settings";
 import { imageDataUrls } from "./company-images";
 import { MasterError } from "./errors";
-import { monthLabel, monthSchema } from "./staff";
+import { monthLabel, monthSchema, shiftMonth } from "./staff";
 import { saveVoucher, type SaveResult, VoucherError } from "./vouchers";
 
 /*
@@ -661,4 +661,45 @@ export async function exportPartnerSheet(db: DB, firmId: number, month: string) 
         due: r.duePaise / 100,
       };
     });
+}
+
+// ─── Growth ──────────────────────────────────────────────────────────────────
+
+export interface PartnerGrowth {
+  /** Everyone ever onboarded, and how that splits. */
+  total: number;
+  active: number;
+  national: number;
+  international: number;
+  addedThisMonth: number;
+  addedLastMonth: number;
+  /** Oldest first; `total` is everyone onboarded up to the end of that month. */
+  months: { month: string; national: number; international: number; added: number; total: number }[];
+}
+
+/**
+ * How the partner list has grown: totals, and how many were added in each of the last `span` months.
+ * A partner counts from the day they joined, or the day they were added to the app when no joining date was given.
+ */
+export async function partnerGrowth(db: DB, firmId: number, today: string, span = 12): Promise<PartnerGrowth> {
+  const all = await listPartners(db, firmId, { includeInactive: true });
+  const thisMonth = today.slice(0, 7);
+  const since = (p: (typeof all)[number]) => (p.joinedOn ?? localDate(p.createdAt)).slice(0, 7);
+  const list: string[] = [];
+  for (let i = span - 1; i >= 0; i--) list.push(shiftMonth(thisMonth, -i));
+  const months = list.map((month) => {
+    const added = all.filter((p) => since(p) === month);
+    const international = added.filter((p) => p.kind === "international").length;
+    return { month, national: added.length - international, international, added: added.length, total: all.filter((p) => since(p) <= month).length };
+  });
+  const international = all.filter((p) => p.kind === "international").length;
+  return {
+    total: all.length,
+    active: all.filter((p) => p.active).length,
+    national: all.length - international,
+    international,
+    addedThisMonth: months[months.length - 1].added,
+    addedLastMonth: months.length > 1 ? months[months.length - 2].added : 0,
+    months,
+  };
 }
