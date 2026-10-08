@@ -3,7 +3,9 @@ import { logoutAction, businessName } from "@/app/actions/auth";
 import { Nav, type NavGroup } from "@/components/nav";
 import { GlobalSearch } from "@/components/search";
 import { buttonClass } from "@/components/ui";
+import { getDb } from "@/db";
 import { requireUser } from "@/lib/auth";
+import { partnersEnabled } from "@/server/partners";
 import { can } from "@/lib/permissions";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { CompanySwitcher } from "@/components/company-switcher";
@@ -17,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireUser();
   const name = await businessName();
   const lang = (await cookies()).get("lang")?.value === "ar" ? "ar" : "en";
+  const partnersOn = can(user, "partners.manage") && (await partnersEnabled(await getDb(), user.firmId));
 
   const groups: NavGroup[] = [
     { items: [{ href: "/", label: "Home", icon: "home" }] },
@@ -52,6 +55,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/damaged-goods", label: "Damaged goods" },
         { href: "/expenses", label: "Expenses" },
         ...(can(user, "staff.manage") ? [{ href: "/staff", label: "Staff & salaries" }] : []),
+        ...(partnersOn && can(user, "partners.manage") ? [{ href: "/partners", label: "Partners" }] : []),
         { href: "/services", label: "Service reminders" },
         ...(can(user, "money.view")
           ? [

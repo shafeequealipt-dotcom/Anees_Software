@@ -35,6 +35,19 @@ export const DEFAULT_SETTINGS = {
   showHsnSummary: true,
   showPartyBalanceOnInvoice: false,
   thermalWidthMm: 80 as 58 | 80,
+  /** Turns on the Partners section (onboarding, monthly view-based payments, payout invoices). Set per company by the Owner. */
+  partnersEnabled: false,
+  /** Payout invoices: number prefix, statutory ids, signatory, and the usual wording and rate. */
+  payoutPrefix: "ORP",
+  payoutLlpin: "",
+  payoutTan: "",
+  payoutSignerName: "",
+  payoutSignerRole: "Designated Partner",
+  payoutShowSignature: true,
+  /** Rupees (in paise) per 10,00,000 views for a new partner. */
+  payoutRatePerMillionPaise: 40000,
+  payoutViewsDescription: "Content ID views royalty share",
+  payoutNotes: "Payment released within 15 days of the statement date, to the account above. Minimum payout ₹500; balances below this carry to the next cycle.",
   idleLogoutMinutes: 120,
   requireDeletePin: false,
   prefixes: {

@@ -9,7 +9,7 @@ import { Alert, Button, Checkbox, Field, Input, Select, Textarea, cx } from "./u
 const rupees = (p: number | null | undefined) => (p ? String(p / 100) : "");
 
 /** A small panel that opens under its button on click and closes on an outside click or Escape. */
-function Popover({ open, onClose, children, align = "right" }: { open: boolean; onClose: () => void; children: React.ReactNode; align?: "left" | "right" }) {
+export function Popover({ open, onClose, children, align = "right" }: { open: boolean; onClose: () => void; children: React.ReactNode; align?: "left" | "right" }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -37,7 +37,7 @@ export interface AccountOpt {
   name: string;
 }
 
-const MODES = ["Cash", "UPI", "Bank transfer", "Cheque"];
+export const MODES = ["Cash", "UPI", "Bank transfer", "Cheque"];
 
 /** "Pay" (salary) or "Advance" for one employee and month. */
 export function PayButton({

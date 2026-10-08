@@ -6,6 +6,7 @@ import {
   accounts,
   allocations,
   employees,
+  partners,
   firms,
   items,
   ledgerCategories,
@@ -126,6 +127,8 @@ export const voucherSchema = z.object({
   employeeId: int.positive().nullish(),
   payMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullish(),
   payKind: z.enum(["advance", "salary"]).nullish(),
+  /** Partner payments only (set by the Partners screens): who was paid, for the month in payMonth. */
+  partnerId: int.positive().nullish(),
   /** For payments: bills to settle. Omit to settle the oldest open bills automatically. */
   allocations: z.array(z.object({ toVoucherId: int.positive(), amountPaise: nonNeg })).optional(),
 });
@@ -189,6 +192,13 @@ export async function saveVoucher(
     const employeeId = input.employeeId !== undefined ? input.employeeId : (existing?.employeeId ?? null);
     const payMonth = input.payMonth !== undefined ? input.payMonth : (existing?.payMonth ?? null);
     const payKind = input.payKind !== undefined ? input.payKind : (existing?.payKind ?? null);
+    const partnerId = input.partnerId !== undefined ? input.partnerId : (existing?.partnerId ?? null);
+    if (partnerId) {
+      if (input.type !== "expense") throw new VoucherError("Only an expense can be a partner payment.");
+      const [pt] = await tx.select({ id: partners.id }).from(partners).where(and(eq(partners.id, partnerId), eq(partners.firmId, firmId)));
+      if (!pt) throw new VoucherError("That partner no longer exists.");
+      if (!payMonth) throw new VoucherError("A partner payment needs the month it is for.");
+    }
     if (employeeId) {
       if (input.type !== "expense") throw new VoucherError("Only an expense can be a salary payment.");
       const [emp] = await tx.select({ id: employees.id }).from(employees).where(and(eq(employees.id, employeeId), eq(employees.firmId, firmId)));
@@ -409,8 +419,9 @@ export async function saveVoucher(
       sourceVoucherId: sourceIds[0] ?? existing?.sourceVoucherId ?? null,
       itcEligible: input.itcEligible,
       employeeId,
-      payMonth: employeeId ? payMonth : null,
+      payMonth: employeeId || partnerId ? payMonth : null,
       payKind: employeeId ? payKind : null,
+      partnerId,
       tcsBp,
       tcsPaise,
       tdsBp,
@@ -967,7 +978,7 @@ export async function restoreVoucher(db: DB, firmId: number, id: number, userId:
   });
 }
 
-export async function listDeletedVouchers(db: DB, firmId: number, opts: { hideSalaries?: boolean } = {}) {
+export async function listDeletedVouchers(db: DB, firmId: number, opts: { hideSalaries?: boolean; hidePartners?: boolean } = {}) {
   return db
     .select({
       id: vouchers.id,
@@ -982,7 +993,7 @@ export async function listDeletedVouchers(db: DB, firmId: number, opts: { hideSa
     })
     .from(vouchers)
     .leftJoin(users, eq(users.id, vouchers.deletedBy))
-    .where(and(eq(vouchers.firmId, firmId), eq(vouchers.status, "deleted"), opts.hideSalaries ? sql`${vouchers.employeeId} is null` : undefined))
+    .where(and(eq(vouchers.firmId, firmId), eq(vouchers.status, "deleted"), opts.hideSalaries ? sql`${vouchers.employeeId} is null` : undefined, opts.hidePartners ? sql`${vouchers.partnerId} is null` : undefined))
     .orderBy(desc(vouchers.deletedAt));
 }
 

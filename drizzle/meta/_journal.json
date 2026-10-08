@@ -162,6 +162,13 @@
       "when": 1791456901668,
       "tag": "0022_product_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791463458213,
+      "tag": "0023_partners",
+      "breakpoints": true
     }
   ]
 }

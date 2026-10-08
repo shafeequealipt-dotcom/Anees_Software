@@ -47,6 +47,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
     q: sp.q,
     status: "all",
     hideSalaries: !can(user, "staff.manage"),
+    hidePartners: !can(user, "partners.manage"),
     ...(user.allLocations ? {} : { locationIds: user.locations.map((l) => l.id), createdBy: user.id }),
   });
 

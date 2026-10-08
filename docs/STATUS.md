@@ -474,3 +474,23 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   as SSH host `github-anees-software` in `~/.ssh/config`. A different key
   (`talalhomeo_deploy`) exists on the same Mac for an unrelated project — don't
   reuse it here.
+
+### Partners (OrpheusMedia only) — added 2026-10-08 (migration `0023_partners.sql`)
+- Off by default. The **Owner** turns "Partners" on per company (Settings → Companies); until then the
+  pages are "not found" and every action refuses. Permission `partners.manage` (Owner always; the
+  built-in Company owner role gets it from the migration; custom roles tick it under Roles & access).
+- `/partners` is the month sheet (like Staff & salaries): views → amount = views ÷ 10,00,000 × rate
+  (whole rupees, correctable), promotions, total, paid, due. Onboarding at `/partners/new` (national or
+  international bank fields). Rate per month is copied, so a later rate change never rewrites past months.
+- Payments are ordinary expenses in a "Partner payments" category tagged `vouchers.partner_id` + `pay_month`;
+  hidden from people without `partners.manage` (`canSeeVoucher`, the `hidePartners` filters in reports).
+- Payout invoice: `src/server/pdf/payout-invoice-pdf.tsx` (Orpheus look; fonts Outfit / Playfair / Space Mono
+  in `assets/fonts`, SIL OFL). Numbers `ORP/2026-27/001` (prefix from settings, April–March year, lock-protected).
+  Payee details are copied onto the invoice when saved. Letterhead comes from Settings → This company plus the
+  "Payout invoice settings" box on the Partners page (LLPIN, TAN, signer, usual rate/wording/notes).
+- WhatsApp: the button opens WhatsApp Web on the partner's number with a message and a private 90-day link
+  (`/api/share/payout/<token>/pdf`, no sign-in); on phones the PDF itself goes through the share sheet.
+- Backup/restore carries partners, payouts and promotions (links excluded). Tests: `tests/partners.test.ts`.
+- Not done: scan of the WhatsApp button in a real browser, production build check, deploy. After deploy the
+  owner ticks Partners for OrpheusMedia, fills Payout invoice settings and uploads logo + signature
+  (files in `Documents/Anees/orpheus-assets/`, outside the code).

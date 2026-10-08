@@ -24,6 +24,7 @@ export async function GET(req: Request) {
     status,
     limit: 20000,
     hideSalaries: !can(a.user, "staff.manage"),
+    hidePartners: !can(a.user, "partners.manage"),
     ...(a.user.allLocations ? {} : { locationIds: a.user.locations.map((l) => l.id), createdBy: a.user.id }),
   });
   const info = VOUCHER_INFO[type];

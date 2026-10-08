@@ -61,9 +61,10 @@ export interface CurrentUser {
  * sending or the receiving shop), plus (for bills with no shop recorded, e.g. an older
  * money_transfer) only the ones they themselves entered.
  */
-export function canSeeVoucher(user: CurrentUser, v: { locationId: number | null; toLocationId?: number | null; createdBy: number | null; employeeId?: number | null }): boolean {
+export function canSeeVoucher(user: CurrentUser, v: { locationId: number | null; toLocationId?: number | null; createdBy: number | null; employeeId?: number | null; partnerId?: number | null }): boolean {
   // What each person is paid stays private to people who manage staff, wherever the entry turns up.
   if (v.employeeId && !can(user, "staff.manage")) return false;
+  if (v.partnerId && !can(user, "partners.manage")) return false;
   if (user.allLocations) return true;
   if (v.locationId != null || v.toLocationId != null) {
     return user.locations.some((l) => l.id === v.locationId || l.id === v.toLocationId);

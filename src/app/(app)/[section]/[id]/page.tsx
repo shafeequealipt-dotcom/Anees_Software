@@ -144,7 +144,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
             <Panel padded={false}>
               <div className="grid gap-4 border-b border-line p-4 sm:grid-cols-2">
                 <div>
-                  <div className="text-xs font-medium uppercase text-muted">{v.employeeId ? "Paid to" : info.partySide === "supplier" ? "Supplier" : info.partySide === "none" ? "" : "Bill to"}</div>
+                  <div className="text-xs font-medium uppercase text-muted">{v.employeeId || v.partnerId ? "Paid to" : info.partySide === "supplier" ? "Supplier" : info.partySide === "none" ? "" : "Bill to"}</div>
                   {v.partyId ? (
                     <Link href={`/parties/${v.partyId}`} className="font-medium text-brand-600 hover:underline">
                       {v.partyName}
@@ -174,6 +174,16 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                       k={v.payKind === "advance" ? "Salary advance" : "Salary"}
                       v={
                         <Link href={`/staff/${v.employeeId}`} className="text-brand-600 hover:underline">
+                          {v.partyName} · {monthLabel(v.payMonth)}
+                        </Link>
+                      }
+                    />
+                  )}
+                  {v.partnerId && v.payMonth && (
+                    <Pair
+                      k="Partner payment"
+                      v={
+                        <Link href={`/partners/${v.partnerId}`} className="text-brand-600 hover:underline">
                           {v.partyName} · {monthLabel(v.payMonth)}
                         </Link>
                       }

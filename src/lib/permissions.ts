@@ -22,6 +22,7 @@ export const PERMISSION_GROUPS = [
       { key: "money.view", label: "Open Cash & bank and Other income", hint: "Also shows money totals on the home page." },
       { key: "money.edit", label: "Record cash & bank transfers, adjustments and other income" },
       { key: "staff.manage", label: "Staff & salaries", hint: "See employees and what they're paid, give advances and pay salaries. Without this, salaries stay private." },
+      { key: "partners.manage", label: "Partners and their payments", hint: "Only for companies with Partners turned on. See partners' contact and bank details, enter their views, pay them and make their payout invoices. Without this, their payments stay private." },
     ],
   },
   {

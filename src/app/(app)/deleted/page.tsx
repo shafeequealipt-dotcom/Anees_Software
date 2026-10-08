@@ -12,7 +12,7 @@ export const metadata = { title: "Deleted entries" };
 
 export default async function DeletedPage() {
   const user = await requireUser("vouchers.restore");
-  const list = await listDeletedVouchers(await getDb(), user.firmId, { hideSalaries: !can(user, "staff.manage") });
+  const list = await listDeletedVouchers(await getDb(), user.firmId, { hideSalaries: !can(user, "staff.manage"), hidePartners: !can(user, "partners.manage") });
   return (
     <>
       <PageHeader title="Deleted entries" subtitle="Deleted bills and entries are kept here. Restoring one puts it back exactly as it was, with the same number." />

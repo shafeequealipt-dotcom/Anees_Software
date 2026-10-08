@@ -88,7 +88,7 @@ const LEDGER_REFS = {
   stock: { voucherId: "vouchers", lineId: "voucher_lines", itemId: "items", locationId: "locations" },
 } as const;
 
-const AUDIT_ENTITIES: Record<string, string> = { employee: "employees", voucher: "vouchers", party: "parties", item: "items", account: "accounts", gl_account: "gl_accounts", journal: "journals", fixed_asset: "fixed_assets", firm: "firms" };
+const AUDIT_ENTITIES: Record<string, string> = { employee: "employees", partner: "partners", voucher: "vouchers", party: "parties", item: "items", account: "accounts", gl_account: "gl_accounts", journal: "journals", fixed_asset: "fixed_assets", firm: "firms" };
 
 /** In insert order: every table comes after the tables it points to. */
 const SPECS: Spec[] = [
@@ -138,6 +138,9 @@ const SPECS: Spec[] = [
   { key: "party_rates", table: s.partyRates, refs: { partyId: "parties", itemId: "items" }, where: firmParties(s.partyRates.partyId) },
   { key: "employees", table: s.employees, id: true, refs: { firmId: "firms", locationId: "locations" }, where: byFirm(s.employees.firmId) },
   { key: "salary_adjustments", table: s.salaryAdjustments, refs: { employeeId: "employees" }, where: (ids) => sql`${s.salaryAdjustments.employeeId} in (select id from employees where firm_id in (${list(ids)}))` },
+  { key: "partners", table: s.partners, id: true, refs: { firmId: "firms" }, where: byFirm(s.partners.firmId) },
+  { key: "partner_payouts", table: s.partnerPayouts, id: true, refs: { firmId: "firms", partnerId: "partners" }, where: byFirm(s.partnerPayouts.firmId) },
+  { key: "partner_promotions", table: s.partnerPromotions, id: true, refs: { payoutId: "partner_payouts" }, where: (ids) => sql`${s.partnerPromotions.payoutId} in (select id from partner_payouts where firm_id in (${list(ids)}))` },
   { key: "accounts", table: s.accounts, id: true, refs: { firmId: "firms" }, where: byFirm(s.accounts.firmId) },
   { key: "gl_accounts", table: s.glAccounts, id: true, refs: { firmId: "firms" }, where: byFirm(s.glAccounts.firmId), fix: (r, m) => void (r.key = fixKey(r.key, m)) },
   { key: "journals", table: s.journals, id: true, refs: { firmId: "firms" }, users: ["createdBy"], where: byFirm(s.journals.firmId) },
@@ -146,7 +149,7 @@ const SPECS: Spec[] = [
     key: "vouchers",
     table: s.vouchers,
     id: true,
-    refs: { firmId: "firms", locationId: "locations", toLocationId: "locations", partyId: "parties", accountId: "accounts", toAccountId: "accounts", categoryId: "ledger_categories", employeeId: "employees" },
+    refs: { firmId: "firms", locationId: "locations", toLocationId: "locations", partyId: "parties", accountId: "accounts", toAccountId: "accounts", categoryId: "ledger_categories", employeeId: "employees", partnerId: "partners" },
     users: ["receivedBy", "createdBy", "updatedBy", "deletedBy"],
     where: byFirm(s.vouchers.firmId),
     fix: (r, m) => {
@@ -205,7 +208,7 @@ const SPECS: Spec[] = [
 ];
 
 /** Tables deliberately left out: logins and access (security), links and job records (tied to this server). */
-export const EXCLUDED_TABLES = ["roles", "users", "user_firms", "user_locations", "sessions", "login_attempts", "share_links", "backup_runs", "backup_requests"];
+export const EXCLUDED_TABLES = ["roles", "users", "user_firms", "user_locations", "sessions", "login_attempts", "share_links", "partner_payout_links", "backup_runs", "backup_requests"];
 export const BACKUP_TABLES = SPECS.map((sp) => sp.key);
 
 // ─── Cell encoding ────────────────────────────────────────────────────────────

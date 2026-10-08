@@ -444,6 +444,107 @@ export const salaryAdjustments = pgTable(
   (t) => [primaryKey({ columns: [t.employeeId, t.month] })],
 );
 
+/**
+ * A content partner (a creator with a channel) who is paid each month for their views. Only used by
+ * companies with the "Partners" switch on. Holds bank details and PAN, so it sits behind its own permission.
+ */
+export const partners = pgTable(
+  "partners",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    /** Partner ID: unique within the company ignoring case; the next number unless one is typed. */
+    code: varchar("code", { length: 60 }).notNull(),
+    /** The person. The channel is what a payout invoice is made out to. */
+    name: varchar("name", { length: 120 }).notNull(),
+    channelName: varchar("channel_name", { length: 160 }),
+    handle: varchar("handle", { length: 80 }),
+    /** "national" or "international": decides which bank fields apply. */
+    kind: varchar("kind", { length: 15 }).notNull().default("national"),
+    country: varchar("country", { length: 80 }),
+    address: text("address"),
+    pan: varchar("pan", { length: 20 }),
+    phone: varchar("phone", { length: 30 }),
+    email: varchar("email", { length: 200 }),
+    instagram: varchar("instagram", { length: 120 }),
+    facebook: varchar("facebook", { length: 120 }),
+    telegram: varchar("telegram", { length: 120 }),
+    tiktok: varchar("tiktok", { length: 120 }),
+    youtubeUrl: varchar("youtube_url", { length: 300 }),
+    /** What 10,00,000 (one million) views earn. */
+    ratePerMillionPaise: paise("rate_per_million_paise").notNull().default(0),
+    bankHolder: varchar("bank_holder", { length: 120 }),
+    bankName: varchar("bank_name", { length: 120 }),
+    bankAccountNo: varchar("bank_account_no", { length: 40 }),
+    bankBranch: varchar("bank_branch", { length: 120 }),
+    bankIfsc: varchar("bank_ifsc", { length: 15 }),
+    upiId: varchar("upi_id", { length: 100 }),
+    bankSwift: varchar("bank_swift", { length: 15 }),
+    bankIban: varchar("bank_iban", { length: 40 }),
+    bankAddress: text("bank_address"),
+    joinedOn: date("joined_on"),
+    notes: text("notes"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("partners_firm_idx").on(t.firmId), uniqueIndex("partners_code_lower_key").on(t.firmId, sql`lower(${t.code})`)],
+);
+
+/**
+ * One partner's month: the views they got, the rate used, and what that comes to. Once a payout
+ * invoice is made for it, the invoice's number, date, wording and a copy of the payee's details.
+ */
+export const partnerPayouts = pgTable(
+  "partner_payouts",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    partnerId: integer("partner_id").notNull().references(() => partners.id),
+    /** "2026-10" */
+    month: varchar("month", { length: 7 }).notNull(),
+    views: bigint("views", { mode: "number" }).notNull().default(0),
+    /** The rate this month was worked out at: a later change to the partner's rate leaves it alone. */
+    ratePerMillionPaise: paise("rate_per_million_paise").notNull().default(0),
+    viewsAmountPaise: paise("views_amount_paise").notNull().default(0),
+    viewsDescription: varchar("views_description", { length: 200 }),
+    invoiceNo: varchar("invoice_no", { length: 40 }),
+    invoiceDate: date("invoice_date"),
+    period: varchar("period", { length: 60 }),
+    invoiceNotes: text("invoice_notes"),
+    /** The payee as printed (name, handle, contact, email, address, PAN, payment-to), fixed when the invoice is saved. */
+    payee: jsonb("payee").$type<Record<string, string>>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("partner_payouts_month_key").on(t.partnerId, t.month),
+    uniqueIndex("partner_payouts_invoice_key").on(t.firmId, sql`lower(${t.invoiceNo})`).where(sql`${t.invoiceNo} is not null`),
+    index("partner_payouts_firm_month_idx").on(t.firmId, t.month),
+  ],
+);
+
+/** An extra amount in a partner's month, e.g. "Promotion: Instagram reel campaign". */
+export const partnerPromotions = pgTable(
+  "partner_promotions",
+  {
+    id: serial("id").primaryKey(),
+    payoutId: integer("payout_id").notNull().references(() => partnerPayouts.id, { onDelete: "cascade" }),
+    description: varchar("description", { length: 200 }).notNull(),
+    amountPaise: paise("amount_paise").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("partner_promotions_payout_idx").on(t.payoutId)],
+);
+
+/** A private address for one payout invoice's PDF, sent to the partner (e.g. on WhatsApp). No sign-in; expires. */
+export const partnerPayoutLinks = pgTable("partner_payout_links", {
+  token: varchar("token", { length: 64 }).primaryKey(),
+  payoutId: integer("payout_id").notNull().references(() => partnerPayouts.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+});
+
 export const ledgerCategories = pgTable("ledger_categories", {
   id: serial("id").primaryKey(),
   firmId: integer("firm_id").notNull().references(() => firms.id),
@@ -535,6 +636,8 @@ export const vouchers = pgTable(
     employeeId: integer("employee_id").references(() => employees.id),
     payMonth: varchar("pay_month", { length: 7 }),
     payKind: varchar("pay_kind", { length: 10 }),
+    /** Partner payments: which partner was paid (the month is in payMonth). */
+    partnerId: integer("partner_id").references(() => partners.id),
     /** India: tax collected at source by the seller (added to the bill total). */
     tcsBp: integer("tcs_bp").notNull().default(0),
     tcsPaise: paise("tcs_paise").notNull().default(0),
@@ -550,6 +653,7 @@ export const vouchers = pgTable(
     index("vouchers_party_idx").on(t.partyId),
     index("vouchers_date_idx").on(t.date),
     index("vouchers_employee_idx").on(t.employeeId, t.payMonth),
+    index("vouchers_partner_idx").on(t.partnerId, t.payMonth),
   ],
 );
 
