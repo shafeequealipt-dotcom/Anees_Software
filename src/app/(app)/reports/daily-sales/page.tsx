@@ -44,7 +44,7 @@ export default async function DailySalesPage({ searchParams }: { searchParams: P
           </>
         }
       />
-      <DailySalesFilters date={date} locationId={locationId ?? null} locations={user.locations} />
+      <DailySalesFilters date={date} today={todayIST()} locationId={locationId ?? null} locations={user.locations} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Tile label="Bills" value={String(r.bills)} />

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DayNav } from "@/components/day-nav";
 import { HoverMenu } from "@/components/hover-menu";
 import { ListToolbar, type ToolbarTab } from "@/components/list-toolbar";
 import { Badge, LinkButton, Money, PageHeader, StatusBadge, cx } from "@/components/ui";
@@ -37,7 +38,11 @@ export default async function VoucherListPage({ params, searchParams }: { params
   const info = VOUCHER_INFO[type];
   const user = await requireUser(["money_adjustment", "money_transfer", "other_income"].includes(type) ? "money.view" : undefined);
   const sp = await searchParams;
-  const { presets, from, to } = resolvePeriod(sp, info.takesPayment ? "month" : "fy");
+  // Sales and purchase bills open on today's bills (one day at a time, ‹ › to step back); the unpaid and
+  // overdue views, reached from reports and the home page, keep the whole year so nothing owed is missed.
+  const daily = type === "sale_invoice" || type === "purchase_bill";
+  const wideStatus = sp.status === "open" || sp.status === "overdue";
+  const { presets, from, to } = resolvePeriod(sp, daily ? (wideStatus ? "fy" : "today") : info.takesPayment ? "month" : "fy");
   const db = await getDb();
   // Every status at once, so each tab can show its count; the chosen tab is filtered here.
   const list = await listVouchers(db, user.firmId, {
@@ -113,7 +118,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
     <>
       <PageHeader
         title={info.plural}
-        subtitle={`${formatDate(from)} – ${formatDate(to)}`}
+        subtitle={from === to ? `${formatDate(from)}${from === today ? " (today)" : ""}` : `${formatDate(from)} – ${formatDate(to)}`}
         actions={
           <>
             {more.length > 0 && (
@@ -151,6 +156,14 @@ export default async function VoucherListPage({ params, searchParams }: { params
       />
       {sp.saved && <p className="mb-4 rounded-lg border-l-4 border-good bg-good-bg px-3 py-2 text-sm text-good">Saved {sp.saved}.</p>}
 
+      {daily && from === to && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <DayNav date={from} today={today} mode="range" />
+          <Link href={`/reports/day-sales-purchases${from === today ? "" : `?date=${from}`}`} className="no-print text-sm font-medium text-brand-600 hover:underline">
+            Print the day&apos;s sales &amp; purchases
+          </Link>
+        </div>
+      )}
       <section className="mb-4 rounded-xl border border-line bg-panel px-4 py-4 shadow-sm shadow-ink/[0.03] sm:px-5">
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
           <div>

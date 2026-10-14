@@ -866,3 +866,49 @@ export async function staffSales(db: DB, firmId: number, from: string, to: strin
   );
   return list.map((r) => ({ userId: r.user_id, name: r.name, bills: r.bills, returnCount: r.return_count, salesPaise: r.sales, returnsPaise: r.returns, netPaise: r.sales - r.returns }));
 }
+
+// ─── Sales & purchases for one day ───────────────────────────────────────────
+
+export interface DayGroup {
+  bills: VoucherRow[];
+  /** Counted over bills that aren't cancelled. */
+  count: number;
+  totalPaise: number;
+  paidPaise: number;
+  duePaise: number;
+}
+
+/**
+ * Every sale, sale return, purchase and purchase return dated `date`, with totals: the printable
+ * "Sales & purchases for the day" report. `scope` limits it to some shops the same way the bill
+ * lists are limited (a shop-bound user sees only their shops; an owner can pick one or see all).
+ */
+export async function daySalesPurchases(
+  db: DB,
+  firmId: number,
+  date: string,
+  scope: { locationIds?: number[]; createdBy?: number },
+  opts: { hideSalaries?: boolean; hidePartners?: boolean } = {},
+) {
+  const list = await listVouchers(db, firmId, { types: ["sale_invoice", "credit_note", "purchase_bill", "debit_note"], from: date, to: date, status: "all", limit: 5000, ...scope, ...opts });
+  const group = (type: VoucherType): DayGroup => {
+    const bills = list.filter((r) => r.type === type).sort((a, b) => a.number - b.number || a.id - b.id);
+    const live = bills.filter((r) => r.status === "active");
+    const totalPaise = live.reduce((s, r) => s + r.total_paise, 0);
+    const duePaise = live.reduce((s, r) => s + Math.max(0, r.balance_paise), 0);
+    return { bills, count: live.length, totalPaise, paidPaise: totalPaise - duePaise, duePaise };
+  };
+  const sales = group("sale_invoice");
+  const saleReturns = group("credit_note");
+  const purchases = group("purchase_bill");
+  const purchaseReturns = group("debit_note");
+  return {
+    date,
+    sales,
+    saleReturns,
+    purchases,
+    purchaseReturns,
+    netSalesPaise: sales.totalPaise - saleReturns.totalPaise,
+    netPurchasesPaise: purchases.totalPaise - purchaseReturns.totalPaise,
+  };
+}

@@ -511,3 +511,16 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
 - Item picker (`combobox.tsx`): Tab now takes the highlighted product when the typed text clearly points at it
   (starts its name, is its code, the only match, or chosen with the arrows); otherwise typed text stays as the
   description. Enter on a description that matches nothing keeps it and moves on to Qty.
+
+### Day-by-day sales & purchases — added 2026-10-14
+- Report **Sales & purchases for the day** (`/reports/day-sales-purchases`, `daySalesPurchases` in
+  `src/server/reports.ts`): every sale, sale return, purchase and purchase return of one day (today by
+  default), totals (cancelled bills listed but not counted), per-shop limit like the bill lists (shop-bound
+  users see their shops; owners pick one or all). Printed with the browser (Print button); the app frame is
+  `print:`-styled so long reports run onto further pages and menus/buttons/filters don't print.
+- **Sale invoices and Purchase bills open on today**, with a ‹ date › switcher (`src/components/day-nav.tsx`)
+  and a link to print the day. The period menu still offers ranges. The Unpaid / Overdue views (linked from
+  Reports and the home page) keep the whole financial year. Other bill lists are unchanged.
+- `DailySalesFilters` now uses the same ‹ › day switcher (Daily sales report too). `PageHeader` back links
+  and action buttons don't print.
+- Tests: `tests/day-sales-purchases.test.ts`.

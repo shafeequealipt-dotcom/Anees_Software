@@ -104,14 +104,14 @@ export function PageHeader({ title, subtitle, actions, back }: { title: ReactNod
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         {back && (
-          <Link href={back.href} className="mb-1 inline-block text-xs text-muted hover:text-brand-600">
+          <Link href={back.href} className="no-print mb-1 inline-block text-xs text-muted hover:text-brand-600">
             ← {back.label}
           </Link>
         )}
         <h1 className="text-xl font-semibold tracking-tight text-ink">{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="no-print flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
