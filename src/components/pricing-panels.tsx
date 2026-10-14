@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { savePriceListAction, setItemPricesAction, setPartyRatesAction } from "@/app/actions/admin";
 import { formatMoney, toBasisPoints, toPaise } from "@/lib/money";
+import { gridKeyDown } from "@/lib/grid-keys";
 import { productLabel } from "@/lib/product-id";
 import { region } from "@/lib/region";
 import { ProductName } from "./product-name";
@@ -115,13 +116,13 @@ export function ItemPricesPanel({ itemId, normalPricePaise, rows }: { itemId: nu
     <Panel title="Prices on price lists">
       <p className="mb-2 text-xs text-muted">Normal price: {formatMoney(normalPricePaise)}. Leave a list empty to use the normal price.</p>
       {msg && <div className="mb-2"><Alert tone={msg.ok ? "good" : "bad"}>{msg.text}</Alert></div>}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2" onKeyDown={(e) => gridKeyDown(e)}>
         {v.map((r, i) => (
-          <div key={r.priceListId} className="flex items-center gap-2 text-sm">
+          <div key={r.priceListId} data-row={r.priceListId} className="flex items-center gap-2 text-sm">
             <span className="w-28 shrink-0 truncate">{r.name}</span>
-            <Input value={r.price} onChange={(e) => setV((x) => x.map((y, j) => (j === i ? { ...y, price: e.target.value } : y)))} inputMode="decimal" className="num" placeholder={String(normalPricePaise / 100)} />
+            <Input data-cell="price" value={r.price} onChange={(e) => setV((x) => x.map((y, j) => (j === i ? { ...y, price: e.target.value } : y)))} inputMode="decimal" className="num" placeholder={String(normalPricePaise / 100)} />
             <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
-              <input type="checkbox" className="accent-brand-600" checked={r.includesTax} onChange={(e) => setV((x) => x.map((y, j) => (j === i ? { ...y, includesTax: e.target.checked } : y)))} /> incl. tax
+              <input type="checkbox" tabIndex={-1} className="accent-brand-600" checked={r.includesTax} onChange={(e) => setV((x) => x.map((y, j) => (j === i ? { ...y, includesTax: e.target.checked } : y)))} /> incl. tax
             </label>
           </div>
         ))}
@@ -174,6 +175,7 @@ export function PartyRatesPanel({ partyId, items, initial }: { partyId: number; 
       <p className="border-b border-line px-4 py-2 text-xs text-muted">A special rate replaces the price on new bills for this customer. Or give a percentage off instead.</p>
       {msg && <div className="p-3"><Alert tone={msg.ok ? "good" : "bad"}>{msg.text}</Alert></div>}
       {rates.length > 0 && (
+        <div onKeyDown={(e) => gridKeyDown(e)}>
         <Table>
           <thead>
             <tr>
@@ -185,19 +187,19 @@ export function PartyRatesPanel({ partyId, items, initial }: { partyId: number; 
           </thead>
           <tbody>
             {rates.map((r, i) => (
-              <tr key={r.itemId}>
+              <tr key={r.itemId} data-row={r.itemId}>
                 <td className={td}>
                   <ProductName code={r.itemCode} name={r.itemName} />
                   <div className="text-xs text-faint">Normal {formatMoney(r.normalPaise)}</div>
                 </td>
                 <td className={td}>
-                  <Input value={r.rate} onChange={(e) => setRates((x) => x.map((y, j) => (j === i ? { ...y, rate: e.target.value } : y)))} inputMode="decimal" className="num text-right" />
+                  <Input data-cell="rate" value={r.rate} onChange={(e) => setRates((x) => x.map((y, j) => (j === i ? { ...y, rate: e.target.value } : y)))} inputMode="decimal" className="num text-right" />
                 </td>
                 <td className={td}>
-                  <Input value={r.disc} onChange={(e) => setRates((x) => x.map((y, j) => (j === i ? { ...y, disc: e.target.value } : y)))} inputMode="decimal" className="num text-right" />
+                  <Input data-cell="disc" value={r.disc} onChange={(e) => setRates((x) => x.map((y, j) => (j === i ? { ...y, disc: e.target.value } : y)))} inputMode="decimal" className="num text-right" />
                 </td>
                 <td className={td + " text-right"}>
-                  <Button size="sm" variant="ghost" onClick={() => setRates((x) => x.filter((_, j) => j !== i))}>
+                  <Button size="sm" variant="ghost" tabIndex={-1} onClick={() => setRates((x) => x.filter((_, j) => j !== i))}>
                     Remove
                   </Button>
                 </td>
@@ -205,6 +207,7 @@ export function PartyRatesPanel({ partyId, items, initial }: { partyId: number; 
             ))}
           </tbody>
         </Table>
+        </div>
       )}
       <div className="flex flex-wrap items-center gap-2 p-3">
         <Select value={pick} onChange={(e) => setPick(e.target.value)} className="max-w-xs">

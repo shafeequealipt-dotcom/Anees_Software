@@ -55,6 +55,8 @@ export function Combobox<T>({
   const [query, setQuery] = useState<string>(selected?.label ?? freeText ?? "");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  /** Whether the highlight was moved with the arrow keys since the list opened (then Tab takes it, like Enter). */
+  const [moved, setMoved] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number; width: number; openUp: boolean } | null>(null);
   const listId = useId();
   const wrap = useRef<HTMLDivElement>(null);
@@ -150,28 +152,39 @@ export function Combobox<T>({
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(true);
+          setMoved(false);
           if (selected && e.target.value !== selected.label) onChange(null, null);
         }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
             setOpen(true);
+            setMoved(true);
             setActive((a) => Math.min(a + 1, matches.length - 1));
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
+            setMoved(true);
             setActive((a) => Math.max(a - 1, 0));
           } else if (e.key === "Enter") {
             if (open && matches[active]) {
               e.preventDefault();
               pick(matches[active]);
             } else if (open) {
-              e.preventDefault();
+              // Typed text that matches nothing: keep it. Where free text is allowed (a bill line's
+              // description) let Enter carry on to the next field, as it would anywhere else on the line.
+              if (!allowFreeText) e.preventDefault();
               close();
             }
           } else if (e.key === "Escape") {
             setOpen(false);
           } else if (e.key === "Tab") {
-            if (open && query.trim() && !selected && matches.length && !allowFreeText) pick(matches[active]);
+            // Tab takes the highlighted suggestion when what was typed clearly points at it (it starts
+            // the name or is its code, it's the only match, or it was chosen with the arrows). Where free
+            // text is allowed, anything else stays as typed. Focus then moves on as Tab normally does.
+            const m = matches[active];
+            const q = query.trim().toLowerCase();
+            const clear = !!m && (moved || matches.length === 1 || m.label.toLowerCase().startsWith(q) || (m.keywords ?? "").toLowerCase().split(/\s+/).includes(q));
+            if (open && q && !selected && m && (clear || !allowFreeText)) pick(m);
             else close();
           }
         }}

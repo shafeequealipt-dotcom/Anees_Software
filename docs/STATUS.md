@@ -500,3 +500,14 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   2xl; below that the invoice number sits under the partner's name, and the name column shrinks instead of
   the table overflowing.
 - Not yet checked in a real browser: the WhatsApp button actually opening WhatsApp Web.
+### Keyboard entry in multi-row grids — added 2026-10-14
+- One helper, `src/lib/grid-keys.ts` (`gridKeyDown`, `focusCell`): on a grid marked with `data-row` rows and
+  `data-cell="<column>"` fields, Enter / Shift+Enter move to the next / previous field, ↑ / ↓ move to the same
+  column in the next / previous row (typed boxes only), and landing on a box selects its text. Tab / Shift+Tab
+  are the browser's own; tick boxes and delete buttons have `tabIndex={-1}` so Tab goes column to column.
+- Used on: bill lines (`voucher-form.tsx`, all line-item types; Enter past the last field of a typed line adds a
+  line), payment allocations, journal lines (Enter past the end adds a line), item price lists, customer special
+  rates, and receiving a stock transfer.
+- Item picker (`combobox.tsx`): Tab now takes the highlighted product when the typed text clearly points at it
+  (starts its name, is its code, the only match, or chosen with the arrows); otherwise typed text stays as the
+  description. Enter on a description that matches nothing keeps it and moves on to Qty.

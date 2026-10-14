@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { openBillsAction, saveVoucherAction } from "@/app/actions/vouchers";
 import { formatDate } from "@/lib/dates";
 import { formatINR, toPaise } from "@/lib/money";
+import { gridKeyDown } from "@/lib/grid-keys";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import type { VoucherFormData } from "@/server/form-data";
 import { Combobox } from "./combobox";
@@ -208,7 +209,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
           {bills.length === 0 ? (
             <p className="px-4 py-4 text-sm text-muted">No unpaid bills for this party. The amount will be kept as an advance.</p>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" onKeyDown={(e) => gridKeyDown(e)}>
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-4 py-2">Bill</th>
@@ -219,7 +220,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
               </thead>
               <tbody>
                 {bills.map((b) => (
-                  <tr key={b.id} className="border-t border-line">
+                  <tr key={b.id} data-row={b.id} className="border-t border-line">
                     <td className="px-4 py-2">
                       {VOUCHER_INFO[b.type].label} {b.number}
                     </td>
@@ -232,7 +233,7 @@ export function PaymentForm({ data }: { data: VoucherFormData }) {
                     </td>
                     <td className="px-4 py-1.5 text-right">
                       {manual ? (
-                        <Input value={alloc[b.id] ?? ""} onChange={(e) => setAlloc((a) => ({ ...a, [b.id]: e.target.value }))} className="num h-8 text-right" inputMode="decimal" placeholder="0" />
+                        <Input data-cell="settle" value={alloc[b.id] ?? ""} onChange={(e) => setAlloc((a) => ({ ...a, [b.id]: e.target.value }))} className="num h-8 text-right" inputMode="decimal" placeholder="0" />
                       ) : (
                         <Money paise={autoAlloc[b.id] ?? 0} blankZero />
                       )}

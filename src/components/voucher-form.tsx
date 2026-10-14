@@ -11,6 +11,7 @@ import { wantsLocation } from "@/lib/posting";
 import { RETURN_REASONS, SUPPLIER_RETURN_REASONS, VOUCHER_INFO } from "@/lib/voucher-types";
 import type { ItemOpt, PartyOpt, VoucherFormData } from "@/server/form-data";
 import { Combobox } from "./combobox";
+import { focusCell, gridKeyDown } from "@/lib/grid-keys";
 import { ProductName } from "./product-name";
 import { Alert, Button, Checkbox, cx, Field, Input, Money, PartyBalance, Select, Textarea } from "./ui";
 import { saleRateFor } from "@/lib/pricing";
@@ -216,6 +217,9 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
+  /** The line-items table, for moving focus between its cells. */
+  const gridRef = useRef<HTMLTableElement>(null);
+
   function pickItem(key: string, item: ItemOpt | null, text?: string) {
     if (!item) {
       updateLine(key, { itemId: null, description: text ?? "" });
@@ -237,10 +241,9 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
       mrp: rupees(item.mrpPaise),
     });
     setLines((ls) => (ls[ls.length - 1].key === key ? [...ls, blankLine(data.settings.defaultPriceIncludesTax)] : ls));
-    // Move straight to quantity so fast typists don't type into the item box.
-    const qty = document.getElementById(`qty-${key}`) as HTMLInputElement | null;
-    qty?.focus();
-    qty?.select();
+    // Move straight to quantity so fast typists don't type into the item box. After the browser has
+    // finished with the key that picked it (a Tab would otherwise carry on past Qty).
+    focusCell(gridRef.current, key, "qty");
   }
 
   const save = useCallback(
@@ -606,7 +609,23 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
       {info.hasLines && (
         <div className="rounded-lg border border-line bg-panel">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
+            <table
+              ref={gridRef}
+              onKeyDown={(e) =>
+                gridKeyDown(e, {
+                  // Enter past the last field of a filled-in last line starts a new line (a line picked from
+                  // the item list already gets one; a typed description doesn't).
+                  onPastEnd: () => {
+                    const last = lines[lines.length - 1];
+                    if (!last || (!last.itemId && !last.description.trim())) return;
+                    const b = blankLine(data.settings.defaultPriceIncludesTax);
+                    setLines((ls) => [...ls, b]);
+                    focusCell(gridRef.current, b.key, "item");
+                  },
+                })
+              }
+              className="w-full min-w-[860px] text-sm"
+            >
               <thead>
                 <tr className="border-b border-line bg-ground/60 text-left text-xs font-semibold uppercase tracking-wide text-muted">
                   <th className="w-8 px-2 py-2">#</th>
@@ -626,13 +645,13 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                   const r = calc.lines[idx];
                   const taxKnown = l.taxRateId ? taxMap.has(l.taxRateId) : true;
                   return (
-                    <tr key={l.key} className="border-b border-line align-top last:border-0">
+                    <tr key={l.key} data-row={l.key} className="border-b border-line align-top last:border-0">
                       <td className="px-2 py-2 text-xs text-faint">{idx + 1}</td>
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1.5">
                           {/* The Product ID sits in front of the name; the box itself stays the name, so typing still searches. */}
                           {item?.code && <span className="num max-w-24 shrink-0 truncate text-xs text-faint" title={`Product ID ${item.code}`}>{item.code}</span>}
-                          <div className="min-w-0 flex-1">
+                          <div className="min-w-0 flex-1" data-cell="item">
                             <Combobox
                               options={itemOptions}
                               value={l.itemId}
@@ -653,18 +672,19 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                           )}
                           {data.settings.batchTracking && item?.kind === "goods" && (
                             <>
-                              <input className="h-6 w-24 rounded border border-line px-1 text-xs" placeholder="Batch" value={l.batchNo} onChange={(e) => updateLine(l.key, { batchNo: e.target.value })} />
-                              <input className="h-6 rounded border border-line px-1 text-xs" type="date" title="Expiry date" value={l.expiryDate} onChange={(e) => updateLine(l.key, { expiryDate: e.target.value })} />
+                              <input data-cell="batch" className="h-6 w-24 rounded border border-line px-1 text-xs" placeholder="Batch" value={l.batchNo} onChange={(e) => updateLine(l.key, { batchNo: e.target.value })} />
+                              <input data-cell="expiry" className="h-6 rounded border border-line px-1 text-xs" type="date" title="Expiry date" value={l.expiryDate} onChange={(e) => updateLine(l.key, { expiryDate: e.target.value })} />
                             </>
                           )}
                         </div>
                       </td>
                       <td className="px-2 py-1.5">
-                        <Input id={`qty-${l.key}`} value={l.qty} onChange={(e) => updateLine(l.key, { qty: e.target.value })} inputMode="decimal" className={cx("num text-right", Number.isNaN(toMilli(l.qty)) && "border-bad")} />
+                        <Input id={`qty-${l.key}`} data-cell="qty" value={l.qty} onChange={(e) => updateLine(l.key, { qty: e.target.value })} inputMode="decimal" className={cx("num text-right", Number.isNaN(toMilli(l.qty)) && "border-bad")} />
                       </td>
                       <td className="px-2 py-1.5">
                         {item?.altUnitCode && item.altFactorMilli ? (
                           <Select
+                            data-cell="unit"
                             value={l.unit}
                             onChange={(e) => {
                               const unit = e.target.value as "base" | "alt";
@@ -683,23 +703,24 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                         )}
                       </td>
                       <td className="px-2 py-1.5">
-                        <Input value={l.rate} onChange={(e) => updateLine(l.key, { rate: e.target.value })} inputMode="decimal" className={cx("num text-right", Number.isNaN(toPaise(l.rate)) && "border-bad")} placeholder="0" />
+                        <Input data-cell="rate" value={l.rate} onChange={(e) => updateLine(l.key, { rate: e.target.value })} inputMode="decimal" className={cx("num text-right", Number.isNaN(toPaise(l.rate)) && "border-bad")} placeholder="0" />
                         {!noTax && (
                           <label className="mt-1 flex items-center justify-end gap-1 text-xs text-faint">
-                            <input type="checkbox" checked={l.rateIncl} onChange={(e) => updateLine(l.key, { rateIncl: e.target.checked })} className="accent-brand-600" />
+                            <input type="checkbox" tabIndex={-1} checked={l.rateIncl} onChange={(e) => updateLine(l.key, { rateIncl: e.target.checked })} className="accent-brand-600" />
                             incl. tax
                           </label>
                         )}
                       </td>
                       {data.settings.lineDiscount && !isStockMove && (
                         <td className="px-2 py-1.5">
-                          <Input value={l.discPct} onChange={(e) => updateLine(l.key, { discPct: e.target.value })} inputMode="decimal" className="num text-right" placeholder="0" />
+                          <Input data-cell="disc" value={l.discPct} onChange={(e) => updateLine(l.key, { discPct: e.target.value })} inputMode="decimal" className="num text-right" placeholder="0" />
                           {r?.lineDiscountPaise > 0 && <div className="mt-1 text-right text-xs text-faint">−{formatINR(r.lineDiscountPaise)}</div>}
                         </td>
                       )}
                       {!noTax && (
                         <td className="px-2 py-1.5">
                           <Select
+                            data-cell="tax"
                             value={l.taxRateId ?? (l.gstBp ? `bp:${l.gstBp}` : "")}
                             onChange={(e) => {
                               const id = Number(e.target.value);
@@ -724,6 +745,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                       <td className="px-1 py-1.5">
                         <button
                           type="button"
+                          tabIndex={-1}
                           className="flex size-8 items-center justify-center rounded text-faint hover:bg-bad-bg hover:text-bad"
                           aria-label={`Remove line ${idx + 1}`}
                           onClick={() => setLines((ls) => (ls.length === 1 ? [blankLine(data.settings.defaultPriceIncludesTax)] : ls.filter((x) => x.key !== l.key)))}

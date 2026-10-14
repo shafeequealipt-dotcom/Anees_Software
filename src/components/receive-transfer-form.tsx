@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { receiveTransferAction } from "@/app/actions/vouchers";
 import { formatQty, milliToQty, toMilli } from "@/lib/money";
+import { gridKeyDown } from "@/lib/grid-keys";
 import { ProductName } from "./product-name";
 import { Alert, Button, Panel, Table, Textarea, td, th } from "./ui";
 
@@ -33,6 +34,7 @@ export function ReceiveTransferForm({ voucherId, lines }: { voucherId: number; l
 
   return (
     <Panel title="Confirm receipt">
+      <div onKeyDown={(e) => gridKeyDown(e)}>
       <Table>
         <thead>
           <tr>
@@ -44,13 +46,14 @@ export function ReceiveTransferForm({ voucherId, lines }: { voucherId: number; l
         </thead>
         <tbody>
           {lines.map((l) => (
-            <tr key={l.id}>
+            <tr key={l.id} data-row={l.id}>
               <td className={td}><ProductName code={l.itemCode} name={l.description} /></td>
               <td className={td + " num text-right text-muted"}>
                 {formatQty(l.qtyMilli)} {l.unitCode}
               </td>
               <td className={td + " text-right"}>
                 <input
+                  data-cell="received"
                   className="num w-24 rounded-md border border-line bg-panel px-2 py-1 text-right text-sm"
                   value={received[l.id]}
                   onChange={(e) => setReceived((r) => ({ ...r, [l.id]: e.target.value }))}
@@ -59,6 +62,7 @@ export function ReceiveTransferForm({ voucherId, lines }: { voucherId: number; l
               </td>
               <td className={td + " text-right"}>
                 <input
+                  data-cell="damaged"
                   className="num w-24 rounded-md border border-line bg-panel px-2 py-1 text-right text-sm"
                   value={damaged[l.id]}
                   onChange={(e) => setDamaged((d) => ({ ...d, [l.id]: e.target.value }))}
@@ -69,6 +73,7 @@ export function ReceiveTransferForm({ voucherId, lines }: { voucherId: number; l
           ))}
         </tbody>
       </Table>
+      </div>
       <div className="p-4">
         <label className="mb-1 block text-xs font-medium uppercase text-muted">Notes (e.g. reason for any shortage)</label>
         <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />

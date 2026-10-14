@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { deleteJournalAction, disposeAssetAction, postJournalAction, rebuildBooksAction, runDepreciationAction, saveAssetAction, saveGlAccountAction } from "@/app/actions/accounting";
 import { todayIST } from "@/lib/dates";
 import { formatMoney, toBasisPoints, toPaise } from "@/lib/money";
+import { focusCell, gridKeyDown } from "@/lib/grid-keys";
 import { Alert, Badge, Button, Checkbox, Field, Input, Panel, Select, Table, td, th } from "./ui";
 
 // ─── Chart of accounts: add or change your own accounts ──────────────────────
@@ -117,6 +118,8 @@ export function JournalForm({ accounts }: { accounts: { id: number; code: string
   const [date, setDate] = useState(todayIST());
   const [narration, setNarration] = useState("");
   const [lines, setLines] = useState([blank(), blank()]);
+  /** The lines table, for moving focus between its cells. */
+  const gridRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const dr = lines.reduce((s, l) => s + (toPaise(l.debit) || 0), 0);
@@ -149,7 +152,19 @@ export function JournalForm({ accounts }: { accounts: { id: number; code: string
           <Input value={narration} onChange={(e) => setNarration(e.target.value)} placeholder="e.g. Loan received from HDFC" />
         </Field>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-line bg-panel">
+      <div
+        ref={gridRef}
+        className="overflow-x-auto rounded-lg border border-line bg-panel"
+        onKeyDown={(e) =>
+          gridKeyDown(e, {
+            // Enter after the last line's note starts a new line, as on bills.
+            onPastEnd: () => {
+              setLines((ls) => [...ls, blank()]);
+              focusCell(gridRef.current, String(lines.length), "account");
+            },
+          })
+        }
+      >
         <Table>
           <thead>
             <tr>
@@ -162,9 +177,9 @@ export function JournalForm({ accounts }: { accounts: { id: number; code: string
           </thead>
           <tbody>
             {lines.map((l, i) => (
-              <tr key={i}>
+              <tr key={i} data-row={i}>
                 <td className={td}>
-                  <Select value={l.accountId} onChange={(e) => set(i, { accountId: e.target.value })}>
+                  <Select data-cell="account" value={l.accountId} onChange={(e) => set(i, { accountId: e.target.value })}>
                     <option value="">Choose…</option>
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
@@ -174,17 +189,17 @@ export function JournalForm({ accounts }: { accounts: { id: number; code: string
                   </Select>
                 </td>
                 <td className={td}>
-                  <Input value={l.debit} onChange={(e) => set(i, { debit: e.target.value, credit: e.target.value ? "" : l.credit })} inputMode="decimal" className="num text-right" />
+                  <Input data-cell="debit" value={l.debit} onChange={(e) => set(i, { debit: e.target.value, credit: e.target.value ? "" : l.credit })} inputMode="decimal" className="num text-right" />
                 </td>
                 <td className={td}>
-                  <Input value={l.credit} onChange={(e) => set(i, { credit: e.target.value, debit: e.target.value ? "" : l.debit })} inputMode="decimal" className="num text-right" />
+                  <Input data-cell="credit" value={l.credit} onChange={(e) => set(i, { credit: e.target.value, debit: e.target.value ? "" : l.debit })} inputMode="decimal" className="num text-right" />
                 </td>
                 <td className={td}>
-                  <Input value={l.memo} onChange={(e) => set(i, { memo: e.target.value })} />
+                  <Input data-cell="memo" value={l.memo} onChange={(e) => set(i, { memo: e.target.value })} />
                 </td>
                 <td className={td}>
                   {lines.length > 2 && (
-                    <Button size="sm" variant="ghost" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>
+                    <Button size="sm" variant="ghost" tabIndex={-1} aria-label={`Remove line ${i + 1}`} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>
                       ✕
                     </Button>
                   )}
