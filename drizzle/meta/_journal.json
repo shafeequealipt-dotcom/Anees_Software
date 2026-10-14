@@ -169,6 +169,13 @@
       "when": 1791463458213,
       "tag": "0023_partners",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791986662356,
+      "tag": "0024_people_delete",
+      "breakpoints": true
     }
   ]
 }

@@ -301,6 +301,27 @@ export async function payEmployee(db: DB, firmId: number, raw: z.input<typeof pa
   }
 }
 
+/**
+ * Removes an employee. Anyone with a salary or advance on record is made inactive instead (their entries
+ * name them, and the books must stay as they were); someone never paid is deleted with their month notes.
+ */
+export async function deleteEmployee(db: DB, firmId: number, id: number, userId: number) {
+  return db.transaction(async (tx) => {
+    const [e] = await tx.select().from(employees).where(and(eq(employees.id, id), eq(employees.firmId, firmId)));
+    if (!e) throw new MasterError("This employee no longer exists.");
+    const [used] = await tx.select({ n: sql<number>`count(*)::int` }).from(vouchers).where(eq(vouchers.employeeId, id));
+    if (used.n > 0) {
+      await tx.update(employees).set({ active: false, updatedAt: new Date() }).where(eq(employees.id, id));
+      await audit(tx, { firmId, userId, action: "update", entity: "employee", entityId: id, summary: `Made employee ${e.name} inactive instead of deleting (${used.n} payments on record)` });
+      return "deactivated" as const;
+    }
+    await tx.delete(salaryAdjustments).where(eq(salaryAdjustments.employeeId, id));
+    await tx.delete(employees).where(eq(employees.id, id));
+    await audit(tx, { firmId, userId, action: "delete", entity: "employee", entityId: id, summary: `Deleted employee ${e.name}`, before: e });
+    return "deleted" as const;
+  });
+}
+
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 export function monthLabel(month: string) {
   const [y, m] = month.split("-");

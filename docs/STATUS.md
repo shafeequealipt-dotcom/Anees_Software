@@ -536,3 +536,12 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   dialog is open). If anything was typed on the page since it opened (not searches, the day switcher or list
   filters — marked `data-no-dirty`), it asks before leaving.
 - Top bar left padding below `lg` now clears the fixed Menu button (it used to cover the start of the bar).
+
+### Deleting staff and partners — added 2026-10-14 (migration `0024_people_delete.sql`)
+- New permission `people.delete` ("Delete staff and partners"): the Owner always has it; the migration gives it to
+  the built-in Company owner role only (Accountant and Billing staff don't get it; custom roles can be ticked).
+- `deleteEmployee` (`src/server/staff.ts`) and `deletePartner` (`src/server/partners.ts`): anyone with payments
+  (or, for partners, a payout invoice) on record is made inactive instead of deleted, so past entries and the books
+  stay as they were; otherwise the record goes (with month notes / typed views and promotions).
+- Delete button (`src/components/delete-person-button.tsx`) at the foot of the employee and partner pages, shown
+  only to people with the permission. Tests: `tests/delete-people.test.ts`.

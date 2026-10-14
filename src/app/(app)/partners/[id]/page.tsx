@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
+import { DeletePersonButton } from "@/components/delete-person-button";
 import { PayPartnerButton } from "@/components/partners";
 import { Badge, LinkButton, Money, PageHeader, cx } from "@/components/ui";
 import { accounts } from "@/db/schema";
 import { formatDate, todayIST } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
+import { can } from "@/lib/permissions";
 import { groupViews, paymentToLine } from "@/lib/payout";
 import { getPartner, partnerHistory, partnerPayments, partnerSheet, payeeName } from "@/server/partners";
 import { requirePartnersUser } from "@/server/partners-page";
@@ -179,6 +181,11 @@ export default async function PartnerPage({ params }: { params: Promise<{ id: st
         )}
       </section>
       {p.notes && <p className="mt-3 whitespace-pre-line rounded-xl border border-line bg-panel px-5 py-3 text-sm text-muted">{p.notes}</p>}
+      {can(user, "people.delete") && (
+        <div className="no-print mt-6 flex justify-end border-t border-line pt-4">
+          <DeletePersonButton kind="partner" id={p.id} name={payeeName(p)} />
+        </div>
+      )}
     </>
   );
 }

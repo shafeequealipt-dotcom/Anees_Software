@@ -150,6 +150,29 @@ export async function nextPartnerCode(db: DB, firmId: number) {
 /** "Don't Miss Bollywood", or the person's name when there's no channel. */
 export const payeeName = (p: { channelName: string | null; name: string }) => p.channelName || p.name;
 
+/**
+ * Removes a partner. One with payments or a payout invoice on record is made inactive instead (those
+ * documents name them); otherwise the partner goes, along with any views and promotions typed in.
+ */
+export async function deletePartner(db: DB, firmId: number, id: number, userId: number) {
+  await assertPartnersEnabled(db, firmId);
+  return db.transaction(async (tx) => {
+    const p = await getPartner(tx, firmId, id);
+    if (!p) throw new MasterError("This partner no longer exists.");
+    const [paid] = await tx.select({ n: sql<number>`count(*)::int` }).from(vouchers).where(eq(vouchers.partnerId, id));
+    const [invoiced] = await tx.select({ n: sql<number>`count(*)::int` }).from(partnerPayouts).where(and(eq(partnerPayouts.partnerId, id), sql`${partnerPayouts.invoiceNo} is not null`));
+    if (paid.n + invoiced.n > 0) {
+      await tx.update(partners).set({ active: false, updatedAt: new Date() }).where(eq(partners.id, id));
+      await audit(tx, { firmId, userId, action: "update", entity: "partner", entityId: id, summary: `Made partner ${payeeName(p)} inactive instead of deleting (${paid.n} payments, ${invoiced.n} invoices on record)` });
+      return "deactivated" as const;
+    }
+    await tx.delete(partnerPayouts).where(eq(partnerPayouts.partnerId, id)); // promotions and links go with them
+    await tx.delete(partners).where(eq(partners.id, id));
+    await audit(tx, { firmId, userId, action: "delete", entity: "partner", entityId: id, summary: `Deleted partner ${payeeName(p)} (${p.code})`, before: p });
+    return "deleted" as const;
+  });
+}
+
 // ─── The month sheet ─────────────────────────────────────────────────────────
 
 export interface PartnerSheetRow {

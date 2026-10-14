@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import type { z } from "zod";
 import { getDb } from "@/db";
 import { AuthError, assertUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { normalizePhone } from "@/lib/phone";
 import { MasterError } from "@/server/errors";
 import {
   addPromotion,
   createPayoutLink,
+  deletePartner,
   type invoiceSchema,
   loadPayoutInvoice,
   type partnerSchema,
@@ -158,6 +160,19 @@ export async function setPartnersEnabledAction(firmId: number, enabled: boolean)
     await setPartnersEnabled(await getDb(), firmId, enabled, user.id);
     revalidatePath("/", "layout");
     return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Owners and Company owners only ("Delete staff and partners"). A partner with payments or invoices is made inactive instead. */
+export async function deletePartnerAction(id: number): Promise<Result<{ outcome: "deleted" | "deactivated" }>> {
+  try {
+    const user = await assertUser("partners.manage");
+    if (!can(user, "people.delete")) throw new AuthError("Only an owner can delete partners.");
+    const outcome = await deletePartner(await getDb(), user.firmId, id, user.id);
+    refresh();
+    return { ok: true, outcome };
   } catch (e) {
     return fail(e);
   }

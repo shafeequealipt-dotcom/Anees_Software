@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
+import { DeletePersonButton } from "@/components/delete-person-button";
 import { PayButton } from "@/components/staff";
 import { Badge, LinkButton, Money, PageHeader, cx } from "@/components/ui";
 import { getDb } from "@/db";
 import { accounts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { formatDate, todayIST } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { employeePayments, getEmployee, monthLabel, salarySheet } from "@/server/staff";
@@ -110,6 +112,11 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
         )}
       </section>
       {e.notes && <p className="mt-3 whitespace-pre-line rounded-xl border border-line bg-panel px-5 py-3 text-sm text-muted">{e.notes}</p>}
+      {can(user, "people.delete") && (
+        <div className="no-print mt-6 flex justify-end border-t border-line pt-4">
+          <DeletePersonButton kind="employee" id={e.id} name={e.name} />
+        </div>
+      )}
     </>
   );
 }

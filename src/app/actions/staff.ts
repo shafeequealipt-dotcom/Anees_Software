@@ -5,7 +5,8 @@ import type { z } from "zod";
 import { getDb } from "@/db";
 import { AuthError, assertUser } from "@/lib/auth";
 import { MasterError } from "@/server/errors";
-import { type adjustmentSchema, type employeeSchema, type paySchema, payEmployee, saveEmployee, saveSalaryAdjustment } from "@/server/staff";
+import { can } from "@/lib/permissions";
+import { type adjustmentSchema, deleteEmployee, type employeeSchema, type paySchema, payEmployee, saveEmployee, saveSalaryAdjustment } from "@/server/staff";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
 
@@ -45,6 +46,19 @@ export async function payEmployeeAction(input: z.input<typeof paySchema>): Promi
     revalidatePath("/staff", "layout");
     revalidatePath("/expenses");
     return { ok: true, id: r.id, number: r.number };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Owners and Company owners only ("Delete staff and partners"). Someone with payments is made inactive instead. */
+export async function deleteEmployeeAction(id: number): Promise<Result<{ outcome: "deleted" | "deactivated" }>> {
+  try {
+    const user = await assertUser("staff.manage");
+    if (!can(user, "people.delete")) throw new AuthError("Only an owner can delete staff.");
+    const outcome = await deleteEmployee(await getDb(), user.firmId, id, user.id);
+    revalidatePath("/staff", "layout");
+    return { ok: true, outcome };
   } catch (e) {
     return fail(e);
   }
