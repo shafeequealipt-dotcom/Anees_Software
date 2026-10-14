@@ -18,7 +18,7 @@ export function DailySalesFilters({ date, today, locationId, locations }: { date
   }
 
   return (
-    <div className="no-print mb-4 flex flex-wrap items-center gap-3">
+    <div data-no-dirty className="no-print mb-4 flex flex-wrap items-center gap-3">
       <DayNav date={date} today={today} />
       {locations.length > 1 && (
         <label className="flex items-center gap-2 text-sm text-muted">

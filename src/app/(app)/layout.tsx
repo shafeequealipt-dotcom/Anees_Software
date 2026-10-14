@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { logoutAction, businessName } from "@/app/actions/auth";
 import { Nav, type NavGroup } from "@/components/nav";
+import { Suspense } from "react";
+import { BackButton } from "@/components/back-nav";
 import { GlobalSearch } from "@/components/search";
 import { buttonClass } from "@/components/ui";
 import { getDb } from "@/db";
@@ -87,7 +89,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Nav groups={groups} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2 pl-16 shadow-sm shadow-ink/[0.03] sm:gap-3 sm:px-4 lg:pl-4">
+        {/* Left padding below lg leaves room for the fixed Menu button (wider once it shows its label). */}
+        <header className="no-print flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel pl-16 pr-2 shadow-sm shadow-ink/[0.03] sm:gap-3 sm:pl-32 sm:pr-4 lg:pl-4">
+          <Suspense fallback={null}>
+            <BackButton />
+          </Suspense>
           <GlobalSearch />
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
             <CompanySwitcher current={user.firm} companies={user.firms} canManage={can(user, "companies.manage")} />

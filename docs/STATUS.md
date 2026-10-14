@@ -524,3 +524,12 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
 - `DailySalesFilters` now uses the same ‹ › day switcher (Daily sales report too). `PageHeader` back links
   and action buttons don't print.
 - Tests: `tests/day-sales-purchases.test.ts`.
+
+### Back button and Backspace — added 2026-10-14
+- `src/components/back-nav.tsx` (`BackButton`, in the top bar of every page except Home): goes to the page you
+  came from inside the app (a per-tab trail in sessionStorage, since the browser won't say whether the previous
+  page was ours); with no such page it replaces the current page with its parent path (bill → list → Home).
+- **Backspace** does the same when focus isn't in a box (in a box it deletes as usual; skipped while a modal
+  dialog is open). If anything was typed on the page since it opened (not searches, the day switcher or list
+  filters — marked `data-no-dirty`), it asks before leaving.
+- Top bar left padding below `lg` now clears the fixed Menu button (it used to cover the start of the bar).

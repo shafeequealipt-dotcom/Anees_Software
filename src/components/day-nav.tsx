@@ -35,7 +35,7 @@ export function DayNav({ date, today, mode = "date", className }: { date: string
 
   const arrow = "flex size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-panel text-muted hover:border-brand-200 hover:text-ink disabled:pointer-events-none disabled:opacity-40";
   return (
-    <div className={cx("no-print flex items-center gap-1.5", className)}>
+    <div data-no-dirty className={cx("no-print flex items-center gap-1.5", className)}>
       <button type="button" className={arrow} onClick={() => go(shift(date, -1))} aria-label="Previous day" title="Previous day">
         ‹
       </button>

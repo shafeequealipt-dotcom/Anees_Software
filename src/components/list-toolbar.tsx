@@ -50,7 +50,7 @@ function usePush() {
 /** Status tabs on the left; search and period on the right. One row on desktop, two on a phone. */
 export function ListToolbar({ tabs, presets, from, to, q, searchPlaceholder = "Search…" }: { tabs: ToolbarTab[]; presets: PeriodPreset[]; from: string; to: string; q?: string; searchPlaceholder?: string }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-line px-3 py-3 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
+    <div data-no-dirty className="flex flex-col gap-3 border-b border-line px-3 py-3 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
       {tabs.length > 1 ? (
         <nav className="-mx-1 flex gap-1 overflow-x-auto px-1 [scrollbar-width:none]" aria-label="Filter by status">
           {tabs.map((t) => (
