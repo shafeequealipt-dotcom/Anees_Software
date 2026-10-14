@@ -121,16 +121,26 @@ export const locations = pgTable(
 );
 
 /** A named set of permissions. The owner role has every permission and cannot be edited. */
-export const roles = pgTable("roles", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 60 }).notNull().unique(),
-  description: varchar("description", { length: 300 }),
-  permissions: jsonb("permissions").$type<string[]>().notNull().default([]),
-  isOwner: boolean("is_owner").notNull().default(false),
-  /** Built-in roles cannot be deleted. */
-  isSystem: boolean("is_system").notNull().default(false),
-  createdAt: createdAt(),
-});
+export const roles = pgTable(
+  "roles",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 60 }).notNull(),
+    description: varchar("description", { length: 300 }),
+    permissions: jsonb("permissions").$type<string[]>().notNull().default([]),
+    isOwner: boolean("is_owner").notNull().default(false),
+    /** Built-in roles cannot be deleted. */
+    isSystem: boolean("is_system").notNull().default(false),
+    /**
+     * The company a custom role belongs to: only that company's owners see and change it, and only its
+     * people can be given it. Empty for built-in roles and for roles the Owner shares with every company.
+     */
+    firmId: integer("firm_id").references(() => firms.id),
+    createdAt: createdAt(),
+  },
+  // One name per company (shared roles count as company 0), ignoring case.
+  (t) => [uniqueIndex("roles_name_firm_key").on(sql`coalesce(${t.firmId}, 0)`, sql`lower(${t.name})`)],
+);
 
 export const users = pgTable(
   "users",

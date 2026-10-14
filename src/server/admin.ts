@@ -34,13 +34,20 @@ const grantable = (actor: Actor, role: { isOwner: boolean; permissions: unknown 
 
 const firmIdsOf = (a: Actor) => a.firms.map((f) => f.id);
 
-function requireOwner(actor: Actor, what: string) {
-  if (!actor.isOwner) throw new MasterError(`Only an owner can ${what}.`);
-}
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 
-/** Roles are shared by every company, so only an owner can add or change them; anyone else just picks from the list (minus Owner). */
+/*
+ * Built-in roles, and custom roles the Owner shares, are seen by every company. A custom role can
+ * instead belong to one company: then only that company's owners (people with "Manage roles for
+ * their companies") see and change it, and only that company's people can be given it. The Owner
+ * sees and manages everything.
+ */
+
+/** Whether the actor may see this role at all: shared, or one of their companies'. */
+const roleVisible = (actor: Actor, role: { firmId: number | null }) => actor.isOwner || role.firmId === null || firmIdsOf(actor).includes(role.firmId);
+
+/** Roles the actor can see (and, unless an owner, could actually give), with each role's company. */
 export async function listRoles(db: DB, actor: Actor) {
   const list = await db
     .select({
@@ -50,15 +57,21 @@ export async function listRoles(db: DB, actor: Actor) {
       permissions: roles.permissions,
       isOwner: roles.isOwner,
       isSystem: roles.isSystem,
+      firmId: roles.firmId,
+      firmName: firms.name,
       userCount: sql<number>`(select count(*)::int from users u where u.role_id = "roles"."id")`,
     })
     .from(roles)
-    .orderBy(sql`${roles.isOwner} desc`, asc(roles.id));
-  // Someone who isn't an owner only sees the roles they could actually give, and not how many people
-  // across every company hold each one.
-  return actor.isOwner ? list : list.filter((r) => grantable(actor, r)).map((r) => ({ ...r, userCount: 0 }));
+    .leftJoin(firms, eq(firms.id, roles.firmId))
+    .orderBy(sql`${roles.isOwner} desc`, sql`${roles.firmId} is not null`, asc(roles.id));
+  if (actor.isOwner) return list;
+  // Someone else sees only shared roles and their companies' own, only the ones they could give, and
+  // counts only of the people they can see (never how many hold a role in some other company).
+  const people = await listUsers(db, actor);
+  return list
+    .filter((r) => roleVisible(actor, r) && grantable(actor, r))
+    .map((r) => ({ ...r, userCount: people.filter((u) => u.roleId === r.id).length }));
 }
-
 /** Active shops/warehouses for the "which shops can this person use" picker: only those of companies the actor can open. */
 export async function listAllLocations(db: DB, actor: Actor) {
   const ids = firmIdsOf(actor);
@@ -76,44 +89,82 @@ export const roleSchema = z.object({
   name: z.string().trim().min(1, "Enter a name for the role.").max(60),
   description: z.string().trim().max(300).optional().transform((v) => v || null),
   permissions: z.array(z.string()),
+  /** The company it belongs to; empty = shared with every company (owners only). */
+  firmId: z.number().int().positive().nullish(),
 });
 
+/** May the actor change this role? Owners: any but the Owner role. Others: only their own companies' custom roles. */
+function assertCanEditRole(actor: Actor, role: { isOwner: boolean; isSystem: boolean; firmId: number | null }) {
+  if (role.isOwner) throw new MasterError("The Owner role always has full access and cannot be changed.");
+  if (actor.isOwner) return;
+  if (role.isSystem || role.firmId === null) throw new MasterError("Built-in and shared roles are used by every company, so only an owner can change them. Make a role for your company instead.");
+  if (!firmIdsOf(actor).includes(role.firmId)) throw new MasterError("That role no longer exists.");
+}
+
 export async function saveRole(db: DB, raw: z.input<typeof roleSchema>, actor: Actor) {
-  requireOwner(actor, "add or change roles (they are shared by every company)");
   const actorId = actor.id;
   const p = roleSchema.safeParse(raw);
   if (!p.success) throw new MasterError(p.error.issues[0].message, p.error.issues[0].path.join("."));
   const { id, name, description } = p.data;
-  const permissions = [...new Set(p.data.permissions.filter(isPermission))];
+  let permissions = [...new Set(p.data.permissions.filter(isPermission))];
+  let old: typeof roles.$inferSelect | undefined;
+  if (id) {
+    [old] = await db.select().from(roles).where(eq(roles.id, id));
+    if (!old || !roleVisible(actor, old)) throw new MasterError("That role no longer exists.");
+    assertCanEditRole(actor, old);
+  }
+
+  // Which company it belongs to. An owner may leave it shared; anyone else must pick one of theirs
+  // (their only one by default), and can't move a role to another company.
+  let firmId: number | null = p.data.firmId ?? (old ? old.firmId : null);
+  if (!actor.isOwner) {
+    const mine = firmIdsOf(actor);
+    if (firmId === null && mine.length === 1) firmId = mine[0];
+    if (firmId === null) throw new MasterError("Choose which company this role is for.", "firmId");
+    if (!mine.includes(firmId)) throw new MasterError("You can only make roles for companies you can open.", "firmId");
+    // Nobody hands out more than they have themselves.
+    const extra = permissions.filter((x) => !actor.permissions.includes(x));
+    if (extra.length) throw new MasterError("A role can't include things you aren't allowed to do yourself.");
+  } else if (firmId !== null) {
+    const [f] = await db.select({ id: firms.id }).from(firms).where(eq(firms.id, firmId));
+    if (!f) throw new MasterError("That company no longer exists.", "firmId");
+  }
+  if (old?.isSystem) firmId = null; // built-in roles stay shared
+  // A company's role is only for its people: someone outside it can't already be holding it.
+  if (old && firmId !== null && firmId !== old.firmId) {
+    const holders = await db.select({ id: users.id }).from(users).where(eq(users.roleId, old.id));
+    const allowed = new Set((await db.select({ userId: userFirms.userId }).from(userFirms).where(eq(userFirms.firmId, firmId))).map((r) => r.userId));
+    if (holders.some((h) => !allowed.has(h.id))) throw new MasterError("Some people with this role work in other companies. Give them another role first.", "firmId");
+  }
+  permissions = [...new Set(permissions)];
+
+  // Names must be clear in every company's list: unique among shared roles plus that company's own.
   const [same] = await db
     .select({ id: roles.id })
     .from(roles)
-    .where(and(sql`lower(${roles.name}) = ${name.toLowerCase()}`, id ? ne(roles.id, id) : sql`true`));
+    .where(and(sql`lower(${roles.name}) = ${name.toLowerCase()}`, id ? ne(roles.id, id) : sql`true`, firmId === null ? sql`true` : sql`(${roles.firmId} is null or ${roles.firmId} = ${firmId})`));
   if (same) throw new MasterError("A role with this name already exists.", "name");
 
-  if (id) {
-    const [old] = await db.select().from(roles).where(eq(roles.id, id));
-    if (!old) throw new MasterError("That role no longer exists.");
-    if (old.isOwner) throw new MasterError("The Owner role always has full access and cannot be changed.");
-    await db.update(roles).set({ name, description, permissions }).where(eq(roles.id, id));
-    await audit(db, { userId: actorId, action: "settings", entity: "role", entityId: id, summary: `Changed role "${name}"`, before: { name: old.name, permissions: old.permissions }, after: { name, permissions } });
-    return id;
+  if (old) {
+    await db.update(roles).set({ name, description, permissions, firmId }).where(eq(roles.id, old.id));
+    await audit(db, { firmId, userId: actorId, action: "settings", entity: "role", entityId: old.id, summary: `Changed role "${name}"`, before: { name: old.name, permissions: old.permissions, firmId: old.firmId }, after: { name, permissions, firmId } });
+    return old.id;
   }
-  const [row] = await db.insert(roles).values({ name, description, permissions }).returning({ id: roles.id });
-  await audit(db, { userId: actorId, action: "create", entity: "role", entityId: row.id, summary: `Added role "${name}"`, after: { name, permissions } });
+  const [row] = await db.insert(roles).values({ name, description, permissions, firmId }).returning({ id: roles.id });
+  await audit(db, { firmId, userId: actorId, action: "create", entity: "role", entityId: row.id, summary: `Added role "${name}"`, after: { name, permissions, firmId } });
   return row.id;
 }
 
 export async function deleteRole(db: DB, id: number, actor: Actor) {
-  requireOwner(actor, "delete roles");
   const actorId = actor.id;
   const [role] = await db.select().from(roles).where(eq(roles.id, id));
-  if (!role) return;
+  if (!role || !roleVisible(actor, role)) return;
   if (role.isSystem) throw new MasterError("Built-in roles cannot be deleted.");
+  assertCanEditRole(actor, role);
   const [n] = await db.select({ n: sql<number>`count(*)::int` }).from(users).where(eq(users.roleId, id));
   if (n.n > 0) throw new MasterError(`${n.n} user${n.n === 1 ? " is" : "s are"} still using this role. Move them to another role first.`);
   await db.delete(roles).where(eq(roles.id, id));
-  await audit(db, { userId: actorId, action: "delete", entity: "role", entityId: id, summary: `Deleted role "${role.name}"` });
+  await audit(db, { firmId: role.firmId, userId: actorId, action: "delete", entity: "role", entityId: id, summary: `Deleted role "${role.name}"` });
 }
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -134,8 +185,11 @@ async function assertCanManage(db: DB, actor: Actor, userId: number) {
   if (!(await listUsers(db, actor)).some((u) => u.id === userId)) throw new MasterError("You don't have access to that person.");
 }
 
-function assertGrantable(actor: Actor, role: { isOwner: boolean; permissions: unknown }, firmIds: number[]) {
+function assertGrantable(actor: Actor, role: { isOwner: boolean; permissions: unknown; firmId: number | null }, firmIds: number[]) {
+  // A company's own role is only for people who work in that company (whoever is giving it).
+  if (role.firmId !== null && !firmIds.includes(role.firmId)) throw new MasterError("That role belongs to a company this person can't open.", "roleId");
   if (actor.isOwner) return;
+  if (!roleVisible(actor, role)) throw new MasterError("Choose a role.", "roleId");
   if (role.isOwner) throw new MasterError("Only an owner can make someone an owner.", "roleId");
   if (!grantable(actor, role)) throw new MasterError("That role can do things you can't, so only an owner can give it.", "roleId");
   const mine = new Set(firmIdsOf(actor));
@@ -232,7 +286,7 @@ export async function createUser(db: DB, raw: z.input<typeof newUserSchema>, act
   const i = p.data;
   const weak = passwordProblem(i.password);
   if (weak) throw new MasterError(weak, "password");
-  const [role] = await db.select({ id: roles.id, isOwner: roles.isOwner, permissions: roles.permissions }).from(roles).where(eq(roles.id, i.roleId));
+  const [role] = await db.select({ id: roles.id, isOwner: roles.isOwner, permissions: roles.permissions, firmId: roles.firmId }).from(roles).where(eq(roles.id, i.roleId));
   if (!role) throw new MasterError("Choose a role.", "roleId");
   if (!role.isOwner && i.firmIds.length === 0) throw new MasterError("Choose at least one company this person can open.", "firmIds");
   assertGrantable(actor, role, i.firmIds);

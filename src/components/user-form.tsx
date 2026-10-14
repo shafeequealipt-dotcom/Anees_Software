@@ -19,6 +19,8 @@ interface RoleOpt {
   isOwner: boolean;
   /** Owner or holds `locations.all`: sees every shop, so the shop picker is hidden for this role. */
   allLocations: boolean;
+  /** The company a custom role belongs to (empty for built-in and shared roles). */
+  firmName?: string | null;
 }
 
 interface CompanyOpt {
@@ -47,7 +49,7 @@ export function UserForm({
   locations: LocationOpt[];
   initial?: { id: number; name: string; email: string; phone: string; roleId: number; active: boolean; firmIds: number[]; locationIds: number[] };
   isSelf?: boolean;
-  /** Only an owner can change roles (they're shared by every company), so others aren't sent to a page they can't open. */
+  /** Whether this person may open Roles & access (owners and company owners); others aren't sent to a page they can't open. */
   canEditRoles?: boolean;
 }) {
   const router = useRouter();
@@ -110,6 +112,7 @@ export function UserForm({
             {roles.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
+                {r.firmName ? ` (${r.firmName})` : ""}
               </option>
             ))}
           </Select>
@@ -119,7 +122,7 @@ export function UserForm({
                 What each role can do and see is set under <a className="text-brand-600 underline" href="/settings/roles">Roles &amp; access</a>.
               </>
             ) : (
-              "Roles are set up by the owner."
+              "Roles are set up by the owner or company owner."
             )}
           </p>
         </Field>

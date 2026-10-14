@@ -74,7 +74,7 @@ export async function resetPasswordAction(id: number, password: string): Promise
 
 export async function saveRoleAction(input: z.input<typeof roleSchema>): Promise<Result<{ id: number }>> {
   try {
-    const user = await assertUser("users.manage");
+    const user = await assertUser("roles.manage");
     const id = await saveRole(await getDb(), input, user);
     revalidatePath("/settings/roles");
     revalidatePath("/settings/users");
@@ -86,7 +86,7 @@ export async function saveRoleAction(input: z.input<typeof roleSchema>): Promise
 
 export async function deleteRoleAction(id: number): Promise<Result> {
   try {
-    const user = await assertUser("users.manage");
+    const user = await assertUser("roles.manage");
     await deleteRole(await getDb(), id, user);
     revalidatePath("/settings/roles");
     return { ok: true };

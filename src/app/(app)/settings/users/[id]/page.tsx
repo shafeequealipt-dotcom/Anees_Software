@@ -20,10 +20,10 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
       <PageHeader title={u.name} subtitle={u.email} back={{ href: "/settings/users", label: "Users" }} />
       <div className="flex flex-col gap-6">
         <UserForm
-          roles={roles.map((r) => ({ id: r.id, name: r.name, description: r.description, isOwner: r.isOwner, allLocations: can(r, "locations.all") }))}
+          roles={roles.map((r) => ({ id: r.id, name: r.name, description: r.description, isOwner: r.isOwner, allLocations: can(r, "locations.all"), firmName: r.firmName }))}
           companies={companies.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name }))}
           locations={locations}
-          canEditRoles={me.isOwner}
+          canEditRoles={can(me, "roles.manage")}
           isSelf={u.id === me.id}
           initial={{ id: u.id, name: u.name, email: u.email, phone: u.phone ?? "", roleId: u.roleId, active: u.active, firmIds: u.firmIds, locationIds: u.locationIds }}
         />

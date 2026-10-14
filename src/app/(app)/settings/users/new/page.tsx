@@ -15,10 +15,10 @@ export default async function NewUserPage() {
     <>
       <PageHeader title="Add user" back={{ href: "/settings/users", label: "Users" }} />
       <UserForm
-        roles={roles.map((r) => ({ id: r.id, name: r.name, description: r.description, isOwner: r.isOwner, allLocations: can(r, "locations.all") }))}
+        roles={roles.map((r) => ({ id: r.id, name: r.name, description: r.description, isOwner: r.isOwner, allLocations: can(r, "locations.all"), firmName: r.firmName }))}
         companies={companies.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name }))}
         locations={locations}
-        canEditRoles={me.isOwner}
+        canEditRoles={can(me, "roles.manage")}
       />
     </>
   );

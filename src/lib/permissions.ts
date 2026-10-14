@@ -56,6 +56,7 @@ export const PERMISSION_GROUPS = [
       { key: "locations.all", label: "See and use every shop and the warehouse", hint: "Without this, a user only sees and bills from the shops they're assigned to." },
       { key: "settings.edit", label: "Change business settings", hint: "Business details, tax rates, units." },
       { key: "users.manage", label: "Manage users and roles" },
+      { key: "roles.manage", label: "Manage roles for their companies", hint: "Add and change the roles of the companies they can open. Owners always have this and also manage roles shared by every company." },
       { key: "companies.manage", label: "Add and hide companies", hint: "Each company has its own parties, items, bills and tax settings." },
       { key: "audit.view", label: "See the activity log (who changed what)" },
       { key: "backups.manage", label: "See backups and start a backup now" },

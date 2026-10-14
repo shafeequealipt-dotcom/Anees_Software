@@ -545,3 +545,18 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   stay as they were; otherwise the record goes (with month notes / typed views and promotions).
 - Delete button (`src/components/delete-person-button.tsx`) at the foot of the employee and partner pages, shown
   only to people with the permission. Tests: `tests/delete-people.test.ts`.
+
+### Roles per company — added 2026-10-14 (migration `0025_company_roles.sql`)
+- `roles.firm_id`: a custom role can belong to one company. Built-in roles and roles the Owner shares stay empty
+  (every company sees them). Names are unique per company plus shared (`roles_name_firm_key` on
+  `(coalesce(firm_id, 0), lower(name))`, and `saveRole` refuses a company name that matches a shared role).
+- New permission `roles.manage` ("Manage roles for their companies"): Owner always; the migration gives it to the
+  built-in Company owner role (and updates that role's description). The Roles & access tab needs it.
+- `listRoles`: the Owner sees every role with its company; anyone else sees shared roles plus their companies' own,
+  only those they could give, with user counts limited to people they can see. `saveRole` / `deleteRole`: a company
+  owner creates and changes only their companies' roles (their only company is picked for them), never built-in
+  or shared ones, and can't include a permission they don't hold. A company's role can only be given to people
+  who work in that company (`assertGrantable`), even by the Owner.
+- The migration moves each custom role whose holders all work in one company to that company (live: "Wholesale
+  staff" → Anees_Shop); unused or multi-company custom roles stay shared ("Orpheus").
+- Tests: `tests/company-isolation.test.ts` ("roles belonging to one company"), `tests/company-roles-migration.test.ts`.

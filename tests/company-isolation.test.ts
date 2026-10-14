@@ -100,10 +100,66 @@ describe("what a company owner can't do", () => {
     await expect(resetUserPassword(db, ownerId, "Green-Harbour-7710", asha)).rejects.toThrow(/don't have access/);
   });
 
-  it("change roles (shared by every company) or hide another company", async () => {
-    await expect(saveRole(db, { name: "Mine", permissions: [] }, asha)).rejects.toThrow(/Only an owner/);
-    await expect(deleteRole(db, staffRole, asha)).rejects.toThrow(/Only an owner/);
+  it("change built-in or shared roles, or hide another company", async () => {
+    await expect(saveRole(db, { id: staffRole, name: "Billing staff", permissions: [] }, asha)).rejects.toThrow(/only an owner can change them/);
+    await expect(deleteRole(db, staffRole, asha)).rejects.toThrow(/Built-in/);
+    const shared = await saveRole(db, { name: "Shared helper", permissions: ["vouchers.create"] }, owner);
+    await expect(saveRole(db, { id: shared, name: "Shared helper", permissions: [] }, asha)).rejects.toThrow(/only an owner can change them/);
+    await expect(deleteRole(db, shared, asha)).rejects.toThrow(/only an owner can change them/);
     await expect(setCompanyActive(db, B, false, asha)).rejects.toThrow(/no longer exists/);
+  });
+});
+
+describe("roles belonging to one company", () => {
+  let aRole: number;
+  let bRole: number;
+
+  it("a company owner makes roles for their own company only, and can't give more than they have", async () => {
+    aRole = await saveRole(db, { name: "Counter", permissions: ["vouchers.create", "reports.sales"] }, asha);
+    const [r] = await db.select().from(roles).where(eq(roles.id, aRole));
+    expect(r.firmId).toBe(A); // their only company, picked for them
+    await expect(saveRole(db, { name: "Elsewhere", permissions: [], firmId: B }, asha)).rejects.toThrow(/companies you can open/);
+    await expect(saveRole(db, { name: "Too much", permissions: ["companies.manage"] }, asha)).rejects.toThrow(/aren't allowed to do yourself/);
+    await saveRole(db, { id: aRole, name: "Counter staff", permissions: ["vouchers.create"] }, asha);
+    expect((await db.select().from(roles).where(eq(roles.id, aRole)))[0].name).toBe("Counter staff");
+  });
+
+  it("another company's roles are invisible and untouchable", async () => {
+    bRole = await saveRole(db, { name: "B only", permissions: ["vouchers.create"], firmId: B }, owner);
+    const seen = (await listRoles(db, asha)).map((r) => r.id);
+    expect(seen).toContain(aRole);
+    expect(seen).toContain(staffRole);
+    expect(seen).not.toContain(bRole);
+    await expect(saveRole(db, { id: bRole, name: "Taken over", permissions: [] }, asha)).rejects.toThrow(/no longer exists/);
+    await deleteRole(db, bRole, asha); // quietly nothing
+    expect(await db.select().from(roles).where(eq(roles.id, bRole))).toHaveLength(1);
+    await expect(createUser(db, { name: "X", email: "x6@x.example", roleId: bRole, password: PW, firmIds: [A] }, asha)).rejects.toThrow();
+  });
+
+  it("the owner sees every role with its company", async () => {
+    const all = await listRoles(db, owner);
+    expect(all.find((r) => r.id === aRole)?.firmName).toBeTruthy();
+    expect(all.find((r) => r.id === bRole)?.firmId).toBe(B);
+    expect(all.find((r) => r.id === staffRole)?.firmId).toBeNull();
+  });
+
+  it("a company's role only goes to people of that company, even from the owner", async () => {
+    await expect(createUser(db, { name: "X", email: "x7@x.example", roleId: bRole, password: PW, firmIds: [A] }, owner)).rejects.toThrow(/belongs to a company/);
+    const ok = await createUser(db, { name: "B person", email: "x8@x.example", roleId: bRole, password: PW, firmIds: [B] }, owner);
+    expect(ok).toBeGreaterThan(0);
+  });
+
+  it("the same name can be used by two companies, but not clash with a shared role", async () => {
+    const again = await saveRole(db, { name: "Counter staff", permissions: [], firmId: B }, owner);
+    expect(again).toBeGreaterThan(0);
+    await expect(saveRole(db, { name: "billing STAFF", permissions: [] }, asha)).rejects.toThrow(/already exists/);
+  });
+
+  it("a company owner adds a person with their company's role", async () => {
+    const id = await createUser(db, { name: "Counter one", email: "c1@x.example", roleId: aRole, password: PW, firmIds: [A], locationIds: [shopA] }, asha);
+    expect((await listUsers(db, asha)).some((u) => u.id === id && u.roleId === aRole)).toBe(true);
+    expect((await listRoles(db, asha)).find((r) => r.id === aRole)?.userCount).toBe(1);
+    await expect(deleteRole(db, aRole, asha)).rejects.toThrow(/still using/);
   });
 });
 
