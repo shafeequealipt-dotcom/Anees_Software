@@ -19,7 +19,9 @@ const GROUPS: { title: string; items: { href: string; label: string; hint: strin
   {
     title: "Sales & purchases",
     items: [
-      { href: "/reports/day-sales-purchases", label: "Sales & purchases for the day", hint: "Every bill of one day, with totals — print it" },
+      { href: "/reports/day-sales-purchases?show=sales", label: "Sales for the day", hint: "Every sale bill of one day, with totals — print it" },
+      { href: "/reports/day-sales-purchases?show=purchases", label: "Purchases for the day", hint: "Every purchase bill of one day, with totals — print it" },
+      { href: "/reports/day-sales-purchases", label: "Sales & purchases for the day", hint: "Both together on one printout" },
       { href: "/reports/daily-sales", label: "Daily sales", hint: "One day, one or all shops — totals, payment modes, top items" },
       { href: "/reports/staff-sales", label: "Staff sales", hint: "Who sold what, per shop and date range" },
       { href: "/sales", label: "Sale invoices", hint: "Filter, search, export" },

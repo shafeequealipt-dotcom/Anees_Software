@@ -9,17 +9,28 @@ import { can } from "@/lib/permissions";
 import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { daySalesPurchases, type DayGroup } from "@/server/reports";
 
-export const metadata = { title: "Sales & purchases for the day" };
+
+type Show = "sales" | "purchases" | "both";
+const TITLES: Record<Show, string> = { sales: "Sales for the day", purchases: "Purchases for the day", both: "Sales & purchases for the day" };
+
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
+  const show = (await searchParams).show;
+  return { title: TITLES[show === "sales" || show === "purchases" ? show : "both"] };
+}
 
 /**
  * Every sale and purchase of one day (today unless another day is picked), with totals, ready to
  * print. Owners and anyone allowed every shop see all shops (or pick one); someone tied to shops
  * sees only theirs.
  */
-export default async function DaySalesPurchasesPage({ searchParams }: { searchParams: Promise<{ date?: string; location?: string }> }) {
+export default async function DaySalesPurchasesPage({ searchParams }: { searchParams: Promise<{ date?: string; location?: string; show?: string }> }) {
   const user = await requireUser("reports.sales");
   const sp = await searchParams;
   const today = todayIST();
+  // Sales only (from Sale invoices), purchases only (from Purchase bills), or both (from Reports).
+  const show: Show = sp.show === "sales" || sp.show === "purchases" ? sp.show : "both";
+  const withSales = show !== "purchases";
+  const withPurchases = show !== "sales";
   const date = sp.date && isIsoDate(sp.date) && sp.date <= today ? sp.date : today;
   const mine = (id: string) => user.allLocations || user.locations.some((l) => String(l.id) === id);
   let locationId = sp.location && mine(sp.location) ? Number(sp.location) : undefined;
@@ -33,12 +44,19 @@ export default async function DaySalesPurchasesPage({ searchParams }: { searchPa
   const r = await daySalesPurchases(db, user.firmId, date, scope, { hideSalaries: !can(user, "staff.manage"), hidePartners: !can(user, "partners.manage") });
   const shopName = locationId ? (user.locations.find((l) => l.id === locationId)?.name ?? "") : user.allLocations ? "All shops" : user.locations.map((l) => l.name).join(", ");
   const showShop = !locationId && (user.allLocations || user.locations.length > 1);
-  const nothing = r.sales.bills.length + r.saleReturns.bills.length + r.purchases.bills.length + r.purchaseReturns.bills.length === 0;
+  const nothing = (withSales ? r.sales.bills.length + r.saleReturns.bills.length : 0) + (withPurchases ? r.purchases.bills.length + r.purchaseReturns.bills.length : 0) === 0;
+  const what = show === "sales" ? "sales" : show === "purchases" ? "purchases" : "sales or purchases";
+  const viewHref = (v: Show) => {
+    const q = new URLSearchParams({ ...(v !== "both" ? { show: v } : {}), ...(date !== today ? { date } : {}), ...(sp.location ? { location: sp.location } : {}) }).toString();
+    return `/reports/day-sales-purchases${q ? `?${q}` : ""}`;
+  };
+  const bills = (n: number) => `${n} ${n === 1 ? "bill" : "bills"}`;
+  const returnsHint = (n: number) => (n ? `after ${n} return${n === 1 ? "" : "s"}` : "no returns");
 
   return (
     <>
       <PageHeader
-        title="Sales & purchases for the day"
+        title={TITLES[show]}
         subtitle={`${shopName} · ${formatDate(date)}${date === today ? " (today)" : ""}`}
         back={{ href: "/reports", label: "Reports" }}
         actions={!nothing && <PrintButton />}
@@ -47,27 +65,53 @@ export default async function DaySalesPurchasesPage({ searchParams }: { searchPa
       <div className="mb-4 hidden border-b border-ink pb-2 print:block">
         <div className="text-lg font-semibold">{user.firm.name}</div>
         <div className="text-sm">
-          Sales &amp; purchases · {shopName} · {formatDate(date)} · printed {formatDateTime(new Date())}
+          {TITLES[show].replace(" for the day", "")} · {shopName} · {formatDate(date)} · printed {formatDateTime(new Date())}
         </div>
       </div>
 
       <DailySalesFilters date={date} today={today} locationId={locationId ?? null} locations={user.allLocations || user.locations.length > 1 ? user.locations : []} />
 
+      <nav data-no-dirty className="no-print mb-4 inline-flex rounded-lg border border-line bg-panel p-0.5 text-sm" aria-label="Which bills">
+        {(["sales", "purchases", "both"] as const).map((v) => (
+          <Link key={v} href={viewHref(v)} className={cx("rounded-md px-3 py-1.5 font-medium", show === v ? "bg-brand-50 text-brand-700" : "text-muted hover:text-ink")} aria-current={show === v ? "page" : undefined}>
+            {v === "sales" ? "Sales" : v === "purchases" ? "Purchases" : "Both"}
+          </Link>
+        ))}
+      </nav>
+
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4 print:grid-cols-4">
-        <Tile label="Sales" value={r.sales.totalPaise} hint={`${r.sales.count} ${r.sales.count === 1 ? "bill" : "bills"}`} />
-        <Tile label="Net sales" value={r.netSalesPaise} hint={r.saleReturns.count ? `after ${r.saleReturns.count} return${r.saleReturns.count === 1 ? "" : "s"}` : "no returns"} strong />
-        <Tile label="Purchases" value={r.purchases.totalPaise} hint={`${r.purchases.count} ${r.purchases.count === 1 ? "bill" : "bills"}`} />
-        <Tile label="Net purchases" value={r.netPurchasesPaise} hint={r.purchaseReturns.count ? `after ${r.purchaseReturns.count} return${r.purchaseReturns.count === 1 ? "" : "s"}` : "no returns"} strong />
+        {show === "both" ? (
+          <>
+            <Tile label="Sales" value={r.sales.totalPaise} hint={bills(r.sales.count)} />
+            <Tile label="Net sales" value={r.netSalesPaise} hint={returnsHint(r.saleReturns.count)} strong />
+            <Tile label="Purchases" value={r.purchases.totalPaise} hint={bills(r.purchases.count)} />
+            <Tile label="Net purchases" value={r.netPurchasesPaise} hint={returnsHint(r.purchaseReturns.count)} strong />
+          </>
+        ) : show === "sales" ? (
+          <>
+            <Tile label="Sales" value={r.sales.totalPaise} hint={bills(r.sales.count)} />
+            <Tile label="Sale returns" value={r.saleReturns.totalPaise} hint={bills(r.saleReturns.count)} />
+            <Tile label="Net sales" value={r.netSalesPaise} hint={returnsHint(r.saleReturns.count)} strong />
+            <Tile label="Still to receive" value={r.sales.duePaise} hint="on these bills" />
+          </>
+        ) : (
+          <>
+            <Tile label="Purchases" value={r.purchases.totalPaise} hint={bills(r.purchases.count)} />
+            <Tile label="Purchase returns" value={r.purchaseReturns.totalPaise} hint={bills(r.purchaseReturns.count)} />
+            <Tile label="Net purchases" value={r.netPurchasesPaise} hint={returnsHint(r.purchaseReturns.count)} strong />
+            <Tile label="Still to pay" value={r.purchases.duePaise} hint="on these bills" />
+          </>
+        )}
       </div>
 
       {nothing ? (
-        <div className="rounded-xl border border-line bg-panel px-6 py-12 text-center text-sm text-muted">No sales or purchases on {formatDate(date)}. Use ‹ to look at an earlier day.</div>
+        <div className="rounded-xl border border-line bg-panel px-6 py-12 text-center text-sm text-muted">No {what} on {formatDate(date)}. Use ‹ to look at an earlier day.</div>
       ) : (
         <div className="flex flex-col gap-5">
-          <BillTable title="Sales" group={r.sales} side="sale" showShop={showShop} />
-          {r.saleReturns.bills.length > 0 && <BillTable title="Sale returns" group={r.saleReturns} side="sale" showShop={showShop} />}
-          <BillTable title="Purchases" group={r.purchases} side="purchase" showShop={showShop} />
-          {r.purchaseReturns.bills.length > 0 && <BillTable title="Purchase returns" group={r.purchaseReturns} side="purchase" showShop={showShop} />}
+          {withSales && <BillTable title="Sales" group={r.sales} side="sale" showShop={showShop} />}
+          {withSales && r.saleReturns.bills.length > 0 && <BillTable title="Sale returns" group={r.saleReturns} side="sale" showShop={showShop} />}
+          {withPurchases && <BillTable title="Purchases" group={r.purchases} side="purchase" showShop={showShop} />}
+          {withPurchases && r.purchaseReturns.bills.length > 0 && <BillTable title="Purchase returns" group={r.purchaseReturns} side="purchase" showShop={showShop} />}
         </div>
       )}
       <p className="mt-3 text-xs text-faint print:hidden">Cancelled bills are listed but not counted in the totals. Click a bill number to open it.</p>

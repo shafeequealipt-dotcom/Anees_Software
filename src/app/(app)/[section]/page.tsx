@@ -159,8 +159,8 @@ export default async function VoucherListPage({ params, searchParams }: { params
       {daily && from === to && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <DayNav date={from} today={today} mode="range" />
-          <Link href={`/reports/day-sales-purchases${from === today ? "" : `?date=${from}`}`} className="no-print text-sm font-medium text-brand-600 hover:underline">
-            Print the day&apos;s sales &amp; purchases
+          <Link href={`/reports/day-sales-purchases?show=${type === "sale_invoice" ? "sales" : "purchases"}${from === today ? "" : `&date=${from}`}`} className="no-print text-sm font-medium text-brand-600 hover:underline">
+            {type === "sale_invoice" ? "Print the day's sales" : "Print the day's purchases"}
           </Link>
         </div>
       )}

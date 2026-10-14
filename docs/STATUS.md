@@ -524,6 +524,9 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
 - `DailySalesFilters` now uses the same ‹ › day switcher (Daily sales report too). `PageHeader` back links
   and action buttons don't print.
 - Tests: `tests/day-sales-purchases.test.ts`.
+- `?show=sales` / `?show=purchases` / (none = both) picks what the day report shows and prints. Sale invoices link
+  to the sales view, Purchase bills to the purchases view; Reports lists all three. A Sales / Purchases / Both
+  switch on the page (not printed).
 
 ### Back button and Backspace — added 2026-10-14
 - `src/components/back-nav.tsx` (`BackButton`, in the top bar of every page except Home): goes to the page you
