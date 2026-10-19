@@ -335,7 +335,7 @@ describe("company switches", () => {
 
 describe("the real OpenRouter request", () => {
   it("is a well-formed request: plain-ASCII headers, the model fallback list, the OCR text in the prompt", async () => {
-    let seen: { url: string; headers: Headers; body: { models?: string[]; model?: string; messages: { content: { type: string; text?: string }[] }[] } } | null = null;
+    let seen: { url: string; headers: Headers; body: { reasoning?: unknown; model?: string; messages: { content: { type: string; text?: string }[] }[] } } | null = null;
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       // A real fetch refuses header values that aren't plain bytes (e.g. a typographic dash); so does Headers.
       const headers = new Headers(init.headers);
@@ -348,9 +348,36 @@ describe("the real OpenRouter request", () => {
       expect(out).toMatchObject({ type: "expense", total: 120 });
       expect(seen!.url).toBe("https://openrouter.ai/api/v1/chat/completions");
       expect(seen!.headers.get("authorization")).toBe("Bearer sk-or-v1-test");
-      expect(seen!.body.models).toEqual(["a/one:free", "b/two:free"]);
+      expect(seen!.body.model).toBe("a/one:free");
+      expect(seen!.body.reasoning).toEqual({ enabled: false });
       expect(seen!.body.messages[0].content.map((c) => c.type)).toEqual(["text"]);
       expect(seen!.body.messages[0].content[0].text).toContain("BESCOM Rs 120");
+    } finally {
+      vi.stubGlobal("fetch", modelsFetch);
+      setBillReader(fakeReader);
+    }
+  });
+});
+
+describe("when a free model gives nothing", () => {
+  it("the next model is tried, and the error says what the service said", async () => {
+    const asked: string[] = [];
+    const reply = (c: string | null) => Response.json({ model: "x", choices: [{ finish_reason: "stop", message: { content: c } }] });
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      const model = JSON.parse(String(init.body)).model as string;
+      asked.push(model);
+      if (model === "a/empty:free") return reply(null); // a 200 with no answer, as seen live
+      if (model === "b/error:free") return Response.json({ error: { message: "Provider returned error" } }, { status: 200 });
+      return reply(JSON.stringify({ type: "expense", total: 55, category: "Fuel", lines: [] }));
+    });
+    setBillReader();
+    const ctx0 = { suppliers: [], items: [], expenseCategories: [], taxRatesPct: [18], notes: null };
+    try {
+      const out = await billReader().read("sk-or-v1-test", ["a/empty:free", "b/error:free", "c/good:free"], { kind: "text", text: "fuel Rs 55" }, ctx0);
+      expect(out.total).toBe(55);
+      expect(asked).toEqual(["a/empty:free", "b/error:free", "c/good:free"]);
+      asked.length = 0;
+      await expect(billReader().read("sk-or-v1-test", ["a/empty:free", "b/error:free"], { kind: "text", text: "fuel Rs 55" }, ctx0)).rejects.toThrow(/Provider returned error/);
     } finally {
       vi.stubGlobal("fetch", modelsFetch);
       setBillReader(fakeReader);

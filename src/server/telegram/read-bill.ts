@@ -140,6 +140,33 @@ export function parseReply(text: string): ReadBill {
   return p.data;
 }
 
+/** One request to one model. Throws ReadError when it can't be reached or gives no usable answer. */
+async function askModel(apiKey: string, model: string, content: unknown[]): Promise<ReadBill> {
+  let res: Response;
+  try {
+    res = await fetch(`${OPENROUTER}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Billing app - Telegram bills" },
+      // Reading a bill needs no step-by-step thinking: switching it off gives the same answer in seconds, with a quarter of the tokens.
+      body: JSON.stringify({ model, temperature: 0, max_tokens: 4000, reasoning: { enabled: false }, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }),
+      signal: AbortSignal.timeout(90_000),
+    });
+  } catch (e) {
+    throw new ReadError(`Couldn't reach the AI service (OpenRouter): ${e instanceof Error ? e.message : "unknown error"}`.slice(0, 250));
+  }
+  type Choice = { message?: { content?: string | { type?: string; text?: string }[] | null; reasoning?: string | null }; finish_reason?: string; error?: { message?: string } };
+  const j = (await res.json().catch(() => null)) as { choices?: Choice[]; error?: { message?: string }; model?: string } | null;
+  const choice = j?.choices?.[0];
+  const raw = choice?.message?.content;
+  const answer = typeof raw === "string" ? raw : Array.isArray(raw) ? raw.map((p) => p.text ?? "").join("") : "";
+  if (!res.ok || !answer.trim()) {
+    // A 200 can still carry no answer: say what the service did say, never just the status.
+    const why = j?.error?.message ?? choice?.error?.message ?? (choice ? `no answer (finish: ${choice.finish_reason ?? "?"}${choice.message?.reasoning ? ", it used its tokens thinking" : ""})` : `no answer (HTTP ${res.status})`);
+    throw new ReadError(`The AI service (${j?.model ?? model}) said: ${why}`.slice(0, 250));
+  }
+  return parseReply(answer);
+}
+
 const openRouterReader: BillReader = {
   async read(apiKey, models, input, ctx) {
     const text = input.kind === "text" ? input.text : null;
@@ -151,20 +178,17 @@ const openRouterReader: BillReader = {
         else content.push({ type: "image_url", image_url: { url: `data:${f.mime};base64,${b64}` } });
       }
     }
-    let res: Response;
-    try {
-      res = await fetch(`${OPENROUTER}/chat/completions`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Billing app - Telegram bills" },
-        body: JSON.stringify({ ...(models.length > 1 ? { models: models.slice(0, 3) } : { model: models[0] }), temperature: 0, max_tokens: 6000, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }),
-        signal: AbortSignal.timeout(120_000),
-      });
-    } catch (e) {
-      throw new ReadError(`Couldn't reach the AI service (OpenRouter): ${e instanceof Error ? e.message : "unknown error"}`.slice(0, 250));
+    // Free models are flaky (busy, or an empty answer): try each in turn rather than giving up on the first.
+    let last: ReadError | null = null;
+    for (const model of models.slice(0, 3)) {
+      try {
+        return await askModel(apiKey, model, content);
+      } catch (e) {
+        if (!(e instanceof ReadError)) throw e;
+        last = e;
+      }
     }
-    const j = (await res.json().catch(() => null)) as { choices?: { message?: { content?: string } }[]; error?: { message?: string } } | null;
-    if (!res.ok || !j?.choices?.[0]?.message?.content) throw new ReadError(`The AI service said: ${j?.error?.message ?? res.status}`);
-    return parseReply(j.choices[0].message.content);
+    throw last ?? new ReadError("No AI model is set up.");
   },
   async checkKey(apiKey) {
     try {
