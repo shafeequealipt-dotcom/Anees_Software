@@ -2,6 +2,7 @@ import "server-only";
 import { checkGstin } from "@/lib/gst/gstin";
 import type { EntryResult, apiReference } from "../api-v1";
 import { esc, type InlineButton } from "./bot";
+import { reconcile } from "./reconcile";
 import type { ReadBill } from "./read-bill";
 
 /*
@@ -72,13 +73,21 @@ export function closest<T extends { name: string }>(name: string, xs: T[]): T | 
   return top >= 0.8 && !tie ? best : undefined;
 }
 
+/** A "unit" with a number in it ("100GM", "60ML") is a pack size: it belongs in the item's name, not in the units list. */
+function packAsName<T extends { description: string; unit: string | null }>(l: T): T {
+  if (!l.unit || !/\d/.test(l.unit)) return l;
+  const pack = l.unit.trim();
+  return { ...l, unit: null, description: l.description.toLowerCase().includes(pack.toLowerCase()) ? l.description : `${l.description} ${pack}`.slice(0, 200) };
+}
+
 const paiseOf = (rupees: number) => Math.round(rupees * 100);
 
 export function billRef(draftId: number) {
   return `tg-${draftId}`;
 }
 
-export function buildPlan(read: ReadBill, ref: Reference, draftId: number, today: string): Plan {
+export function buildPlan(rawRead: ReadBill, ref: Reference, draftId: number, today: string): Plan {
+  const { read, notes: reconcileNotes } = reconcile(rawRead);
   const plan: Plan = {
     type: read.type,
     supplier: null,
@@ -98,6 +107,7 @@ export function buildPlan(read: ReadBill, ref: Reference, draftId: number, today
     return plan;
   }
   if (read.problem) plan.notes.push(read.problem);
+  plan.notes.push(...(reconcileNotes.length > 6 ? [...reconcileNotes.slice(0, 6), `…and ${reconcileNotes.length - 6} more corrections or doubts like these.`] : reconcileNotes));
   if (plan.dateGuessed) plan.notes.push("No date could be read, so today's date is used.");
   else if (plan.date! > today) plan.notes.push("The date is in the future — check it.");
 
@@ -155,7 +165,8 @@ export function buildPlan(read: ReadBill, ref: Reference, draftId: number, today
   const byName = new Map(ref.items.map((i) => [norm(i.name), i]));
   const newRefs = new Map<string, string>();
   const lines: Record<string, unknown>[] = [];
-  for (const l of read.lines) {
+  for (const raw of read.lines) {
+    const l = packAsName(raw);
     const hit = (l.matchedCode && byCode.get(l.matchedCode.toLowerCase())) || byName.get(norm(l.description)) || closest(l.description, ref.items);
     let item: Record<string, unknown>;
     if (hit) {

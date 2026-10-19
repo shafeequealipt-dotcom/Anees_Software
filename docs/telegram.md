@@ -59,6 +59,19 @@ MedPlus Pharma", "item 2 is 12% GST" — and it reads the bill again with your n
 Settings → Telegram lets you change the models (up to three ids each, tried in order; saving checks they exist on
 OpenRouter) and choose "Always send the picture" instead.
 
+**The app checks the AI's numbers itself** (`src/server/telegram/reconcile.ts`). A printed line carries redundant
+figures: amount = qty × rate, rate = MRP less discount, and the amounts add up to the bill's subtotal and total
+quantity. When one figure was misread (a discount % taken for the rate, a dropped digit, a wrong quantity) the others
+usually still agree, so the app fixes the odd one out and lists every change as a ⚠️ line ("Line 11 (KM 6X WSI):
+rate read as ₹43.00, but the printed amount ₹912.00 for 2 and the MRP less discount both give ₹456.00, so I used
+that"). On a real crumpled 17-row bill this took the picture reading from several wrong rows to 16 of 17 right, with
+the lines adding up exactly to the bill's own subtotal. Pack sizes ("100GM", "60ML") go into the item's name, not the
+units list.
+
+**What free models are like:** they are often busy (rate-limited) and a few insist on "thinking", which makes a
+dense photo take about a minute. The bot tries each model in turn. For hard photos a cheap paid vision model as the
+last backup (a fraction of a rupee per bill) is far steadier; enter its id in "Picture models" if you want that.
+
 **Tip:** send the bill as a **File** (📎 → File), not a Photo. Telegram shrinks ordinary photos to 1280 pixels,
 which makes small print harder to read; a File arrives at full size.
 

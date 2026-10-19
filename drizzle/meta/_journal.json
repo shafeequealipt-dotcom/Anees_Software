@@ -218,6 +218,13 @@
       "when": 1792414639473,
       "tag": "0030_telegram_model_id_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792424068237,
+      "tag": "0031_telegram_vision_defaults",
+      "breakpoints": true
     }
   ]
 }

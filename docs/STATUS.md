@@ -618,3 +618,9 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   `deploy/server/setup-staging.sh`, `deploy/push-staging.sh`. `src/components/staging-bar.tsx` shows the red bar
   when `APP_ENV=staging`. `deploy/push.sh` (live) now refuses unless on a pushed `main` whose exact content was
   deployed to staging. Full description: `docs/workflow.md`.
+- **Cross-checking and robustness (migrations 0030, 0031)**: `reconcile.ts` repairs misread quantities/rates from the
+  bill's own redundant numbers (MRP, discount %, line amount, subtotal, total quantity — new fields the AI is asked
+  for) and reports every change; pack sizes become part of the item name; models are tried one by one, thinking is
+  switched off for bill reading (retried with thinking allowed for models that insist), errors quote the service;
+  a shrunk-photo hint suggests sending a File. Fixed: a typographic dash in the `X-Title` header made every
+  reading fail; the default text model id was missing `-a12b`; linking also works with `/link <code>`.

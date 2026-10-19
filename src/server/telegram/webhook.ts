@@ -247,6 +247,8 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
   }
   if (!best) return fail(lastError ?? "the AI gave no reading.");
   const { read, plan, check } = best;
+  // Telegram shrinks ordinary photos to about 1280 pixels, which is often too little for small print.
+  if (!check?.ok && (await isShrunk(images))) plan.notes.push("This photo was shrunk by Telegram. Sending the bill as a File (📎 → File) keeps its full detail and reads much better.");
   await db
     .update(telegramDrafts)
     .set({ status: "ready", extracted: { ...read, readBy: best.method }, entries: plan.entries, check, error: null, summaryMessageId: msgId, updatedAt: new Date() })
@@ -259,6 +261,21 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
     const [again] = await db.update(telegramDrafts).set({ status: "reading" }).where(and(eq(telegramDrafts.id, draftId), eq(telegramDrafts.status, "ready"))).returning({ id: telegramDrafts.id });
     if (again) await readDraft(db, cfg, draftId, "📖 Reading again with the new page…");
   }
+}
+
+/** True when an image is no larger than what Telegram's compression leaves (1280 px on its long side). */
+async function isShrunk(files: { mime: string; data: Buffer }[]): Promise<boolean> {
+  try {
+    const sharp = (await import("sharp")).default;
+    for (const f of files) {
+      if (!f.mime.startsWith("image/")) continue;
+      const m = await sharp(f.data, { failOn: "none" }).metadata();
+      if (Math.max(m.width ?? 0, m.height ?? 0) <= 1280) return true;
+    }
+  } catch {
+    /* no hint */
+  }
+  return false;
 }
 
 const payAccounts = (all: { id: number; name: string; kind: "cash" | "bank"; active: boolean }[]) => all.filter((a) => a.active).sort((a, b) => (a.kind === b.kind ? a.id - b.id : a.kind === "cash" ? -1 : 1));

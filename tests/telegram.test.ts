@@ -8,7 +8,7 @@ import { createCompany } from "@/server/admin";
 import { ensureApiUser, setApiEnabled } from "@/server/api-keys";
 import { runBatch } from "@/server/api-v1";
 import { runFirstSetup } from "@/server/setup";
-import { setTelegramTransport, type TgUpdate } from "@/server/telegram/bot";
+import { setTelegramTransport, type TelegramTransport, type TgUpdate } from "@/server/telegram/bot";
 import { makeLinkCode, saveTelegramConfig, setTelegramEnabled, telegramStatus, useLinkCode, webhookSecretMatches } from "@/server/telegram/config";
 import { closest } from "@/server/telegram/draft";
 import { parseTsv, setOcr, billOcr, type Ocr } from "@/server/telegram/ocr";
@@ -33,7 +33,7 @@ const modelsFetch = async (url: string) => Response.json({ data: ["nvidia/nemotr
 const sent: { method: string; params: Record<string, unknown> }[] = [];
 let nextMessageId = 1000;
 let webhookSecret = "";
-setTelegramTransport({
+const fakeTransport: TelegramTransport = {
   async call(_token, method, params) {
     sent.push({ method, params });
     if (method === "getMe") return { is_bot: true, username: "dnh_bills_bot" };
@@ -48,7 +48,8 @@ setTelegramTransport({
   async download() {
     return Buffer.from("fake-jpeg-bytes");
   },
-});
+};
+setTelegramTransport(fakeTransport);
 
 let nextRead: ReadBill;
 /** When set, decides each reading from the way it's asked (text or picture); otherwise `nextRead` is returned. */
@@ -381,6 +382,88 @@ describe("when a free model gives nothing", () => {
     } finally {
       vi.stubGlobal("fetch", modelsFetch);
       setBillReader(fakeReader);
+    }
+  });
+});
+
+describe("a crumpled 17-line bill with misread numbers", () => {
+  it("is repaired from its own printed numbers, entered with the right total, and the changes are shown", async () => {
+    const row = (description: string, qty: number, mrp: number, discountPct: number, rate: number, gstPct: number, amount: number): ReadBill["lines"][number] => ({ description, matchedCode: null, hsn: null, qty, unit: "100GM", rate, gstPct, discountPct, mrp, amount });
+    const lines = [
+      row("B&T CALENDULA & ALOEVERA CREAM", 5, 115, 32, 78.2, 18, 391),
+      row("DILUTION 30CH", 2, 175, 50, 87.5, 5, 175),
+      row("DILUTION 30CH", 1, 225, 50, 112.5, 5, 225), // qty misread: really 2
+      row("KM 6X WSI", 2, 800, 43, 43, 5, 912), // rate misread as the discount %
+      row("LIV T", 1, 328, 43, 186.96, 5, 186.96),
+      row("REFIRM D WSI", 9, 295, 35, 191.75, 5, 1725.75),
+      row("SUNNY HAIR COLOR BLACK", 12, 55, 32, 37.4, 18, 448.8),
+      row("THYROIDINUM 3X SBL", 1, 1125, 42, 652.5, 5, 652.5),
+    ];
+    // 391 + 175 + 225×… the printed total of exactly these rows, after tax and round-off.
+    const taxable = 391 + 175 + 225 + 912 + 186.96 + 1725.75 + 448.8 + 652.5;
+    const tax = 391 * 0.18 + (175 + 225 + 912 + 186.96 + 1725.75 + 652.5) * 0.05 + 448.8 * 0.18;
+    const printed = Math.round(taxable + tax);
+    nextRead = medBill({ supplier: { name: "S P HOMOEO MEDICALS", gstin: null, phone: null, address: null }, billNo: "A002784", date: "2026-08-18", lines, total: printed, subtotal: Math.round(taxable * 100) / 100, totalQty: 5 + 2 + 2 + 2 + 1 + 9 + 12 + 1 });
+    readImpl = null;
+    ocrUp = false; // straight to the picture, as for a photo OCR can't read
+    await handleUpdate(db, photo());
+    const shown = lastShown();
+    expect(shown.text).toContain("KM 6X WSI");
+    expect(shown.text).toMatch(/Line 4 \(KM 6X WSI\): rate read as ₹43\.00/);
+    expect(shown.text).toMatch(/Line 3 .*quantity read as 1.*means 2/);
+    expect(shown.text).toMatch(new RegExp(`Total .*${printed.toLocaleString("en-IN")}\\.00.*matches the bill`));
+    // Pack sizes became part of the name, not units.
+    expect(shown.text).toContain("DILUTION 30CH 100GM");
+    const d = await latestDraft();
+    await handleUpdate(db, tap(`e:${d.id}:0`));
+    const [bill] = (await purchaseBills()).filter((b) => b.supplierInvoiceNo === "A002784");
+    expect(bill.totalPaise).toBe(printed * 100);
+    ocrUp = true;
+  });
+});
+
+describe("a model that insists on thinking", () => {
+  it("is asked again with thinking allowed, a lower effort and room to finish", async () => {
+    const seen: { reasoning: unknown; max_tokens: number }[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      seen.push({ reasoning: body.reasoning, max_tokens: body.max_tokens });
+      if (body.reasoning?.enabled === false) return Response.json({ error: { message: "Reasoning is mandatory for this endpoint and cannot be disabled." } }, { status: 400 });
+      return Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ type: "expense", total: 9, category: "Fuel", lines: [] }) } }] });
+    });
+    setBillReader();
+    try {
+      const out = await billReader().read("sk-or-v1-test", ["m/think:free"], { kind: "text", text: "fuel Rs 9" }, { suppliers: [], items: [], expenseCategories: [], taxRatesPct: [18], notes: null });
+      expect(out.total).toBe(9);
+      expect(seen).toEqual([
+        { reasoning: { enabled: false }, max_tokens: 4000 },
+        { reasoning: { effort: "low" }, max_tokens: 12000 },
+      ]);
+    } finally {
+      vi.stubGlobal("fetch", modelsFetch);
+      setBillReader(fakeReader);
+    }
+  });
+});
+
+describe("a photo Telegram has shrunk", () => {
+  it("suggests sending the bill as a File when it can't be entered", async () => {
+    const sharp = (await import("sharp")).default;
+    const small = await sharp({ create: { width: 900, height: 1200, channels: 3, background: "#ffffff" } }).png().toBuffer();
+    setTelegramTransport({ ...fakeTransport, download: async () => small });
+    try {
+      readImpl = null;
+      ocrUp = true;
+      nextRead = medBill({ billNo: "SHR-1", total: 1 }); // doesn't add up
+      await handleUpdate(db, photo());
+      expect(lastShown().text).toMatch(/shrunk by Telegram.*File/s);
+      expect(lastShown().buttons.every((b) => b.callback_data?.startsWith("x:"))).toBe(true);
+      // The same bill that does add up needs no hint.
+      nextRead = medBill({ billNo: "SHR-2" });
+      await handleUpdate(db, photo());
+      expect(lastShown().text).not.toMatch(/shrunk/);
+    } finally {
+      setTelegramTransport(fakeTransport);
     }
   });
 });

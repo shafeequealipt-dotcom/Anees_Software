@@ -8,7 +8,7 @@ import { z } from "zod";
  */
 
 const num = z.coerce.number().finite();
-const optText = z.string().trim().max(300).nullish().transform((v) => v || null);
+const optText = z.string().trim().nullish().transform((v) => (v ? v.slice(0, 300) : null));
 
 export const billSchema = z.object({
   /** purchase_bill: goods bought from a supplier, line by line. expense: a service, utility or receipt. */
@@ -34,13 +34,20 @@ export const billSchema = z.object({
         /** Rate per unit before GST, in rupees, as printed (or worked out from the line amount). */
         rate: num.min(0),
         gstPct: num.min(0).max(100).nullish().transform((v) => v ?? null),
+        /** The printed discount % column (whether or not the rate already includes it; reconcile.ts works that out). */
         discountPct: num.min(0).max(100).nullish().transform((v) => v ?? 0),
+        /** Printed MRP / list price per unit, and the printed amount of the line: extra numbers to cross-check against. */
+        mrp: num.min(0).nullish(),
+        amount: num.min(0).nullish(),
       }),
     )
     .max(200)
     .default([]),
   /** The grand total printed on the bill, in rupees. */
   total: num.min(0).nullish().transform((v) => v ?? null),
+  /** The total of the line amounts before tax ("Gross Amount", "Sub total", taxable value) and the printed total quantity, to cross-check the lines. */
+  subtotal: num.min(0).nullish(),
+  totalQty: num.min(0).nullish(),
   /** Expenses: the category from the list given (or a short new one). */
   category: optText,
   /** Expenses: what it was for, in a few words. */
@@ -105,10 +112,15 @@ Decide the type:
 For a purchase bill:
 - supplier: name, GSTIN (15 characters) if printed, phone, address.
 - billNo and date (YYYY-MM-DD; Indian bills write dates day first).
-- One line per product: description as printed, qty, unit, "rate" = price per unit BEFORE GST in rupees (if only a tax-inclusive amount is printed, work back the pre-tax rate), gstPct = total GST % for the line (CGST+SGST, or IGST), discountPct if any, HSN if printed.
+- One line per product row, in order, none skipped (a row count like "Total Items: 17" tells you how many). For each:
+  - "description": the PRODUCT NAME column only, then the pack size (e.g. "100GM", "60ML", "30TAB") at the end. Short maker codes in an MFG/BRAND column (e.g. DRW, SBL, BAKS) are not part of the name.
+  - "qty": the QTY column. "unit": the selling unit (PCS, BOX, STRIP, NOS…) only if one is printed, else null. A pack size is NOT a unit.
+  - "rate": exactly what the RATE column shows, per unit, in rupees. "mrp": the MRP column. "discountPct": the DIS / DISC % column. "amount": the line's AMOUNT column. Copy each number from its own column; don't compute them and don't swap columns (a discount % is never the rate).
+  - "gstPct": the GST % of the row (CGST+SGST combined, or IGST). "hsn": the HSN code if printed.
+  - Read digits carefully: the printed rows are consistent (amount = qty × rate, rate = MRP less discount), so recheck any figure that breaks that.
 - "matchedCode": the Product ID of one of the company's existing items listed below, ONLY when it is clearly the same product; else null.
 - If the supplier is one of the company's suppliers listed below, use that exact name.
-- "total": the grand total printed on the bill (after tax and round-off), in rupees.
+- "total": the grand total printed on the bill (after tax and round-off), in rupees. "subtotal": the total of the line amounts before tax (labelled Gross Amount / Sub total / Taxable value), if printed. "totalQty": the printed total quantity, if any.
 - If a figure is unreadable, say so in "problem" rather than guessing.
 
 The company's suppliers that look close:
@@ -121,7 +133,7 @@ Expense categories: ${ctx.expenseCategories.join(", ") || "(none yet)"}
 GST rates in use: ${ctx.taxRatesPct.join(", ")}%
 ${ctx.notes ? `\nThe owner looked at an earlier reading and says:\n${ctx.notes}\nFollow these corrections.\n` : ""}
 Reply with JSON only, no other text, in this shape:
-{"type":"purchase_bill"|"expense"|"not_a_bill","problem":string|null,"supplier":{"name":string,"gstin":string|null,"phone":string|null,"address":string|null}|null,"billNo":string|null,"date":"YYYY-MM-DD"|null,"lines":[{"description":string,"matchedCode":string|null,"hsn":string|null,"qty":number,"unit":string|null,"rate":number,"gstPct":number|null,"discountPct":number|null}],"total":number|null,"category":string|null,"description":string|null}${text ? `\n\nThe OCR text of the bill:\n"""\n${text}\n"""` : ""}`;
+{"type":"purchase_bill"|"expense"|"not_a_bill","problem":string|null,"supplier":{"name":string,"gstin":string|null,"phone":string|null,"address":string|null}|null,"billNo":string|null,"date":"YYYY-MM-DD"|null,"lines":[{"description":string,"matchedCode":string|null,"hsn":string|null,"qty":number,"unit":string|null,"rate":number,"mrp":number|null,"discountPct":number|null,"amount":number|null,"gstPct":number|null}],"total":number|null,"subtotal":number|null,"totalQty":number|null,"category":string|null,"description":string|null}${text ? `\n\nThe OCR text of the bill:\n"""\n${text}\n"""` : ""}`;
 }
 
 /** Pulls the JSON object out of a model reply (which may wrap it in a code fence). */
@@ -140,16 +152,26 @@ export function parseReply(text: string): ReadBill {
   return p.data;
 }
 
-/** One request to one model. Throws ReadError when it can't be reached or gives no usable answer. */
-async function askModel(apiKey: string, model: string, content: unknown[]): Promise<ReadBill> {
+/**
+ * One request to one model. Throws ReadError when it can't be reached or gives no usable answer.
+ * `thinking`: false switches the model's step-by-step thinking off (same answer in seconds, a quarter of the tokens);
+ * true is for the few models that insist on thinking, which then get a modest effort and room to finish.
+ */
+async function askModel(apiKey: string, model: string, content: unknown[], thinking = false): Promise<ReadBill> {
   let res: Response;
   try {
     res = await fetch(`${OPENROUTER}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Billing app - Telegram bills" },
-      // Reading a bill needs no step-by-step thinking: switching it off gives the same answer in seconds, with a quarter of the tokens.
-      body: JSON.stringify({ model, temperature: 0, max_tokens: 4000, reasoning: { enabled: false }, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }),
-      signal: AbortSignal.timeout(90_000),
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        max_tokens: thinking ? 12_000 : 4000,
+        reasoning: thinking ? { effort: "low" } : { enabled: false },
+        response_format: { type: "json_object" },
+        messages: [{ role: "user", content }],
+      }),
+      signal: AbortSignal.timeout(thinking ? 150_000 : 100_000),
     });
   } catch (e) {
     throw new ReadError(`Couldn't reach the AI service (OpenRouter): ${e instanceof Error ? e.message : "unknown error"}`.slice(0, 250));
@@ -160,6 +182,8 @@ async function askModel(apiKey: string, model: string, content: unknown[]): Prom
   const raw = choice?.message?.content;
   const answer = typeof raw === "string" ? raw : Array.isArray(raw) ? raw.map((p) => p.text ?? "").join("") : "";
   if (!res.ok || !answer.trim()) {
+    // A model that can't have its thinking switched off is asked again with thinking allowed.
+    if (!thinking && /reasoning is mandatory/i.test(j?.error?.message ?? "")) return askModel(apiKey, model, content, true);
     // A 200 can still carry no answer: say what the service did say, never just the status.
     const why = j?.error?.message ?? choice?.error?.message ?? (choice ? `no answer (finish: ${choice.finish_reason ?? "?"}${choice.message?.reasoning ? ", it used its tokens thinking" : ""})` : `no answer (HTTP ${res.status})`);
     throw new ReadError(`The AI service (${j?.model ?? model}) said: ${why}`.slice(0, 250));
