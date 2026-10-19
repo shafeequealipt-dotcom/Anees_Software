@@ -30,6 +30,8 @@ export interface ApiContext {
   firmId: number;
   userId: number;
   keyName: string;
+  /** How the activity log names the source, e.g. "Via Telegram (sent by …)". Defaults to the API key's name. */
+  via?: string;
 }
 
 const ref = z.string().trim().min(1, "Every entry needs a ref.").max(120);
@@ -81,6 +83,9 @@ const entrySchema = z.discriminatedUnion("kind", [
     expectedTotalPaise: paise.optional().nullable(),
     roundOff: z.boolean().default(true),
     notes: text(2000),
+    /** Paid in full at once from this cash/bank account. Without it the bill is entered unpaid. */
+    paidFrom: pick("account").optional().nullable(),
+    paymentMode: text(30),
   }),
   z.object({ kind: z.literal("expense"), ref, date, category: z.string().trim().min(1).max(120), amountPaise: positivePaise, account: pick("account"), payee: text(200), party: pick("party").optional().nullable(), paymentMode: text(30), paymentRef: text(100), note: text(2000) }),
   z.object({ kind: z.literal("other_income"), ref, date, category: z.string().trim().min(1).max(120), amountPaise: positivePaise, account: pick("account"), payer: text(200), paymentMode: text(30), paymentRef: text(100), note: text(2000) }),
@@ -112,6 +117,8 @@ export interface EntryResult {
   id?: number;
   number?: string;
   link?: string;
+  /** Bills and payments: the total as the app worked it out. */
+  totalPaise?: number;
   message?: string;
   possibleDuplicates?: { id: number; number: string; type: string; date: string; amountPaise: number; party: string | null; link: string }[];
 }
@@ -183,7 +190,7 @@ export async function runBatch(db: DB, ctx: ApiContext, raw: unknown): Promise<{
           userId: ctx.userId,
           action: "create",
           entity: "api_batch",
-          summary: `Via API key "${ctx.keyName}": ${made} entered or changed, ${skipped} already there (refs ${results
+          summary: `${ctx.via ?? `Via API key "${ctx.keyName}"`}: ${made} entered or changed, ${skipped} already there (refs ${results
             .slice(0, 5)
             .map((r) => r.ref)
             .join(", ")}${results.length > 5 ? ", …" : ""})`,
@@ -296,7 +303,21 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
           cessBp: t?.cessBp ?? 0,
         });
       }
-      input = { type: "purchase_bill", date: e.date, dueDate: e.dueDate, partyId, supplierInvoiceNo: e.billNo, roundOff: e.roundOff, notes: e.notes, paidPaise: 0, lines };
+      const paidFrom = e.paidFrom ? await resolveAccount(db, f, e.paidFrom, byRef) : null;
+      input = {
+        type: "purchase_bill",
+        date: e.date,
+        dueDate: e.dueDate,
+        partyId,
+        supplierInvoiceNo: e.billNo,
+        roundOff: e.roundOff,
+        notes: e.notes,
+        // saveVoucher caps what's paid at the bill's total, so "everything" is any amount at least that big.
+        paidPaise: paidFrom ? Number.MAX_SAFE_INTEGER : 0,
+        accountId: paidFrom,
+        paymentMode: paidFrom ? (e.paymentMode ?? "Cash") : null,
+        lines,
+      };
       break;
     }
     case "expense":
@@ -349,7 +370,7 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
     }
     amount = v.totalPaise;
   }
-  const result: EntryResult = { ...base, status: made, id: saved.id, number: saved.number, link: linkOf(v.type, saved.id) };
+  const result: EntryResult = { ...base, status: made, id: saved.id, number: saved.number, link: linkOf(v.type, saved.id), totalPaise: v.totalPaise };
   const dupes = await lookAlikes(db, f, saved.id, v.type, v.date, amount, v.partyId, v.supplierInvoiceNo);
   if (dupes.length) result.possibleDuplicates = dupes;
   if (saved.warnings.length) result.message = saved.warnings.join(" ");
@@ -377,7 +398,7 @@ async function relink(db: DB, ctx: ApiContext, e: Extract<Entry, { kind: "relink
   await db.update(vouchers).set({ accountId: to, paymentMode: e.paymentMode ?? v.paymentMode, externalRef: v.externalRef ?? e.ref, updatedBy: ctx.userId, updatedAt: new Date() }).where(eq(vouchers.id, v.id));
   await db.update(moneyLedger).set({ accountId: to }).where(and(eq(moneyLedger.voucherId, v.id), eq(moneyLedger.accountId, v.accountId)));
   await syncVoucherGl(db, f, v.id);
-  await audit(db, { firmId: f, userId: ctx.userId, action: "update", entity: "voucher", entityId: v.id, summary: `Moved ${voucherNumber(v)} from ${from?.name ?? "?"} to ${target?.name ?? "?"} (via API key "${ctx.keyName}")` });
+  await audit(db, { firmId: f, userId: ctx.userId, action: "update", entity: "voucher", entityId: v.id, summary: `Moved ${voucherNumber(v)} from ${from?.name ?? "?"} to ${target?.name ?? "?"} (${(ctx.via ?? `via API key "${ctx.keyName}"`).replace(/^V/, "v")})` });
   return { ...base, status: dryRun ? "would_change" : "changed", id: v.id, number: voucherNumber(v), link, message: `${from?.name ?? "?"} → ${target?.name ?? "?"}` };
 }
 

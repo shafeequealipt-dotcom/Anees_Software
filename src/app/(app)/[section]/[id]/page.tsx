@@ -5,8 +5,8 @@ import { Alert, Badge, Money, PageHeader, Panel, StatusBadge, Table, td, th } fr
 import { ReceiveTransferForm } from "@/components/receive-transfer-form";
 import { VoucherActions } from "@/components/voucher-actions";
 import { getDb } from "@/db";
-import { accounts, firms, ledgerCategories, locations, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { accounts, firms, ledgerCategories, locations, telegramDrafts, telegramFiles, users } from "@/db/schema";
+import { asc, eq } from "drizzle-orm";
 import { amountInWords } from "@/lib/amount-in-words";
 import { canSeeVoucher, requireUser } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/dates";
@@ -46,6 +46,10 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   const [toAccount] = v.toAccountId ? await db.select().from(accounts).where(eq(accounts.id, v.toAccountId)) : [];
   const [category] = v.categoryId ? await db.select().from(ledgerCategories).where(eq(ledgerCategories.id, v.categoryId)) : [];
   const [creator] = v.createdBy ? await db.select({ name: users.name, isApi: users.isApi }).from(users).where(eq(users.id, v.createdBy)) : [];
+  // The photos it was read from, when it came in through the Telegram bot.
+  const telegramPhotos = creator?.isApi
+    ? await db.select({ id: telegramFiles.id, mime: telegramFiles.mime }).from(telegramFiles).innerJoin(telegramDrafts, eq(telegramDrafts.id, telegramFiles.draftId)).where(eq(telegramDrafts.voucherId, v.id)).orderBy(asc(telegramFiles.messageId))
+    : [];
   const [editor] = v.updatedBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.updatedBy)) : [];
   const [fromLocation] = v.locationId ? await db.select({ name: locations.name }).from(locations).where(eq(locations.id, v.locationId)) : [];
   const [toLocation] = v.toLocationId ? await db.select({ name: locations.name }).from(locations).where(eq(locations.id, v.toLocationId)) : [];
@@ -433,8 +437,18 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
             <dl className="flex flex-col gap-1 text-xs text-muted">
               <div>
                 Created {formatDateTime(v.createdAt)}
-                {creator ? (creator.isApi ? " through the API" : ` by ${creator.name}`) : ""}
+                {creator ? (creator.isApi ? (telegramPhotos.length ? " through Telegram" : " through the API") : ` by ${creator.name}`) : ""}
               </div>
+              {telegramPhotos.length > 0 && (
+                <div className="flex flex-wrap gap-x-3">
+                  {telegramPhotos.map((p, i) => (
+                    <a key={p.id} href={`/api/telegram/photo/${p.id}`} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
+                      View {p.mime === "application/pdf" ? "PDF" : "photo"}
+                      {telegramPhotos.length > 1 ? ` ${i + 1}` : ""}
+                    </a>
+                  ))}
+                </div>
+              )}
               {v.updatedAt.getTime() - v.createdAt.getTime() > 2000 && (
                 <div>
                   Last changed {formatDateTime(v.updatedAt)}

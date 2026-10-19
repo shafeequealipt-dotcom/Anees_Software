@@ -23,6 +23,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     can(user, "audit.view") && { href: "/settings/audit", label: "Activity log" },
     can(user, "backups.manage") && { href: "/settings/backups", label: "Backups" },
     can(user, "api.manage") && { href: "/settings/api-keys", label: "API keys" },
+    user.isOwner && { href: "/settings/telegram", label: "Telegram" },
   ].filter((t): t is { href: string; label: string } => !!t);
   if (tabs.length === 0) redirect("/?denied=1");
   return (

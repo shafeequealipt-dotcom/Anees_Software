@@ -46,7 +46,7 @@ documents to existing records.
 | `bank_account` | `name`, `bankName?`, `accountNo?`, `ifsc?`, `openingBalancePaise`, `openingDate` |
 | `party` | `name`, `partyKind` (`supplier`/`customer`/`both`), `gstin?`, `phone?`, `address?`, `stateCode?` (from the GSTIN if missing) |
 | `item` | `name`, `code?` (Product ID; else automatic), `itemKind?`, `hsn?`, `unit?`, `gstRatePct?`, `purchasePricePaise?`, `salePricePaise?` |
-| `purchase_bill` | `date`, `dueDate?`, `party`, `billNo`, `lines[]` (`item`, `qty`, `ratePaise`, `rateIncludesTax?`, `gstRatePct?`, `discountPct?`), `expectedTotalPaise?`, `roundOff?`, `notes?` — entered unpaid; refused if its total differs from `expectedTotalPaise` |
+| `purchase_bill` | `date`, `dueDate?`, `party`, `billNo`, `lines[]` (`item`, `qty`, `ratePaise`, `rateIncludesTax?`, `gstRatePct?`, `discountPct?`), `expectedTotalPaise?`, `roundOff?`, `notes?`, `paidFrom?` (account), `paymentMode?` — entered unpaid unless `paidFrom` is given (then fully paid from that account); refused if its total differs from `expectedTotalPaise` |
 | `expense` | `date`, `category` (made if new), `amountPaise`, `account`, `payee?` or `party?`, `paymentMode?`, `paymentRef?`, `note?` |
 | `other_income` | `date`, `category`, `amountPaise`, `account`, `payer?`, `paymentMode?`, `paymentRef?`, `note?` |
 | `payment_out` / `payment_in` | `date`, `party`, `amountPaise`, `account`, `paymentMode?`, `paymentRef?`, `note?` — settles the party's oldest open bills |
@@ -56,8 +56,8 @@ documents to existing records.
 ### Results
 
 One per entry, in order: `status` is `created` / `would_create`, `changed` / `would_change` (relink),
-`already_entered`, or `error` with a `message`. Created entries carry `id`, `number` and `link` (path in
-the app). Bills and payments also carry `possibleDuplicates`: active entries with the same amount within
+`already_entered`, or `error` with a `message`. Created entries carry `id`, `number`, `link` (path in
+the app) and, for bills and payments, `totalPaise`. Bills and payments also carry `possibleDuplicates`: active entries with the same amount within
 3 days (or, for a purchase bill, the same supplier bill number), to catch things already entered by hand.
 
 ## Command line (owner's Mac)
@@ -69,3 +69,8 @@ node scripts/books/api.mjs post  batch.json   # dry run, then saves only if it w
 ```
 
 `--url` / `BILLING_API_URL` point it elsewhere (e.g. a local copy); `--key-env NAME` picks another key variable.
+
+## Telegram
+
+The Telegram bill bot (`docs/telegram.md`) builds the same entries from a bill photo and runs them through this
+batch code inside the server, so it needs no API key.

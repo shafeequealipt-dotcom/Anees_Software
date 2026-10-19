@@ -1104,3 +1104,99 @@ export const zatcaInvoices = pgTable(
   },
   (t) => [uniqueIndex("zatca_invoices_voucher_key").on(t.voucherId), uniqueIndex("zatca_invoices_icv_key").on(t.firmId, t.icv), index("zatca_invoices_status_idx").on(t.firmId, t.status)],
 );
+
+/*
+ * The Telegram bill bot: the Owner sends a photo of a bill, the server reads it, replies with what it found,
+ * and enters it into the linked company when the Owner taps Enter. One bot for the whole app.
+ */
+
+/** The bot's settings (a single row). The bot token and the AI key are sealed (src/lib/secret-box.ts). */
+export const telegramConfig = pgTable("telegram_config", {
+  id: integer("id").primaryKey().default(1),
+  botTokenEnc: text("bot_token_enc"),
+  botUsername: varchar("bot_username", { length: 64 }),
+  /** SHA-256 of the secret Telegram sends with every webhook call. */
+  webhookSecretHash: varchar("webhook_secret_hash", { length: 64 }),
+  aiKeyEnc: text("ai_key_enc"),
+  /** Last four characters of each secret, so the screen can show which one is set. */
+  botTokenHint: varchar("bot_token_hint", { length: 8 }),
+  aiKeyHint: varchar("ai_key_hint", { length: 8 }),
+  model: varchar("model", { length: 100 }).notNull().default("anthropic/claude-sonnet-5-5"),
+  updatedBy: integer("updated_by").references(() => users.id),
+  updatedAt: updatedAt(),
+});
+
+/** A Telegram chat linked to an app user; bills sent from it go to `firmId`. */
+export const telegramLinks = pgTable(
+  "telegram_links",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    chatId: bigint("chat_id", { mode: "number" }).notNull(),
+    telegramName: varchar("telegram_name", { length: 120 }),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("telegram_links_chat_key").on(t.chatId)],
+);
+
+/** One-time codes behind the "Link my Telegram" button (only the SHA-256 is kept). */
+export const telegramLinkCodes = pgTable("telegram_link_codes", {
+  codeHash: varchar("code_hash", { length: 64 }).primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  firmId: integer("firm_id").notNull().references(() => firms.id),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+});
+
+/** Telegram update ids already handled, so a re-delivered update does nothing. Kept for a week. */
+export const telegramUpdates = pgTable("telegram_updates", {
+  updateId: bigint("update_id", { mode: "number" }).primaryKey(),
+  createdAt: createdAt(),
+});
+
+/**
+ * A bill sent to the bot: reading → ready (summary shown with buttons) → entered / discarded; failed when it
+ * couldn't be read. `sourceKey` is the album id or the message id, so the pages of an album share one draft.
+ */
+export const telegramDrafts = pgTable(
+  "telegram_drafts",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    chatId: bigint("chat_id", { mode: "number" }).notNull(),
+    sourceKey: varchar("source_key", { length: 80 }).notNull(),
+    sentBy: integer("sent_by").references(() => users.id, { onDelete: "set null" }),
+    /** The bot's message showing the summary (edited as the draft moves on). */
+    summaryMessageId: integer("summary_message_id"),
+    status: varchar("status", { length: 12 }).notNull().default("reading"),
+    /** What the AI read off the bill, checked against the schema in src/server/telegram/read-bill.ts. */
+    extracted: jsonb("extracted"),
+    /** Bookkeeping API entries (src/server/api-v1.ts) built from it, before the payment choice. */
+    entries: jsonb("entries"),
+    /** The dry run's results. */
+    check: jsonb("check"),
+    /** Corrections the Owner replied with, passed to the next read. */
+    notes: text("notes"),
+    error: text("error"),
+    voucherId: integer("voucher_id").references(() => vouchers.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("telegram_drafts_source_key").on(t.chatId, t.sourceKey), index("telegram_drafts_voucher_idx").on(t.voucherId)],
+);
+
+/** The photos / PDF pages of a draft, as sent. `data` is filled when the file is downloaded from Telegram. */
+export const telegramFiles = pgTable(
+  "telegram_files",
+  {
+    id: serial("id").primaryKey(),
+    draftId: integer("draft_id").notNull().references(() => telegramDrafts.id, { onDelete: "cascade" }),
+    messageId: integer("message_id").notNull(),
+    fileId: varchar("file_id", { length: 200 }).notNull(),
+    mime: varchar("mime", { length: 60 }).notNull(),
+    data: bytea("data"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("telegram_files_message_key").on(t.draftId, t.messageId)],
+);

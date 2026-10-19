@@ -581,3 +581,24 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   Bill lists tag its entries "API" (`by_api` in `listVouchers`), the bill page says "Created … through the API", and
   Settings → API keys lists the latest API entries. Batch audit entries name the key and who made it.
 - Tests: `tests/api-v1.test.ts`.
+
+### Telegram bill bot — added 2026-10-19 (migration `0028_telegram.sql`)
+- The Owner sends a photo or PDF of a bill to the company's Telegram bot; the server reads it with a vision model
+  (OpenRouter), shows a summary with buttons, and enters it only when the Owner taps Enter. Full notes:
+  `docs/telegram.md`.
+- Setup: Settings → Telegram (Owner only): bot token from @BotFather and an OpenRouter key, both sealed with
+  `src/lib/secret-box.ts` in `telegram_config` and never shown again; saving checks the token (`getMe`) and the key,
+  and registers `/api/telegram/webhook` with a random secret (only its SHA-256 is kept). Per-company setting
+  `telegramEnabled`. "Link my Telegram" makes a one-time 10-minute code (`/start <code>`); only an active Owner
+  can be linked (`telegram_links`, one company per chat, `/company` in the bot switches).
+- Flow (`src/server/telegram/`): webhook answers at once and works in `after()`; update ids de-duplicated
+  (`telegram_updates`). Photo/PDF → `telegram_drafts` + `telegram_files` (album = one draft) → `read-bill.ts` (AI
+  transcribes, zod-checked) → `draft.ts` (supplier by GSTIN/name, items by Product ID/name, new ones as `party`/`item`
+  entries; purchase bill with `expectedTotalPaise`, or an expense) → bookkeeping API dry run → summary.
+  Buttons: Enter – not paid yet / paid from <account> (purchase bills; expenses only the paid-from ones) / Discard.
+  A reply to the summary is a correction and re-reads. Enter is guarded ready → entering, so a double tap enters
+  once; entries are made by the API user, ref `tg-<draft>`, audit "Via Telegram (sent by …)".
+- Bill page: "Created … through Telegram" with View photo links (`/api/telegram/photo/[id]`, signed-in users who
+  can see the bill). Settings → Telegram lists recent bills sent. Telegram tables are left out of Excel backups.
+- API addition: `purchase_bill.paidFrom` (account) enters the bill fully paid from that account.
+- Tests: `tests/telegram.test.ts` (Telegram and the AI faked).
