@@ -17,7 +17,7 @@ import { billReader, parseModels, unknownModels } from "./read-bill";
  */
 
 export const DEFAULT_VISION_MODELS = "google/gemma-4-31b-it:free,nvidia/nemotron-3.5-super-vl:free,minimax/minimax-m3.1-flash:free";
-export const DEFAULT_TEXT_MODELS = "nvidia/nemotron-3-super-120b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free";
+export const DEFAULT_TEXT_MODELS = "nvidia/nemotron-3-super-120b-a12b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free";
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const hintOf = (s: string) => s.slice(-4);
@@ -90,7 +90,9 @@ export async function saveTelegramConfig(db: DB, input: { botToken?: string; aiK
     if (!value) continue;
     const ids = parseModels(value);
     if (!ids) throw new MasterError("Give up to three model ids separated by commas, like google/gemma-4-31b-it:free.", field);
-    const missing = await unknownModels(ids);
+    // Only ids that are new are checked: a model retired since it was saved mustn't block saving anything else.
+    const kept = parseModels(was ?? "") ?? [];
+    const missing = await unknownModels(ids.filter((i) => !kept.includes(i)));
     if (missing?.length) throw new MasterError(`OpenRouter doesn't list ${missing.join(", ")}. Free models come and go; check openrouter.ai/models.`, field);
     if (ids.join(",") !== was) changed.push(`${key === "model" ? "picture" : "text"} models`);
     set[key] = ids.join(",");

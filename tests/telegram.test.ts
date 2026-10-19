@@ -118,7 +118,7 @@ const medBill = (over: Partial<ReadBill> = {}): ReadBill => ({
 beforeAll(async () => {
   process.env.APP_SECRET = "test-secret-for-telegram-tests-0123456789";
   // OpenRouter's public model list, so the model ids typed on the settings screen can be checked offline.
-  vi.stubGlobal("fetch", async (url: string) => Response.json({ data: ["nvidia/nemotron-3-super-120b:free", "google/gemma-4-31b-it:free", "xingchen-agi/xing4.0-29b-a4b:free"].map((id) => ({ id })) }, { status: url.includes("/models") ? 200 : 404 }));
+  vi.stubGlobal("fetch", async (url: string) => Response.json({ data: ["nvidia/nemotron-3-super-120b-a12b:free", "google/gemma-4-31b-it:free", "xingchen-agi/xing4.0-29b-a4b:free"].map((id) => ({ id })) }, { status: url.includes("/models") ? 200 : 404 }));
   process.env.APP_URL = "https://billing.example.test";
   db = await testDb();
   await runFirstSetup(db, { businessName: "DNH Test", country: "IN", stateCode: "29", ownerName: "Owner", email: "o@t.example", password: "Tulsi-Garden-4471" } as never);
@@ -368,7 +368,7 @@ describe("reading with OCR text first, the picture as a backup", () => {
     expect(kinds()).toEqual(["text"]);
     const call = readCalls[0];
     expect(call.input).toMatchObject({ kind: "text", text: expect.stringContaining("MedPlus") });
-    expect(call.models).toEqual(["nvidia/nemotron-3-super-120b:free", "xingchen-agi/xing4.0-29b-a4b:free", "liquid/lfm-2.5-2.6b:free"]);
+    expect(call.models).toEqual(["nvidia/nemotron-3-super-120b-a12b:free", "xingchen-agi/xing4.0-29b-a4b:free", "liquid/lfm-2.5-2.6b:free"]);
     expect(lastShown().text).toContain("Read from the bill&#x27;s text".replace("&#x27;", "'"));
     expect(lastShown().buttons.length).toBeGreaterThan(1);
   });
@@ -410,9 +410,18 @@ describe("reading with OCR text first, the picture as a backup", () => {
   it("the settings validate model ids against OpenRouter's list", async () => {
     await expect(saveTelegramConfig(db, { textModel: "a/b" }, U, "https://billing.example.test")).rejects.toThrow(/doesn't list a\/b/);
     await expect(saveTelegramConfig(db, { textModel: "one/a,two/b,three/c,four/d" }, U, "https://billing.example.test")).rejects.toThrow(/up to three/);
-    await saveTelegramConfig(db, { textModel: "nvidia/nemotron-3-super-120b:free", readMode: "ocr" }, U, "https://billing.example.test");
-    expect((await telegramStatus(db)).textModel).toBe("nvidia/nemotron-3-super-120b:free");
-    await saveTelegramConfig(db, { textModel: "nvidia/nemotron-3-super-120b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free" }, U, "https://billing.example.test").catch(() => undefined);
+    await saveTelegramConfig(db, { textModel: "nvidia/nemotron-3-super-120b-a12b:free", readMode: "ocr" }, U, "https://billing.example.test");
+    expect((await telegramStatus(db)).textModel).toBe("nvidia/nemotron-3-super-120b-a12b:free");
+    await saveTelegramConfig(db, { textModel: "nvidia/nemotron-3-super-120b-a12b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free" }, U, "https://billing.example.test").catch(() => undefined);
+  });
+});
+
+describe("a model that has since been retired", () => {
+  it("doesn't block saving other settings; only newly typed ids are checked", async () => {
+    await db.update(telegramConfig).set({ textModel: "gone/retired:free" });
+    await saveTelegramConfig(db, { textModel: "gone/retired:free", readMode: "ocr" }, U, "https://billing.example.test");
+    await expect(saveTelegramConfig(db, { textModel: "gone/retired:free,also/missing:free" }, U, "https://billing.example.test")).rejects.toThrow(/doesn't list also\/missing:free(?!.*gone)/);
+    await db.update(telegramConfig).set({ textModel: "nvidia/nemotron-3-super-120b-a12b:free" });
   });
 });
 

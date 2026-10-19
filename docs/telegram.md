@@ -47,7 +47,7 @@ MedPlus Pharma", "item 2 is 12% GST" — and it reads the bill again with your n
 1. **The text is taken off the bill on our own server**: PDFs that contain text are read exactly (`pdftotext`);
    photos and scanned PDFs go through Tesseract (OCR) after a little cleaning (greyscale, contrast, enlarged).
    This costs nothing and takes about a second.
-2. **Only that text** goes to a free text model on OpenRouter (default `nvidia/nemotron-3-super-120b:free`, with
+2. **Only that text** goes to a free text model on OpenRouter (default `nvidia/nemotron-3-super-120b-a12b:free`, with
    two fallbacks), which returns the supplier, bill number, date, lines and total. A few hundred tokens, not the
    thousand-plus a picture costs. Only the suppliers/items that share a word with the bill's text are mentioned to
    the AI; matching to your real records is done by the app (GSTIN, Product ID, name, and near-identical names).

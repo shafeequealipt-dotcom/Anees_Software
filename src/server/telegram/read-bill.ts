@@ -186,6 +186,7 @@ export function parseModels(raw: string): string[] | null {
 
 /** Model ids OpenRouter doesn't list (null if the list couldn't be fetched, so a hiccup never blocks saving). */
 export async function unknownModels(ids: string[]): Promise<string[] | null> {
+  if (ids.length === 0) return [];
   try {
     const res = await fetch(`${OPENROUTER}/models`, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) return null;
