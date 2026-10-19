@@ -60,6 +60,7 @@ export const PERMISSION_GROUPS = [
       { key: "companies.manage", label: "Add and hide companies", hint: "Each company has its own parties, items, bills and tax settings." },
       { key: "audit.view", label: "See the activity log (who changed what)" },
       { key: "backups.manage", label: "See backups and start a backup now" },
+      { key: "api.manage", label: "Manage API keys", hint: "Make and revoke keys that let a program enter purchase bills, expenses and payments into a company. Owners always have this." },
     ],
   },
 ] as const;

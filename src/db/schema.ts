@@ -184,6 +184,27 @@ export const userLocations = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.locationId] })],
 );
 
+/**
+ * A key a program uses to enter data into one company through the API (`/api/v1`). Only its SHA-256
+ * is kept; the key itself is shown once when made. Entries are made in the name of the person who made it.
+ */
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: serial("id").primaryKey(),
+    firmId: integer("firm_id").notNull().references(() => firms.id),
+    name: varchar("name", { length: 80 }).notNull(),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+    /** The first characters of the key, so the owner can tell keys apart ("bk_7Hq2…"). */
+    hint: varchar("hint", { length: 12 }).notNull(),
+    createdBy: integer("created_by").notNull().references(() => users.id),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("api_keys_firm_idx").on(t.firmId)],
+);
+
 export const sessions = pgTable(
   "sessions",
   {
@@ -648,6 +669,11 @@ export const vouchers = pgTable(
     payKind: varchar("pay_kind", { length: 10 }),
     /** Partner payments: which partner was paid (the month is in payMonth). */
     partnerId: integer("partner_id").references(() => partners.id),
+    /**
+     * Entered through the API: the caller's own key for the source line (a bank statement row, a supplier
+     * bill), unique per company, so sending the same thing again never enters it twice.
+     */
+    externalRef: varchar("external_ref", { length: 120 }),
     /** India: tax collected at source by the seller (added to the bill total). */
     tcsBp: integer("tcs_bp").notNull().default(0),
     tcsPaise: paise("tcs_paise").notNull().default(0),
@@ -664,6 +690,7 @@ export const vouchers = pgTable(
     index("vouchers_date_idx").on(t.date),
     index("vouchers_employee_idx").on(t.employeeId, t.payMonth),
     index("vouchers_partner_idx").on(t.partnerId, t.payMonth),
+    uniqueIndex("vouchers_external_ref_key").on(t.firmId, t.externalRef).where(sql`${t.externalRef} is not null`),
   ],
 );
 

@@ -560,3 +560,17 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
 - The migration moves each custom role whose holders all work in one company to that company (live: "Wholesale
   staff" → Anees_Shop); unused or multi-company custom roles stay shared ("Orpheus").
 - Tests: `tests/company-isolation.test.ts` ("roles belonging to one company"), `tests/company-roles-migration.test.ts`.
+
+### Bookkeeping API — added 2026-10-19 (migration `0026_api_keys.sql`)
+- For entering a company's purchase bills, expenses, payments and transfers from documents without typing.
+  Full reference: `docs/api.md`. Command line on the owner's Mac: `scripts/books/api.mjs` (reference / check /
+  post; key only from the `BILLING_API_KEY_DNHCARE` environment variable).
+- Keys: Settings → API keys (permission `api.manage`, Owner by default), one company each, shown once, stored as
+  SHA-256 (`api_keys`, excluded from Excel backups), revocable; entries are made in the maker's name; ten bad
+  keys per address per ten minutes → 429 (`src/server/api-key-auth.ts`, in memory).
+- `GET /api/v1/reference`, `POST /api/v1/batch` (`src/server/api-v1.ts`): one transaction per batch, dry run by
+  default, refs make bills/payments idempotent (`vouchers.external_ref`, unique per company), parties/items/bank
+  accounts matched by GSTIN / Product ID / name, a purchase bill is refused if its total differs from the printed
+  one, `relink` moves an existing expense or payment to another account (money ledger + books resynced), and
+  look-alike hand-made entries are reported. Every batch is one Activity-log entry naming the key.
+- Tests: `tests/api-v1.test.ts`.

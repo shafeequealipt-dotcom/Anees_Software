@@ -129,6 +129,8 @@ export const voucherSchema = z.object({
   payKind: z.enum(["advance", "salary"]).nullish(),
   /** Partner payments only (set by the Partners screens): who was paid, for the month in payMonth. */
   partnerId: int.positive().nullish(),
+  /** API only: the caller's key for the source line (unique per company), so nothing is entered twice. */
+  externalRef: optText(120),
   /** For payments: bills to settle. Omit to settle the oldest open bills automatically. */
   allocations: z.array(z.object({ toVoucherId: int.positive(), amountPaise: nonNeg })).optional(),
 });
@@ -422,6 +424,7 @@ export async function saveVoucher(
       payMonth: employeeId || partnerId ? payMonth : null,
       payKind: employeeId ? payKind : null,
       partnerId,
+      externalRef: input.externalRef !== undefined && input.externalRef !== null ? input.externalRef : (existing?.externalRef ?? null),
       tcsBp,
       tcsPaise,
       tdsBp,

@@ -208,7 +208,7 @@ const SPECS: Spec[] = [
 ];
 
 /** Tables deliberately left out: logins and access (security), links and job records (tied to this server). */
-export const EXCLUDED_TABLES = ["roles", "users", "user_firms", "user_locations", "sessions", "login_attempts", "share_links", "partner_payout_links", "backup_runs", "backup_requests"];
+export const EXCLUDED_TABLES = ["roles", "users", "user_firms", "user_locations", "sessions", "login_attempts", "share_links", "partner_payout_links", "api_keys", "backup_runs", "backup_requests"];
 export const BACKUP_TABLES = SPECS.map((sp) => sp.key);
 
 // ─── Cell encoding ────────────────────────────────────────────────────────────
