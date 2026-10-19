@@ -63,6 +63,7 @@ export async function listRoles(db: DB, actor: Actor) {
     })
     .from(roles)
     .leftJoin(firms, eq(firms.id, roles.firmId))
+    .where(sql`not (${roles.isSystem} and ${roles.firmId} is null and lower(${roles.name}) = 'api')`)
     .orderBy(sql`${roles.isOwner} desc`, sql`${roles.firmId} is not null`, asc(roles.id));
   if (actor.isOwner) return list;
   // Someone else sees only shared roles and their companies' own, only the ones they could give, and
@@ -215,6 +216,7 @@ async function listAllUsers(db: DB) {
       mustChangePassword: users.mustChangePassword,
       totpEnabled: users.totpEnabled,
       lastLoginAt: users.lastLoginAt,
+      isApi: users.isApi,
     })
     .from(users)
     .innerJoin(roles, eq(roles.id, users.roleId))
@@ -310,6 +312,7 @@ export async function updateUser(db: DB, raw: z.input<typeof editUserSchema>, ac
   await assertCanManage(db, actor, i.id);
   const [cur] = await db.select({ u: users, isOwner: roles.isOwner }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(eq(users.id, i.id));
   if (!cur) throw new MasterError("That user no longer exists.");
+  if (cur.u.isApi) throw new MasterError("The API user is built in: it records entries made through API keys and can't be changed.");
   const [role] = await db.select().from(roles).where(eq(roles.id, i.roleId));
   if (!role) throw new MasterError("Choose a role.", "roleId");
   assertGrantable(actor, role, i.firmIds);
@@ -338,6 +341,8 @@ export async function updateUser(db: DB, raw: z.input<typeof editUserSchema>, ac
 }
 
 export async function resetUserPassword(db: DB, id: number, password: string, actor: Actor) {
+  const [target] = await db.select({ isApi: users.isApi }).from(users).where(eq(users.id, id));
+  if (target?.isApi) throw new MasterError("The API user can't sign in, so it has no password to set.");
   const actorId = actor.id;
   if (id === actorId) throw new MasterError("Change your own password from My account instead.");
   await assertCanManage(db, actor, id);

@@ -300,6 +300,11 @@ export default async function VoucherListPage({ params, searchParams }: { params
                               )}
                               {formatDate(r.date)}
                               {r.supplier_invoice_no && ` · bill ${r.supplier_invoice_no}`}
+                              {r.by_api && (
+                                <span className="ml-1.5 rounded bg-brand-50 px-1 py-px text-[10px] font-semibold uppercase tracking-wide text-brand-700" title="Entered through the API">
+                                  API
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div className="ml-auto flex shrink-0 flex-col items-end gap-1 sm:hidden">

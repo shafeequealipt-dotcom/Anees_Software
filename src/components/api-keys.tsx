@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { createApiKeyAction, revokeApiKeyAction } from "@/app/actions/api-keys";
-import { Alert, Badge, Button, Field, Input, Panel, Select, Table, td, th } from "./ui";
+import { createApiKeyAction, revokeApiKeyAction, setApiEnabledAction } from "@/app/actions/api-keys";
+import { Alert, Badge, Button, Field, Input, Panel, Select, Table, cx, td, th } from "./ui";
 
 interface KeyRow {
   id: number;
@@ -16,10 +16,22 @@ interface KeyRow {
   revokedAt: string | null;
 }
 
-export function ApiKeys({ keys, companies, currentFirmId }: { keys: KeyRow[]; companies: { id: number; name: string }[]; currentFirmId: number }) {
+interface ApiEntry {
+  id: number;
+  firmName: string;
+  label: string;
+  number: string;
+  link: string;
+  date: string;
+  party: string | null;
+  amount: string;
+  status: string;
+}
+
+export function ApiKeys({ keys, companies, offCompanies, currentFirmId, recent }: { keys: KeyRow[]; companies: { id: number; name: string }[]; offCompanies: string[]; currentFirmId: number; recent: ApiEntry[] }) {
   const router = useRouter();
   const [name, setName] = useState("Claude bookkeeping");
-  const [firmId, setFirmId] = useState(currentFirmId);
+  const [firmId, setFirmId] = useState(companies.some((c) => c.id === currentFirmId) ? currentFirmId : (companies[0]?.id ?? 0));
   const [token, setToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -47,8 +59,13 @@ export function ApiKeys({ keys, companies, currentFirmId }: { keys: KeyRow[]; co
     <div className="flex flex-col gap-4">
       <Panel title="Make an API key">
         <p className="mb-3 text-sm text-muted">
-          A key lets a program enter purchase bills, expenses, payments and transfers into one company, through the app&apos;s usual checks. Entries are made in your name, and the activity log says which key made them. Keys can&apos;t delete anything or change settings.
+          A key lets a program enter purchase bills, expenses, payments and transfers into one company only, through the app&apos;s usual checks. Everything it enters is recorded as made by the user <b>API</b>, and the activity log names the key. Keys can&apos;t delete anything or change settings.
         </p>
+        {offCompanies.length > 0 && (
+          <p className="mb-3 text-xs text-faint">
+            API access is off for {offCompanies.join(", ")}. The Owner turns it on per company under Settings → Companies.
+          </p>
+        )}
         {error && <div className="mb-3"><Alert tone="bad">{error}</Alert></div>}
         {token ? (
           <div className="flex flex-col gap-2">
@@ -69,6 +86,8 @@ export function ApiKeys({ keys, companies, currentFirmId }: { keys: KeyRow[]; co
               </Button>
             </div>
           </div>
+        ) : companies.length === 0 ? (
+          <Alert tone="brand">No company has API access turned on yet. Turn it on for a company under Settings → Companies first.</Alert>
         ) : (
           <div className="grid max-w-2xl gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <Field label="Name">
@@ -87,6 +106,40 @@ export function ApiKeys({ keys, companies, currentFirmId }: { keys: KeyRow[]; co
               {busy ? "Making…" : "Make key"}
             </Button>
           </div>
+        )}
+      </Panel>
+
+      <Panel title="Entered through the API" padded={false}>
+        {recent.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted">Nothing yet. Everything a key enters shows up here, recorded as made by the user API.</p>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th className={th}>Entry</th>
+                <th className={th}>Company</th>
+                <th className={th}>Date</th>
+                <th className={th}>Party</th>
+                <th className={th + " text-right"}>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((r) => (
+                <tr key={r.id} className={r.status === "active" ? "" : "opacity-60"}>
+                  <td className={td}>
+                    <a href={r.link} className="font-medium text-brand-600 hover:underline">
+                      {r.label} {r.number}
+                    </a>
+                    {r.status !== "active" && <span className="ml-1.5 text-xs text-faint">{r.status}</span>}
+                  </td>
+                  <td className={td}>{r.firmName}</td>
+                  <td className={td + " text-muted"}>{r.date}</td>
+                  <td className={td}>{r.party ?? "—"}</td>
+                  <td className={td + " num text-right"}>{r.amount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
         )}
       </Panel>
 
@@ -131,6 +184,34 @@ export function ApiKeys({ keys, companies, currentFirmId }: { keys: KeyRow[]; co
           </Table>
         )}
       </Panel>
+    </div>
+  );
+}
+
+/** Owner-only switch on the Companies screen: whether API keys may be used for a company. */
+export function ApiSwitch({ firmId, enabled }: { firmId: number; enabled: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <label className={cx("inline-flex cursor-pointer items-center gap-2 text-sm", busy && "opacity-60")}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          disabled={busy}
+          onChange={async (e) => {
+            setBusy(true);
+            setError(null);
+            const res = await setApiEnabledAction(firmId, e.target.checked);
+            setBusy(false);
+            if (!res.ok) return setError(res.error);
+            router.refresh();
+          }}
+        />
+        <span>{enabled ? "On" : "Off"}</span>
+      </label>
+      {error && <span className="text-xs text-bad">{error}</span>}
     </div>
   );
 }

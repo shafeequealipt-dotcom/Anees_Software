@@ -45,7 +45,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   const [account] = v.accountId ? await db.select().from(accounts).where(eq(accounts.id, v.accountId)) : [];
   const [toAccount] = v.toAccountId ? await db.select().from(accounts).where(eq(accounts.id, v.toAccountId)) : [];
   const [category] = v.categoryId ? await db.select().from(ledgerCategories).where(eq(ledgerCategories.id, v.categoryId)) : [];
-  const [creator] = v.createdBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.createdBy)) : [];
+  const [creator] = v.createdBy ? await db.select({ name: users.name, isApi: users.isApi }).from(users).where(eq(users.id, v.createdBy)) : [];
   const [editor] = v.updatedBy ? await db.select({ name: users.name }).from(users).where(eq(users.id, v.updatedBy)) : [];
   const [fromLocation] = v.locationId ? await db.select({ name: locations.name }).from(locations).where(eq(locations.id, v.locationId)) : [];
   const [toLocation] = v.toLocationId ? await db.select({ name: locations.name }).from(locations).where(eq(locations.id, v.toLocationId)) : [];
@@ -433,7 +433,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
             <dl className="flex flex-col gap-1 text-xs text-muted">
               <div>
                 Created {formatDateTime(v.createdAt)}
-                {creator ? ` by ${creator.name}` : ""}
+                {creator ? (creator.isApi ? " through the API" : ` by ${creator.name}`) : ""}
               </div>
               {v.updatedAt.getTime() - v.createdAt.getTime() > 2000 && (
                 <div>

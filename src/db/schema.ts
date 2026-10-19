@@ -158,6 +158,11 @@ export const users = pgTable(
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     mustChangePassword: boolean("must_change_password").notNull().default(false),
+    /**
+     * The one built-in "API" user: every entry made through an API key is recorded as made by it, so
+     * API entries are easy to tell apart. It can't sign in and can't be edited.
+     */
+    isApi: boolean("is_api").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

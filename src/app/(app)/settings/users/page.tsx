@@ -37,9 +37,14 @@ export default async function UsersPage() {
             {list.map((u) => (
               <tr key={u.id} className={u.active ? "" : "opacity-60"}>
                 <td className={td}>
-                  <Link href={`/settings/users/${u.id}`} className="font-medium text-brand-600 hover:underline">
-                    {u.name}
-                  </Link>
+                  {u.isApi ? (
+                    <span className="font-medium">{u.name}</span>
+                  ) : (
+                    <Link href={`/settings/users/${u.id}`} className="font-medium text-brand-600 hover:underline">
+                      {u.name}
+                    </Link>
+                  )}
+                  {u.isApi && <div className="text-xs text-muted">Built in: everything entered through API keys is recorded under this name.</div>}
                   {u.id === me.id && <span className="ml-1.5 text-xs text-faint">(you)</span>}
                 </td>
                 <td className={td}>{u.email}</td>
@@ -48,7 +53,7 @@ export default async function UsersPage() {
                 </td>
                 <td className={td + " text-muted"}>{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}</td>
                 <td className={td}>
-                  {!u.active ? <Badge tone="bad">Deactivated</Badge> : u.mustChangePassword ? <Badge tone="warn">Temporary password</Badge> : <Badge tone="good">Active</Badge>}
+                  {u.isApi ? <Badge tone="brand">API only · can&apos;t sign in</Badge> : !u.active ? <Badge tone="bad">Deactivated</Badge> : u.mustChangePassword ? <Badge tone="warn">Temporary password</Badge> : <Badge tone="good">Active</Badge>}
                 </td>
               </tr>
             ))}

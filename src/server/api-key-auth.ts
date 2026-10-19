@@ -23,6 +23,7 @@ export async function apiKeyUser(req: Request) {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   const db = await getDb();
   const who = token ? await verifyApiKey(db, token) : null;
+  if (who === "off") return { res: json({ error: "API access is turned off for this company. The owner turns it on under Settings → Companies." }, 403) };
   if (!who) {
     const cur = b && now - b.since < WINDOW_MS ? b : { n: 0, since: now };
     bad.set(ip, { n: cur.n + 1, since: cur.since });

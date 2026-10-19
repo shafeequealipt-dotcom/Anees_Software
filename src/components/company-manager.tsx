@@ -5,6 +5,7 @@ import { useState } from "react";
 import { createCompanyAction, setCompanyActiveAction } from "@/app/actions/admin";
 import { GST_STATES } from "@/lib/gst/states";
 import { REGIONS, type Country } from "@/lib/region";
+import { ApiSwitch } from "./api-keys";
 import { PartnersSwitch } from "./partners";
 import { Alert, Badge, Button, Field, Input, Panel, Select, Table, Textarea, td, th } from "./ui";
 
@@ -16,7 +17,7 @@ interface Company {
   active: boolean;
 }
 
-export function CompanyManager({ companies, currentId, partners }: { companies: Company[]; currentId: number; partners: Record<number, boolean> | null }) {
+export function CompanyManager({ companies, currentId, partners, api }: { companies: Company[]; currentId: number; partners: Record<number, boolean> | null; api: Record<number, boolean> | null }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [v, setV] = useState({ name: "", country: "IN" as Country, taxId: "", stateCode: "", address: "", phone: "" });
@@ -68,6 +69,7 @@ export function CompanyManager({ companies, currentId, partners }: { companies: 
               <th className={th}>Country</th>
               <th className={th}>Tax number</th>
               {partners && <th className={th} title="Onboard content partners and pay them each month for their views">Partners</th>}
+              {api && <th className={th} title="Let API keys enter bills, expenses and payments into this company">API</th>}
               <th className={th}></th>
             </tr>
           </thead>
@@ -82,6 +84,11 @@ export function CompanyManager({ companies, currentId, partners }: { companies: 
                 {partners && (
                   <td className={td}>
                     <PartnersSwitch firmId={c.id} enabled={!!partners[c.id]} />
+                  </td>
+                )}
+                {api && (
+                  <td className={td}>
+                    <ApiSwitch firmId={c.id} enabled={!!api[c.id]} />
                   </td>
                 )}
                 <td className={td + " text-right"}>

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
 import { AuthError, assertUser } from "@/lib/auth";
-import { createApiKey, revokeApiKey } from "@/server/api-keys";
+import { createApiKey, revokeApiKey, setApiEnabled } from "@/server/api-keys";
 import { MasterError } from "@/server/errors";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
@@ -33,6 +33,19 @@ export async function revokeApiKeyAction(id: number): Promise<Result> {
     const user = await assertUser("api.manage");
     await revokeApiKey(await getDb(), id, user.isOwner ? "all" : user.firms.map((f) => f.id), user.id);
     revalidatePath("/settings/api-keys");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Owner only: allow or stop API keys for one company. */
+export async function setApiEnabledAction(firmId: number, enabled: boolean): Promise<Result> {
+  try {
+    const user = await assertUser("companies.manage");
+    if (!user.isOwner) throw new AuthError("Only the Owner can turn API access on or off.");
+    await setApiEnabled(await getDb(), firmId, enabled, user.id);
+    revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
     return fail(e);

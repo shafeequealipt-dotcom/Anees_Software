@@ -4,8 +4,9 @@ import type { DB } from "@/db";
 import { accounts, auditLog, firms, items, moneyLedger, parties, stockLedger, users, vouchers } from "@/db/schema";
 import { gstinCheckDigit } from "@/lib/gst/gstin";
 import { setRegion } from "@/lib/region";
-import { createCompany } from "@/server/admin";
-import { createApiKey, revokeApiKey, verifyApiKey } from "@/server/api-keys";
+import { createCompany, listRoles, listUsers, resetUserPassword, updateUser } from "@/server/admin";
+import { needsSetup } from "@/server/setup";
+import { createApiKey, ensureApiUser, revokeApiKey, setApiEnabled, verifyApiKey } from "@/server/api-keys";
 import { apiReference, runBatch, type EntryResult } from "@/server/api-v1";
 import { runFirstSetup } from "@/server/setup";
 import { openBills, saveVoucher } from "@/server/vouchers";
@@ -15,8 +16,13 @@ let db: DB;
 let F: number;
 let other: number;
 let U: number;
+let API: number;
 let cash: number;
-const ctx = () => ({ firmId: F, userId: U, keyName: "Test key" });
+const ctx = () => ({ firmId: F, userId: API, keyName: "Test key" });
+const live = (v: Awaited<ReturnType<typeof verifyApiKey>>) => {
+  if (!v || v === "off") throw new Error(`key not usable: ${v}`);
+  return v;
+};
 const by = (rs: EntryResult[], ref: string) => rs.find((r) => r.ref === ref)!;
 /** Every account's balance (opening included), as the Cash & bank screen shows it. */
 const accountBalances = async (_db: DB, firmId: number) => {
@@ -63,13 +69,42 @@ beforeAll(async () => {
   [{ id: U }] = await db.select({ id: users.id }).from(users);
   [{ id: cash }] = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.firmId, F), eq(accounts.kind, "cash")));
   other = await createCompany(db, { name: "Other Co", country: "IN", taxId: "", stateCode: "27" }, { id: U, isOwner: true, firms: [], permissions: [] });
+  await setApiEnabled(db, F, true, U);
+  await setApiEnabled(db, other, true, U);
+  API = await ensureApiUser(db);
+});
+
+describe("turning the API on per company", () => {
+  it("a key can't be made, or used, for a company with API access off", async () => {
+    const off = await createCompany(db, { name: "Off Co", country: "IN", taxId: "", stateCode: "29" }, { id: U, isOwner: true, firms: [], permissions: [] });
+    await expect(createApiKey(db, off, "Nope", U)).rejects.toThrow(/API access is off for Off Co/);
+    await setApiEnabled(db, off, true, U);
+    const { token } = await createApiKey(db, off, "Off key", U);
+    expect(live(await verifyApiKey(db, token)).firmId).toBe(off);
+    await setApiEnabled(db, off, false, U);
+    expect(await verifyApiKey(db, token)).toBe("off");
+  });
+});
+
+describe("the API user", () => {
+  it("exists once, can't sign in or be edited, isn't offered as a role, and doesn't count for setup", async () => {
+    expect(await ensureApiUser(db)).toBe(API);
+    const [u] = await db.select().from(users).where(eq(users.id, API));
+    expect(u).toMatchObject({ name: "API", isApi: true, active: false });
+    const owner = { id: U, isOwner: true, firms: [], permissions: [] };
+    await expect(updateUser(db, { id: API, name: "Hacked", phone: "", roleId: u.roleId, active: true, firmIds: [F] }, owner)).rejects.toThrow(/built in/);
+    await expect(resetUserPassword(db, API, "Green-Harbour-7710", owner)).rejects.toThrow(/can't sign in/);
+    expect((await listRoles(db, owner)).some((r) => r.name === "API")).toBe(false);
+    expect((await listUsers(db, owner)).find((x) => x.id === API)?.isApi).toBe(true);
+    expect(await needsSetup(db)).toBe(false); // the owner exists; the API user alone wouldn't count
+  });
 });
 
 describe("API keys", () => {
   it("are shown once, stored only as a hash, and stop working when revoked", async () => {
     const { id, token } = await createApiKey(db, F, "Claude bookkeeping", U);
     expect(token).toMatch(/^bk_/);
-    expect(await verifyApiKey(db, token)).toMatchObject({ firmId: F, userId: U, keyName: "Claude bookkeeping" });
+    expect(await verifyApiKey(db, token)).toMatchObject({ firmId: F, userId: API, keyName: "Claude bookkeeping", madeBy: "Owner" });
     expect(await verifyApiKey(db, token + "x")).toBeNull();
     expect(await verifyApiKey(db, "nonsense")).toBeNull();
     const stored = JSON.stringify(await db.select().from((await import("@/db/schema")).apiKeys));
@@ -80,13 +115,13 @@ describe("API keys", () => {
 
   it("belong to one company: another company's key sees only its own records", async () => {
     const { token } = await createApiKey(db, other, "Other key", U);
-    const who = (await verifyApiKey(db, token))!;
+    const who = live(await verifyApiKey(db, token));
     expect(who.firmId).toBe(other);
     await saveVoucher(db, F, { type: "expense", date: "2026-09-02", paidPaise: 100, accountId: cash, lines: [{ description: "x", qtyMilli: 1000, ratePaise: 100 }] }, U);
     const ref = await apiReference(db, other);
     expect(ref.accounts.every((a) => a.id !== cash)).toBe(true);
     // A batch for the other company can't use this company's cash account by id.
-    const out = await runBatch(db, { firmId: other, userId: U, keyName: "Other key" }, { dryRun: true, entries: [{ kind: "expense", ref: "x1", date: "2026-09-02", category: "Rent", amountPaise: 100, account: { id: cash } }] });
+    const out = await runBatch(db, { firmId: other, userId: API, keyName: "Other key" }, { dryRun: true, entries: [{ kind: "expense", ref: "x1", date: "2026-09-02", category: "Rent", amountPaise: 100, account: { id: cash } }] });
     expect(out.ok).toBe(false);
     expect(out.results[0].message).toMatch(/isn't in this company/);
   });
@@ -118,7 +153,7 @@ describe("a batch", () => {
     expect(out.results.every((r) => r.status === "created")).toBe(true);
     const bill = by(out.results, "bill-MD-881");
     const [b] = await db.select().from(vouchers).where(eq(vouchers.id, bill.id!));
-    expect(b).toMatchObject({ type: "purchase_bill", totalPaise: 7_870_00, supplierInvoiceNo: "MD/881", externalRef: "bill-MD-881" });
+    expect(b).toMatchObject({ type: "purchase_bill", totalPaise: 7_870_00, supplierInvoiceNo: "MD/881", externalRef: "bill-MD-881", createdBy: API });
     // Intra-state (both Karnataka): CGST + SGST, no IGST.
     expect(b.igstPaise).toBe(0);
     expect(b.cgstPaise + b.sgstPaise).toBe(870_00);

@@ -12,7 +12,8 @@ import { isValidStateCode } from "@/lib/gst/states";
 import { MasterError } from "./masters";
 
 export async function needsSetup(db: DB): Promise<boolean> {
-  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(users);
+  // The built-in API user (made by a migration) doesn't count: setup is for the first real person.
+  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(users).where(eq(users.isApi, false));
   return row.n === 0;
 }
 
@@ -97,7 +98,7 @@ export async function runFirstSetup(db: DB, raw: z.input<typeof setupSchema>) {
   const passwordHash = await hashPassword(input.password);
 
   return db.transaction(async (tx) => {
-    const [count] = await tx.select({ n: sql<number>`count(*)::int` }).from(users);
+    const [count] = await tx.select({ n: sql<number>`count(*)::int` }).from(users).where(eq(users.isApi, false));
     if (count.n > 0) throw new MasterError("Setup has already been completed. Sign in instead.");
 
     const firmId = await insertCompany(tx as unknown as DB, {

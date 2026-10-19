@@ -42,6 +42,8 @@ export interface VoucherRow {
   location_name: string | null;
   to_location_name: string | null;
   received_at: string | null;
+  /** Entered through an API key (recorded as made by the built-in API user). */
+  by_api: boolean;
 }
 
 /** Restricts to what a location-restricted user may see: their shops' vouchers, plus any without a shop that they themselves entered. */
@@ -84,7 +86,8 @@ export async function listVouchers(
           ${balanceExpr} as balance_paise, v.payment_mode, a.name as account_name, c.name as category_name,
           (exists(select 1 from vouchers x where x.source_voucher_id = v.id and x.status = 'active')
             or exists(select 1 from voucher_sources vs join vouchers x on x.id = vs.voucher_id where vs.source_id = v.id and x.status = 'active')) as converted,
-          v.supplier_invoice_no, v.location_id, v.to_location_id, l1.name as location_name, l2.name as to_location_name, v.received_at::text as received_at
+          v.supplier_invoice_no, v.location_id, v.to_location_id, l1.name as location_name, l2.name as to_location_name, v.received_at::text as received_at,
+          coalesce((select u.is_api from users u where u.id = v.created_by), false) as by_api
         from vouchers v
         left join accounts a on a.id = v.account_id
         left join ledger_categories c on c.id = v.category_id

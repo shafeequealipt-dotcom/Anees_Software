@@ -33,7 +33,7 @@ export async function loginAction(_prev: FormState, form: FormData): Promise<For
 
   const db = await getDb();
   const [user] = await db.select().from(users).where(sql`lower(${users.email}) = ${email}`);
-  const ok = !!user && user.active && (await verifyPassword(user.passwordHash, password));
+  const ok = !!user && user.active && !user.isApi && (await verifyPassword(user.passwordHash, password));
   await recordLoginAttempt(email, ip, ok, user?.id);
   if (!ok) return { error: "That email and password don't match. Check for typos and try again." };
 

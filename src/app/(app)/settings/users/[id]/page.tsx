@@ -13,7 +13,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   const id = Number((await params).id);
   const db = await getDb();
   const [u] = (await listUsers(db, me)).filter((x) => x.id === id);
-  if (!u) notFound();
+  if (!u || u.isApi) notFound(); // the built-in API user can't be edited
   const [roles, companies, locations] = await Promise.all([listRoles(db, me), listCompanies(db, me), listAllLocations(db, me)]);
   return (
     <>

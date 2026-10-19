@@ -6,9 +6,12 @@ stock, ledgers and the books behave exactly as if the entry had been typed.
 
 ## Keys
 
-Settings → **API keys** (Owner, or anyone given "Manage API keys"). A key belongs to **one company**, is
-shown once, and only its SHA-256 is stored. Entries are made in the name of the person who made the key;
-the Activity log records each batch with the key's name. Revoke a key there; a key also stops working when
+First the Owner turns **API** on for the company under Settings → Companies (it's off for every company by
+default; turning it off stops that company's keys straight away). Then Settings → **API keys** (Owner, or
+anyone given "Manage API keys"). A key belongs to **one company**, is shown once, and only its SHA-256 is
+stored. Everything it enters is recorded as made by the built-in user **API** (which can't sign in), tagged
+"API" in the bill lists and listed under Settings → API keys; the Activity log records each batch with the
+key's name and who made it. Revoke a key there; a key also stops working when
 its maker is deactivated. Ten wrong keys from one address in ten minutes and that address waits.
 
 Send it as `Authorization: Bearer bk_…` over HTTPS. On the owner's Mac the DNHCARE key lives only in

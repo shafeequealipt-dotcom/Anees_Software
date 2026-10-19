@@ -573,4 +573,11 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   accounts matched by GSTIN / Product ID / name, a purchase bill is refused if its total differs from the printed
   one, `relink` moves an existing expense or payment to another account (money ledger + books resynced), and
   look-alike hand-made entries are reported. Every batch is one Activity-log entry naming the key.
+- **Per-company switch**: setting `apiEnabled` (Settings → Companies, Owner only). Keys can only be made for, and
+  only work for, companies with it on (`verifyApiKey` returns "off" → 403).
+- **API user** (`users.is_api`, migration `0027_api_user.sql`): made on first key by `ensureApiUser` (with a built-in
+  no-permission "API" role, hidden from role pickers). Every API entry is created by it; it's deactivated, has no
+  usable password, sign-in refuses it, it can't be edited or have a password set, and setup's user count ignores it.
+  Bill lists tag its entries "API" (`by_api` in `listVouchers`), the bill page says "Created … through the API", and
+  Settings → API keys lists the latest API entries. Batch audit entries name the key and who made it.
 - Tests: `tests/api-v1.test.ts`.

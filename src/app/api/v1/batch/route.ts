@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     return apiJson({ error: "The body must be JSON." }, 400);
   }
   try {
-    const out = await runBatch(a.db, { firmId: a.who.firmId, userId: a.who.userId, keyName: a.who.keyName }, body);
+    const out = await runBatch(a.db, { firmId: a.who.firmId, userId: a.who.userId, keyName: `${a.who.keyName}, made by ${a.who.madeBy}` }, body);
     return apiJson(out, out.ok ? 200 : 422);
   } catch (e) {
     if (e instanceof MasterError) return apiJson({ error: e.message }, 400);

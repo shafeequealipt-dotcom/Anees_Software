@@ -35,6 +35,8 @@ export const DEFAULT_SETTINGS = {
   showHsnSummary: true,
   showPartyBalanceOnInvoice: false,
   thermalWidthMm: 80 as 58 | 80,
+  /** Lets API keys enter data into this company (Settings → Companies, Owner only). Keys of a company with it off don't work. */
+  apiEnabled: false,
   /** Turns on the Partners section (onboarding, monthly view-based payments, payout invoices). Set per company by the Owner. */
   partnersEnabled: false,
   /** Payout invoices: number prefix, statutory ids, signatory, and the usual wording and rate. */
