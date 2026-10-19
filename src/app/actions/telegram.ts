@@ -59,11 +59,11 @@ export async function setTelegramEnabledAction(firmId: number, enabled: boolean)
 }
 
 /** A one-time link (10 minutes) that opens the bot and links this Telegram account to `firmId`. */
-export async function linkTelegramAction(firmId: number): Promise<Result<{ url: string }>> {
+export async function linkTelegramAction(firmId: number): Promise<Result<{ url: string; code: string }>> {
   try {
     const user = await owner();
-    const { url } = await makeLinkCode(await getDb(), user.id, firmId);
-    return { ok: true, url };
+    const { url, code } = await makeLinkCode(await getDb(), user.id, firmId);
+    return { ok: true, url, code };
   } catch (e) {
     return fail(e);
   }

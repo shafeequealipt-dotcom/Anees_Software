@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@/db";
-import { accounts, auditLog, firms, items, parties, telegramConfig, telegramDrafts, telegramFiles, telegramLinkCodes, users, vouchers } from "@/db/schema";
+import { accounts, auditLog, firms, items, parties, telegramConfig, telegramDrafts, telegramFiles, telegramLinkCodes, telegramLinks, users, vouchers } from "@/db/schema";
 import { gstinCheckDigit } from "@/lib/gst/gstin";
 import { setRegion } from "@/lib/region";
 import { createCompany } from "@/server/admin";
@@ -87,7 +87,7 @@ const photo = (extra: Partial<NonNullable<TgUpdate["message"]>> = {}, chat = CHA
   update_id: updateId++,
   message: { message_id: messageId++, chat: { id: chat, type: "private" }, from: { id: chat, first_name: "Shafeeque" }, photo: [{ file_id: `f${messageId}`, file_unique_id: `u${messageId}`, width: 1000, height: 1400, file_size: 2048 }], ...extra },
 });
-const text = (t: string, extra: Partial<NonNullable<TgUpdate["message"]>> = {}): TgUpdate => ({ update_id: updateId++, message: { message_id: messageId++, chat: { id: CHAT, type: "private" }, text: t, ...extra } });
+const text = (t: string, extra: Partial<NonNullable<TgUpdate["message"]>> = {}, chat = CHAT): TgUpdate => ({ update_id: updateId++, message: { message_id: messageId++, chat: { id: chat, type: "private" }, text: t, ...extra } });
 const tap = (data: string, msg = 1): TgUpdate => ({ update_id: updateId++, callback_query: { id: `cb${updateId}`, from: { id: CHAT }, message: { message_id: msg, chat: { id: CHAT } }, data } });
 
 /** The last message the bot showed (sent or edited), with its buttons. */
@@ -169,6 +169,15 @@ describe("linking a chat", () => {
     await handleUpdate(db, text(`/start ${code}`));
     expect(lastShown().text).toMatch(/Linked .*DNH Test/);
     expect(await useLinkCode(db, code, 999, null)).toMatchObject({ ok: false });
+  });
+
+  it("a code sent as /link works, for a chat whose Start lost the code", async () => {
+    const { code } = await makeLinkCode(db, U, F);
+    await handleUpdate(db, text("/start", {}, 31337));
+    expect(lastShown().text).toMatch(/private.*\/link CODE/s);
+    await handleUpdate(db, text(`/link ${code}`, {}, 31337));
+    expect(lastShown().text).toMatch(/Linked .*DNH Test/);
+    await db.delete(telegramLinks).where(eq(telegramLinks.chatId, 31337));
   });
 
   it("an expired code doesn't work", async () => {

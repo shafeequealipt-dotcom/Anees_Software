@@ -164,7 +164,10 @@ export async function telegramEnabled(db: DB, firmId: number) {
 
 const CODE_MINUTES = 10;
 
-/** A one-time code for the "Link my Telegram" button; it opens the bot with `/start <code>`. */
+/**
+ * A one-time code for the "Link my Telegram" button. The link opens the bot with `/start <code>`; because Telegram
+ * sometimes drops that code when the chat already exists, the code is also shown so it can be sent as `/link <code>`.
+ */
 export async function makeLinkCode(db: DB, userId: number, firmId: number): Promise<{ code: string; url: string }> {
   const cfg = await telegramStatus(db);
   if (!cfg.connected || !cfg.botUsername) throw new MasterError("Connect the bot first.");

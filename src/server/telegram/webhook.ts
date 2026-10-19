@@ -81,7 +81,7 @@ async function onMessage(db: DB, cfg: TelegramSecrets, m: TgMessage, opts: Handl
   if (m.chat.type !== "private") return;
   const text = (m.text ?? "").trim();
 
-  const start = /^\/start(?:@\w+)?\s+(\S+)/.exec(text);
+  const start = /^\/(?:start|link)(?:@\w+)?\s+(\S+)/.exec(text);
   if (start) {
     const name = [m.from?.first_name, m.from?.last_name].filter(Boolean).join(" ") || m.from?.username || null;
     const r = await useLinkCode(db, start[1], chatId, name);
@@ -91,7 +91,7 @@ async function onMessage(db: DB, cfg: TelegramSecrets, m: TgMessage, opts: Handl
 
   const who = await linkedOwner(db, chatId);
   if (!who) {
-    await sendMessage(cfg.token, chatId, "This bot is private. The owner links it from the billing app: Settings → Telegram.");
+    await sendMessage(cfg.token, chatId, "This bot is private. To link this chat: in the billing app open Settings → Telegram → Link my Telegram, then send me the code shown there as <code>/link CODE</code>.");
     return;
   }
 

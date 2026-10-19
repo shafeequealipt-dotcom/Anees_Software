@@ -58,6 +58,7 @@ export function TelegramSettings({ status, companies, links, drafts, httpsOk }: 
   // The picked company, or the first one that's on (the list changes as companies are switched on or off).
   const linkFirm = on.some((c) => c.id === pickedFirm) ? pickedFirm : (on[0]?.id ?? 0);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
+  const [linkCode, setLinkCode] = useState<string | null>(null);
 
   async function run<T extends { ok: boolean }>(p: Promise<T>): Promise<T | null> {
     setBusy(true);
@@ -174,12 +175,28 @@ export function TelegramSettings({ status, companies, links, drafts, httpsOk }: 
           <p className="text-sm text-muted">Turn Telegram bills on for a company first.</p>
         ) : linkUrl ? (
           <div className="flex flex-col gap-2">
-            <Alert tone="brand">Open this on the phone with your Telegram and tap Start. It works once, for 10 minutes.</Alert>
-            <div className="flex flex-wrap items-center gap-2">
-              <a href={linkUrl} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:underline">
-                Open @{status.botUsername} in Telegram
-              </a>
-              <Button size="sm" variant="ghost" onClick={() => setLinkUrl(null)}>
+            <Alert tone="brand">Link it in Telegram within 10 minutes. The code works once.</Alert>
+            <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
+              <li>
+                Open{" "}
+                <a href={linkUrl} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:underline">
+                  @{status.botUsername} in Telegram
+                </a>{" "}
+                and tap <b>Start</b>.
+              </li>
+              <li>
+                If it just says the bot is private, send it this message: <code className="break-all rounded border border-line bg-ground px-1.5 py-0.5 font-mono text-xs">/link {linkCode}</code>
+              </li>
+            </ol>
+            <div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setLinkUrl(null);
+                  setLinkCode(null);
+                }}
+              >
                 Done
               </Button>
             </div>
@@ -200,7 +217,10 @@ export function TelegramSettings({ status, companies, links, drafts, httpsOk }: 
               disabled={busy}
               onClick={async () => {
                 const res = await run(linkTelegramAction(linkFirm));
-                if (res && "url" in res) setLinkUrl(res.url as string);
+                if (res && "url" in res) {
+                  setLinkUrl(res.url as string);
+                  setLinkCode(res.code as string);
+                }
               }}
             >
               Link my Telegram
