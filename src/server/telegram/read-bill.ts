@@ -155,12 +155,12 @@ const openRouterReader: BillReader = {
     try {
       res = await fetch(`${OPENROUTER}/chat/completions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Billing app – Telegram bills" },
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Billing app - Telegram bills" },
         body: JSON.stringify({ ...(models.length > 1 ? { models: models.slice(0, 3) } : { model: models[0] }), temperature: 0, max_tokens: 6000, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }),
         signal: AbortSignal.timeout(120_000),
       });
-    } catch {
-      throw new ReadError("Couldn't reach the AI service (OpenRouter).");
+    } catch (e) {
+      throw new ReadError(`Couldn't reach the AI service (OpenRouter): ${e instanceof Error ? e.message : "unknown error"}`.slice(0, 250));
     }
     const j = (await res.json().catch(() => null)) as { choices?: { message?: { content?: string } }[]; error?: { message?: string } } | null;
     if (!res.ok || !j?.choices?.[0]?.message?.content) throw new ReadError(`The AI service said: ${j?.error?.message ?? res.status}`);

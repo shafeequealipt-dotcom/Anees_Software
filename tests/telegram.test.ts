@@ -12,7 +12,7 @@ import { setTelegramTransport, type TgUpdate } from "@/server/telegram/bot";
 import { makeLinkCode, saveTelegramConfig, setTelegramEnabled, telegramStatus, useLinkCode, webhookSecretMatches } from "@/server/telegram/config";
 import { closest } from "@/server/telegram/draft";
 import { parseTsv, setOcr, billOcr, type Ocr } from "@/server/telegram/ocr";
-import { candidates, parseModels, parseReply, setBillReader, type ReadBill, type ReadContext, type ReadInput } from "@/server/telegram/read-bill";
+import { billReader, candidates, parseModels, parseReply, setBillReader, type BillReader, type ReadBill, type ReadContext, type ReadInput } from "@/server/telegram/read-bill";
 import { firstDelivery, handleUpdate } from "@/server/telegram/webhook";
 import { testDb } from "./helpers/db";
 
@@ -25,6 +25,9 @@ let db: DB;
 let F: number;
 let U: number;
 let cash: number;
+
+// OpenRouter's public model list, which is all most tests ever ask the network for.
+const modelsFetch = async (url: string) => Response.json({ data: ["nvidia/nemotron-3-super-120b-a12b:free", "google/gemma-4-31b-it:free", "xingchen-agi/xing4.0-29b-a4b:free"].map((id) => ({ id })) }, { status: String(url).includes("/models") ? 200 : 404 });
 
 // ─── Fakes: Telegram and the AI ──────────────────────────────────────────────
 const sent: { method: string; params: Record<string, unknown> }[] = [];
@@ -51,7 +54,7 @@ let nextRead: ReadBill;
 /** When set, decides each reading from the way it's asked (text or picture); otherwise `nextRead` is returned. */
 let readImpl: ((input: ReadInput) => ReadBill) | null = null;
 const readCalls: { ctx: ReadContext; input: ReadInput; models: string[] }[] = [];
-setBillReader({
+const fakeReader: BillReader = {
   async read(_key, models, input, ctx) {
     readCalls.push({ ctx, input, models });
     return readImpl ? readImpl(input) : nextRead;
@@ -59,7 +62,8 @@ setBillReader({
   async checkKey(key) {
     return key.includes("bad") ? "OpenRouter didn't accept that key." : null;
   },
-});
+};
+setBillReader(fakeReader);
 
 // The OCR: reports itself installed and "reads" a fixed bill text.
 let ocrUp = true;
@@ -118,7 +122,7 @@ const medBill = (over: Partial<ReadBill> = {}): ReadBill => ({
 beforeAll(async () => {
   process.env.APP_SECRET = "test-secret-for-telegram-tests-0123456789";
   // OpenRouter's public model list, so the model ids typed on the settings screen can be checked offline.
-  vi.stubGlobal("fetch", async (url: string) => Response.json({ data: ["nvidia/nemotron-3-super-120b-a12b:free", "google/gemma-4-31b-it:free", "xingchen-agi/xing4.0-29b-a4b:free"].map((id) => ({ id })) }, { status: url.includes("/models") ? 200 : 404 }));
+  vi.stubGlobal("fetch", modelsFetch);
   process.env.APP_URL = "https://billing.example.test";
   db = await testDb();
   await runFirstSetup(db, { businessName: "DNH Test", country: "IN", stateCode: "29", ownerName: "Owner", email: "o@t.example", password: "Tulsi-Garden-4471" } as never);
@@ -326,6 +330,31 @@ describe("company switches", () => {
     await handleUpdate(db, tap(`co:${other}`));
     expect(lastShown().text).toContain("Other Co");
     await handleUpdate(db, tap(`co:${F}`));
+  });
+});
+
+describe("the real OpenRouter request", () => {
+  it("is a well-formed request: plain-ASCII headers, the model fallback list, the OCR text in the prompt", async () => {
+    let seen: { url: string; headers: Headers; body: { models?: string[]; model?: string; messages: { content: { type: string; text?: string }[] }[] } } | null = null;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      // A real fetch refuses header values that aren't plain bytes (e.g. a typographic dash); so does Headers.
+      const headers = new Headers(init.headers);
+      seen = { url, headers, body: JSON.parse(String(init.body)) };
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ type: "expense", total: 120, category: "Fuel", lines: [] }) } }] });
+    });
+    setBillReader(); // the real reader, talking to the stubbed network
+    try {
+      const out = await billReader().read("sk-or-v1-test", ["a/one:free", "b/two:free"], { kind: "text", text: "BESCOM Rs 120" }, { suppliers: [], items: [], expenseCategories: ["Fuel"], taxRatesPct: [18], notes: null });
+      expect(out).toMatchObject({ type: "expense", total: 120 });
+      expect(seen!.url).toBe("https://openrouter.ai/api/v1/chat/completions");
+      expect(seen!.headers.get("authorization")).toBe("Bearer sk-or-v1-test");
+      expect(seen!.body.models).toEqual(["a/one:free", "b/two:free"]);
+      expect(seen!.body.messages[0].content.map((c) => c.type)).toEqual(["text"]);
+      expect(seen!.body.messages[0].content[0].text).toContain("BESCOM Rs 120");
+    } finally {
+      vi.stubGlobal("fetch", modelsFetch);
+      setBillReader(fakeReader);
+    }
   });
 });
 
