@@ -42,7 +42,34 @@ MedPlus Pharma", "item 2 is 12% GST" — and it reads the bill again with your n
 - Bill lists tag it "API"; Settings → Telegram lists the latest bills sent and what became of them.
 - The Activity log says "Via Telegram (sent by …)".
 
+## How a bill is read (free by default)
+
+1. **The text is taken off the bill on our own server**: PDFs that contain text are read exactly (`pdftotext`);
+   photos and scanned PDFs go through Tesseract (OCR) after a little cleaning (greyscale, contrast, enlarged).
+   This costs nothing and takes about a second.
+2. **Only that text** goes to a free text model on OpenRouter (default `nvidia/nemotron-3-super-120b:free`, with
+   two fallbacks), which returns the supplier, bill number, date, lines and total. A few hundred tokens, not the
+   thousand-plus a picture costs. Only the suppliers/items that share a word with the bill's text are mentioned to
+   the AI; matching to your real records is done by the app (GSTIN, Product ID, name, and near-identical names).
+3. **If that doesn't give a bill that adds up** (the app checks qty × rate + GST against the printed total), or the
+   photo is too hard to read (OCR confidence under 55%), the **picture** goes to a free vision model
+   (default `google/gemma-4-31b-it:free`, with two fallbacks). The summary says which way was used.
+4. If neither gives a bill that adds up, there's no Enter button: reply with a correction or send a clearer photo.
+
+Settings → Telegram lets you change the models (up to three ids each, tried in order; saving checks they exist on
+OpenRouter) and choose "Always send the picture" instead.
+
+**Tip:** send the bill as a **File** (📎 → File), not a Photo. Telegram shrinks ordinary photos to 1280 pixels,
+which makes small print harder to read; a File arrives at full size.
+
+**Limits of free models:** OpenRouter allows 20 requests a minute and **50 a day** on free models, or 1,000 a day
+once you've ever bought $10 of credit. A bill uses one request, two when the picture backup is needed. Free models
+also come and go, so if one is retired just change the id on the settings screen.
+
 ## Costs and privacy
 
-Each reading is one OpenRouter call (roughly ₹1–3 per bill with the default model). The photo is sent to
-OpenRouter and the model provider to be read, and is kept in the app's database with the bill.
+With the free models there is no per-bill cost. Free models are run by outside providers who may keep and learn
+from what they receive: the OCR text (supplier, items, amounts) in the normal case, and the picture itself when the
+backup read is needed. Don't use them for anything confidential; to avoid the picture ever leaving the server, there
+is no such option yet apart from turning off the picture models. The photo is also kept in the app's database with
+the bill. You can switch to a paid model on the settings screen at any time.

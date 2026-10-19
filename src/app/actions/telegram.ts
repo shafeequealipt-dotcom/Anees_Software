@@ -25,7 +25,7 @@ async function owner() {
 const done = () => revalidatePath("/settings/telegram");
 
 /** Blank fields keep what's stored; the secrets are never sent back to the browser. */
-export async function saveTelegramAction(input: { botToken: string; aiKey: string; model: string }): Promise<Result> {
+export async function saveTelegramAction(input: { botToken: string; aiKey: string; model: string; textModel: string; readMode: string }): Promise<Result> {
   try {
     const user = await owner();
     await saveTelegramConfig(await getDb(), input, user.id, process.env.APP_URL ?? "http://localhost:3000");

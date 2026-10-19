@@ -8,7 +8,7 @@ import { getSettings, saveSettings } from "@/lib/settings";
 import { seal, unseal } from "@/lib/secret-box";
 import { MasterError } from "../errors";
 import { TelegramError, tg } from "./bot";
-import { billReader } from "./read-bill";
+import { billReader, parseModels, unknownModels } from "./read-bill";
 
 /*
  * The Telegram bot's setup, done by the Owner under Settings → Telegram: the bot token from @BotFather and
@@ -16,13 +16,19 @@ import { billReader } from "./read-bill";
  * from Telegram; and which Telegram chats are linked (via a one-time code) to which company.
  */
 
+export const DEFAULT_VISION_MODELS = "google/gemma-4-31b-it:free,nvidia/nemotron-3.5-super-vl:free,minimax/minimax-m3.1-flash:free";
+export const DEFAULT_TEXT_MODELS = "nvidia/nemotron-3-super-120b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free";
+
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const hintOf = (s: string) => s.slice(-4);
 
 export interface TelegramSecrets {
   token: string;
   aiKey: string | null;
-  model: string;
+  /** Models that read the picture / the OCR text, in the order to try them. */
+  visionModels: string[];
+  textModels: string[];
+  readMode: "ocr" | "vision";
   botUsername: string | null;
 }
 
@@ -30,7 +36,14 @@ export interface TelegramSecrets {
 export async function loadTelegram(db: DB): Promise<TelegramSecrets | null> {
   const [c] = await db.select().from(telegramConfig).where(eq(telegramConfig.id, 1));
   if (!c?.botTokenEnc) return null;
-  return { token: unseal(c.botTokenEnc), aiKey: c.aiKeyEnc ? unseal(c.aiKeyEnc) : null, model: c.model, botUsername: c.botUsername };
+  return {
+    token: unseal(c.botTokenEnc),
+    aiKey: c.aiKeyEnc ? unseal(c.aiKeyEnc) : null,
+    visionModels: parseModels(c.model) ?? [],
+    textModels: parseModels(c.textModel) ?? [],
+    readMode: c.readMode === "vision" ? "vision" : "ocr",
+    botUsername: c.botUsername,
+  };
 }
 
 /** True when `secret` is the one Telegram was told to send with webhook calls. */
@@ -51,7 +64,9 @@ export async function telegramStatus(db: DB) {
     botUsername: c?.botUsername ?? null,
     botTokenHint: c?.botTokenEnc ? c.botTokenHint : null,
     aiKeyHint: c?.aiKeyEnc ? c.aiKeyHint : null,
-    model: c?.model ?? "anthropic/claude-sonnet-5-5",
+    model: c?.model ?? DEFAULT_VISION_MODELS,
+    textModel: c?.textModel ?? DEFAULT_TEXT_MODELS,
+    readMode: (c?.readMode === "vision" ? "vision" : "ocr") as "ocr" | "vision",
   };
 }
 
@@ -59,7 +74,7 @@ export async function telegramStatus(db: DB) {
  * Saves the bot token and/or the AI key (blank = keep the one stored). A new token is checked with
  * Telegram, and Telegram is told to deliver messages to `${appUrl}/api/telegram/webhook` with a fresh secret.
  */
-export async function saveTelegramConfig(db: DB, input: { botToken?: string; aiKey?: string; model?: string }, userId: number, appUrl: string) {
+export async function saveTelegramConfig(db: DB, input: { botToken?: string; aiKey?: string; model?: string; textModel?: string; readMode?: string }, userId: number, appUrl: string) {
   const botToken = input.botToken?.trim() ?? "";
   const aiKey = input.aiKey?.trim() ?? "";
   const model = input.model?.trim() ?? "";
@@ -67,10 +82,23 @@ export async function saveTelegramConfig(db: DB, input: { botToken?: string; aiK
   const set: Partial<typeof telegramConfig.$inferInsert> = { updatedBy: userId, updatedAt: new Date() };
   const changed: string[] = [];
 
-  if (model) {
-    if (!/^[\w.-]+\/[\w.:-]+$/.test(model) || model.length > 100) throw new MasterError("The model looks like anthropic/claude-sonnet-5-5.", "model");
-    if (model !== have?.model) changed.push(`model ${model}`);
-    set.model = model;
+  const textModel = input.textModel?.trim() ?? "";
+  for (const [field, value, was, key] of [
+    ["model", model, have?.model, "model"],
+    ["textModel", textModel, have?.textModel, "textModel"],
+  ] as const) {
+    if (!value) continue;
+    const ids = parseModels(value);
+    if (!ids) throw new MasterError("Give up to three model ids separated by commas, like google/gemma-4-31b-it:free.", field);
+    const missing = await unknownModels(ids);
+    if (missing?.length) throw new MasterError(`OpenRouter doesn't list ${missing.join(", ")}. Free models come and go; check openrouter.ai/models.`, field);
+    if (ids.join(",") !== was) changed.push(`${key === "model" ? "picture" : "text"} models`);
+    set[key] = ids.join(",");
+  }
+  if (input.readMode) {
+    if (input.readMode !== "ocr" && input.readMode !== "vision") throw new MasterError("Choose how bills are read.", "readMode");
+    if (input.readMode !== (have?.readMode ?? "ocr")) changed.push(`reading method ${input.readMode}`);
+    set.readMode = input.readMode;
   }
   if (aiKey) {
     if (aiKey.length < 20 || aiKey.length > 200 || /\s/.test(aiKey)) throw new MasterError("That doesn't look like an OpenRouter key (it starts with sk-or-).", "aiKey");

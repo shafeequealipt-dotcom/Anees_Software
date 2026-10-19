@@ -63,8 +63,15 @@ export interface ReadContext {
   notes: string | null;
 }
 
+/** What the AI is given: the text OCR took off the bill (cheap), or the pictures themselves (a vision model). */
+export type ReadInput =
+  | { kind: "text"; text: string }
+  /** `hint`: OCR text, if any, used only to pick which suppliers/items to mention (not shown to the AI). */
+  | { kind: "images"; files: BillFile[]; hint?: string };
+
 export interface BillReader {
-  read(apiKey: string, model: string, files: BillFile[], ctx: ReadContext): Promise<ReadBill>;
+  /** `models`: one or more OpenRouter model ids, tried in order (up to three). */
+  read(apiKey: string, models: string[], input: ReadInput, ctx: ReadContext): Promise<ReadBill>;
   /** Checks a key works; returns an error message, or null when it's fine. */
   checkKey(apiKey: string): Promise<string | null>;
 }
@@ -73,10 +80,23 @@ export class ReadError extends Error {}
 
 const OPENROUTER = "https://openrouter.ai/api/v1";
 
-function prompt(ctx: ReadContext): string {
-  const list = <T>(xs: T[], f: (x: T) => string, max: number) => (xs.length ? xs.slice(0, max).map(f).join("\n") : "(none yet)");
-  return `You read photos/scans of bills for an Indian business's bookkeeping. Transcribe exactly what is printed; never invent numbers.
+const words = (s: string) => new Set(s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !/^\d+$/.test(w))); // numbers (quantities, prices) don't say which product it is
 
+/**
+ * The few suppliers/items that could be on this bill (they share a word with its text), so the AI isn't sent the
+ * whole catalogue. Matching to the real records is done afterwards in code (draft.ts), so this is only a hint.
+ */
+export function candidates(ctx: ReadContext, text: string | null): ReadContext {
+  if (!text) return { ...ctx, suppliers: [], items: [] };
+  const seen = words(text);
+  const hit = (name: string) => [...words(name)].some((w) => seen.has(w));
+  return { ...ctx, suppliers: ctx.suppliers.filter((x) => hit(x.name)).slice(0, 10), items: ctx.items.filter((x) => hit(x.name)).slice(0, 40) };
+}
+
+function prompt(ctx: ReadContext, text: string | null): string {
+  const list = <T>(xs: T[], f: (x: T) => string, max: number) => (xs.length ? xs.slice(0, max).map(f).join("\n") : "(none close to this bill)");
+  return `You read bills for an Indian business's bookkeeping. Transcribe exactly what is printed; never invent numbers.
+${text ? "You are given the text an OCR program read off the bill (below). OCR makes mistakes: 0/O, 1/l/I, 5/S, 8/B, dropped decimal points, columns running together. Use the arithmetic (qty × rate, GST, totals) to spot and fix misread digits, and say in \"problem\" if you can't make the figures agree.\n" : ""}
 Decide the type:
 - "purchase_bill": a tax invoice / bill for goods bought from a supplier, with product lines.
 - "expense": a bill or receipt for a service or running cost (electricity, rent, phone, internet, fuel, repairs, courier, food…). Put the paid amount in "total", pick "category" from the company's expense categories when one fits (else a short new name), and a short "description". No lines needed.
@@ -86,22 +106,22 @@ For a purchase bill:
 - supplier: name, GSTIN (15 characters) if printed, phone, address.
 - billNo and date (YYYY-MM-DD; Indian bills write dates day first).
 - One line per product: description as printed, qty, unit, "rate" = price per unit BEFORE GST in rupees (if only a tax-inclusive amount is printed, work back the pre-tax rate), gstPct = total GST % for the line (CGST+SGST, or IGST), discountPct if any, HSN if printed.
-- "matchedCode": the Product ID of one of the company's existing items below, ONLY when it is clearly the same product; else null.
-- If the supplier is one of the company's suppliers below, use that exact name.
+- "matchedCode": the Product ID of one of the company's existing items listed below, ONLY when it is clearly the same product; else null.
+- If the supplier is one of the company's suppliers listed below, use that exact name.
 - "total": the grand total printed on the bill (after tax and round-off), in rupees.
 - If a figure is unreadable, say so in "problem" rather than guessing.
 
-The company's suppliers:
+The company's suppliers that look close:
 ${list(ctx.suppliers, (s) => `- ${s.name}${s.gstin ? ` (GSTIN ${s.gstin})` : ""}`, 300)}
 
-The company's items (Product ID | name | HSN | unit | GST%):
+The company's items that look close (Product ID | name | HSN | unit | GST%):
 ${list(ctx.items, (i) => `- ${i.code ?? "-"} | ${i.name} | ${i.hsn ?? "-"} | ${i.unit ?? "-"} | ${i.gstPct ?? "-"}`, 600)}
 
 Expense categories: ${ctx.expenseCategories.join(", ") || "(none yet)"}
 GST rates in use: ${ctx.taxRatesPct.join(", ")}%
 ${ctx.notes ? `\nThe owner looked at an earlier reading and says:\n${ctx.notes}\nFollow these corrections.\n` : ""}
 Reply with JSON only, no other text, in this shape:
-{"type":"purchase_bill"|"expense"|"not_a_bill","problem":string|null,"supplier":{"name":string,"gstin":string|null,"phone":string|null,"address":string|null}|null,"billNo":string|null,"date":"YYYY-MM-DD"|null,"lines":[{"description":string,"matchedCode":string|null,"hsn":string|null,"qty":number,"unit":string|null,"rate":number,"gstPct":number|null,"discountPct":number|null}],"total":number|null,"category":string|null,"description":string|null}`;
+{"type":"purchase_bill"|"expense"|"not_a_bill","problem":string|null,"supplier":{"name":string,"gstin":string|null,"phone":string|null,"address":string|null}|null,"billNo":string|null,"date":"YYYY-MM-DD"|null,"lines":[{"description":string,"matchedCode":string|null,"hsn":string|null,"qty":number,"unit":string|null,"rate":number,"gstPct":number|null,"discountPct":number|null}],"total":number|null,"category":string|null,"description":string|null}${text ? `\n\nThe OCR text of the bill:\n"""\n${text}\n"""` : ""}`;
 }
 
 /** Pulls the JSON object out of a model reply (which may wrap it in a code fence). */
@@ -121,19 +141,22 @@ export function parseReply(text: string): ReadBill {
 }
 
 const openRouterReader: BillReader = {
-  async read(apiKey, model, files, ctx) {
-    const content: unknown[] = [{ type: "text", text: prompt(ctx) }];
-    for (const [i, f] of files.entries()) {
-      const b64 = f.data.toString("base64");
-      if (f.mime === "application/pdf") content.push({ type: "file", file: { filename: `bill-${i + 1}.pdf`, file_data: `data:application/pdf;base64,${b64}` } });
-      else content.push({ type: "image_url", image_url: { url: `data:${f.mime};base64,${b64}` } });
+  async read(apiKey, models, input, ctx) {
+    const text = input.kind === "text" ? input.text : null;
+    const content: unknown[] = [{ type: "text", text: prompt(candidates(ctx, text ?? (input.kind === "images" ? (input.hint ?? "") : "")), text) }];
+    if (input.kind === "images") {
+      for (const [i, f] of input.files.entries()) {
+        const b64 = f.data.toString("base64");
+        if (f.mime === "application/pdf") content.push({ type: "file", file: { filename: `bill-${i + 1}.pdf`, file_data: `data:application/pdf;base64,${b64}` } });
+        else content.push({ type: "image_url", image_url: { url: `data:${f.mime};base64,${b64}` } });
+      }
     }
     let res: Response;
     try {
       res = await fetch(`${OPENROUTER}/chat/completions`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Billing app – Telegram bills" },
-        body: JSON.stringify({ model, temperature: 0, max_tokens: 4000, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }),
+        body: JSON.stringify({ ...(models.length > 1 ? { models: models.slice(0, 3) } : { model: models[0] }), temperature: 0, max_tokens: 6000, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }),
         signal: AbortSignal.timeout(120_000),
       });
     } catch {
@@ -153,6 +176,25 @@ const openRouterReader: BillReader = {
     }
   },
 };
+
+/** "a/b:free, c/d" → ["a/b:free", "c/d"] (at most three, each shaped like an OpenRouter model id), or null when something's off. */
+export function parseModels(raw: string): string[] | null {
+  const ids = raw.split(",").map((x) => x.trim()).filter(Boolean);
+  if (ids.length === 0 || ids.length > 3 || ids.some((x) => !/^[\w.-]+\/[\w.:-]+$/.test(x) || x.length > 80)) return null;
+  return ids;
+}
+
+/** Model ids OpenRouter doesn't list (null if the list couldn't be fetched, so a hiccup never blocks saving). */
+export async function unknownModels(ids: string[]): Promise<string[] | null> {
+  try {
+    const res = await fetch(`${OPENROUTER}/models`, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return null;
+    const have = new Set(((await res.json()) as { data?: { id: string }[] }).data?.map((m) => m.id) ?? []);
+    return have.size ? ids.filter((i) => !have.has(i)) : null;
+  } catch {
+    return null;
+  }
+}
 
 let reader: BillReader = openRouterReader;
 

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@/db";
 import { accounts, auditLog, firms, items, parties, telegramConfig, telegramDrafts, telegramFiles, telegramLinkCodes, users, vouchers } from "@/db/schema";
@@ -10,7 +10,9 @@ import { runBatch } from "@/server/api-v1";
 import { runFirstSetup } from "@/server/setup";
 import { setTelegramTransport, type TgUpdate } from "@/server/telegram/bot";
 import { makeLinkCode, saveTelegramConfig, setTelegramEnabled, telegramStatus, useLinkCode, webhookSecretMatches } from "@/server/telegram/config";
-import { parseReply, setBillReader, type ReadBill, type ReadContext } from "@/server/telegram/read-bill";
+import { closest } from "@/server/telegram/draft";
+import { parseTsv, setOcr, billOcr, type Ocr } from "@/server/telegram/ocr";
+import { candidates, parseModels, parseReply, setBillReader, type ReadBill, type ReadContext, type ReadInput } from "@/server/telegram/read-bill";
 import { firstDelivery, handleUpdate } from "@/server/telegram/webhook";
 import { testDb } from "./helpers/db";
 
@@ -46,21 +48,37 @@ setTelegramTransport({
 });
 
 let nextRead: ReadBill;
-const readCalls: ReadContext[] = [];
+/** When set, decides each reading from the way it's asked (text or picture); otherwise `nextRead` is returned. */
+let readImpl: ((input: ReadInput) => ReadBill) | null = null;
+const readCalls: { ctx: ReadContext; input: ReadInput; models: string[] }[] = [];
 setBillReader({
-  async read(_key, _model, files, ctx) {
-    expect(files.length).toBeGreaterThan(0);
-    readCalls.push(ctx);
-    return nextRead;
+  async read(_key, models, input, ctx) {
+    readCalls.push({ ctx, input, models });
+    return readImpl ? readImpl(input) : nextRead;
   },
   async checkKey(key) {
     return key.includes("bad") ? "OpenRouter didn't accept that key." : null;
   },
 });
 
+// The OCR: reports itself installed and "reads" a fixed bill text.
+let ocrUp = true;
+let ocrConfidence = 90;
+const fakeOcr: Ocr = {
+  async available() {
+    return ocrUp;
+  },
+  async extract() {
+    return { text: "MedPlus Distributors Tax Invoice MD-881 Nitrile gloves (100) 10 x 400.00 Surgical mask (50) 20 x 150.00 Total 7870.00", confidence: ocrConfidence, source: "ocr" };
+  },
+};
+setOcr(fakeOcr);
+
 afterAll(() => {
   setTelegramTransport();
   setBillReader();
+  setOcr();
+  vi.unstubAllGlobals();
 });
 
 let updateId = 1;
@@ -99,6 +117,8 @@ const medBill = (over: Partial<ReadBill> = {}): ReadBill => ({
 
 beforeAll(async () => {
   process.env.APP_SECRET = "test-secret-for-telegram-tests-0123456789";
+  // OpenRouter's public model list, so the model ids typed on the settings screen can be checked offline.
+  vi.stubGlobal("fetch", async (url: string) => Response.json({ data: ["nvidia/nemotron-3-super-120b:free", "google/gemma-4-31b-it:free", "xingchen-agi/xing4.0-29b-a4b:free"].map((id) => ({ id })) }, { status: url.includes("/models") ? 200 : 404 }));
   process.env.APP_URL = "https://billing.example.test";
   db = await testDb();
   await runFirstSetup(db, { businessName: "DNH Test", country: "IN", stateCode: "29", ownerName: "Owner", email: "o@t.example", password: "Tulsi-Garden-4471" } as never);
@@ -237,7 +257,7 @@ describe("a purchase bill photo", () => {
     // A reply to the summary is passed to the next reading.
     nextRead = medBill({ billNo: "MD-950", total: 7870 });
     await handleUpdate(db, text("total is 7870", { reply_to_message: { message_id: d.summaryMessageId! } }));
-    expect(readCalls.at(-1)!.notes).toContain("total is 7870");
+    expect(readCalls.at(-1)!.ctx.notes).toContain("total is 7870");
     expect(lastShown().buttons.map((b) => b.callback_data)).toContain(`e:${d.id}:0`);
 
     // Discard: nothing is entered, and Enter no longer works.
@@ -329,5 +349,142 @@ describe("API: a purchase bill paid at once", () => {
     expect(r.ok).toBe(true);
     const [bill] = await db.select().from(vouchers).where(eq(vouchers.externalRef, "api-paid-1"));
     expect(bill).toMatchObject({ totalPaise: 315_00, paidPaise: 315_00, accountId: cash, paymentMode: "Cash" });
+  });
+});
+
+describe("reading with OCR text first, the picture as a backup", () => {
+  const reset = () => {
+    readImpl = null;
+    ocrUp = true;
+    ocrConfidence = 90;
+    readCalls.length = 0;
+  };
+  const kinds = () => readCalls.map((c) => c.input.kind);
+
+  it("a bill that reads cleanly from the text uses one text call and never sends the picture", async () => {
+    reset();
+    nextRead = medBill({ billNo: "OCR-1" });
+    await handleUpdate(db, photo());
+    expect(kinds()).toEqual(["text"]);
+    const call = readCalls[0];
+    expect(call.input).toMatchObject({ kind: "text", text: expect.stringContaining("MedPlus") });
+    expect(call.models).toEqual(["nvidia/nemotron-3-super-120b:free", "xingchen-agi/xing4.0-29b-a4b:free", "liquid/lfm-2.5-2.6b:free"]);
+    expect(lastShown().text).toContain("Read from the bill&#x27;s text".replace("&#x27;", "'"));
+    expect(lastShown().buttons.length).toBeGreaterThan(1);
+  });
+
+  it("when the text reading doesn't add up, the picture is read next and its result is shown", async () => {
+    reset();
+    readImpl = (input) => (input.kind === "text" ? medBill({ billNo: "OCR-2", total: 7080 }) : medBill({ billNo: "OCR-2", total: 7870 }));
+    await handleUpdate(db, photo());
+    expect(kinds()).toEqual(["text", "images"]);
+    expect(readCalls[1].models[0]).toBe("google/gemma-4-31b-it:free");
+    const shown = lastShown();
+    expect(shown.text).toContain("Read from the picture");
+    expect(shown.text).toMatch(/matches the bill/);
+    expect(shown.buttons.some((b) => b.callback_data?.startsWith("e:"))).toBe(true);
+  });
+
+  it("a hard-to-read photo goes straight to the picture model", async () => {
+    reset();
+    ocrConfidence = 30;
+    nextRead = medBill({ billNo: "OCR-3" });
+    await handleUpdate(db, photo());
+    expect(kinds()).toEqual(["images"]);
+  });
+
+  it("without OCR installed, or when the picture is always wanted, only the picture is read", async () => {
+    reset();
+    ocrUp = false;
+    nextRead = medBill({ billNo: "OCR-4" });
+    await handleUpdate(db, photo());
+    expect(kinds()).toEqual(["images"]);
+    reset();
+    await db.update(telegramConfig).set({ readMode: "vision" });
+    nextRead = medBill({ billNo: "OCR-5" });
+    await handleUpdate(db, photo());
+    expect(kinds()).toEqual(["images"]);
+    await db.update(telegramConfig).set({ readMode: "ocr" });
+  });
+
+  it("the settings validate model ids against OpenRouter's list", async () => {
+    await expect(saveTelegramConfig(db, { textModel: "a/b" }, U, "https://billing.example.test")).rejects.toThrow(/doesn't list a\/b/);
+    await expect(saveTelegramConfig(db, { textModel: "one/a,two/b,three/c,four/d" }, U, "https://billing.example.test")).rejects.toThrow(/up to three/);
+    await saveTelegramConfig(db, { textModel: "nvidia/nemotron-3-super-120b:free", readMode: "ocr" }, U, "https://billing.example.test");
+    expect((await telegramStatus(db)).textModel).toBe("nvidia/nemotron-3-super-120b:free");
+    await saveTelegramConfig(db, { textModel: "nvidia/nemotron-3-super-120b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free" }, U, "https://billing.example.test").catch(() => undefined);
+  });
+});
+
+describe("keeping the AI's input small", () => {
+  const ctx: ReadContext = {
+    suppliers: [{ name: "MedPlus Distributors", gstin: null }, { name: "Zenith Traders", gstin: null }],
+    items: [
+      { code: "1", name: "Nitrile gloves (100)", hsn: null, unit: "BOX", gstPct: 18 },
+      { code: "2", name: "Paracetamol 500", hsn: null, unit: "STRIP", gstPct: 12 },
+      ...Array.from({ length: 500 }, (_, i) => ({ code: String(10 + i), name: `Catalogue item ${i}`, hsn: null, unit: null, gstPct: null })),
+    ],
+    expenseCategories: [],
+    taxRatesPct: [18],
+    notes: null,
+  };
+
+  it("only suppliers and items that share a word with the bill's text are mentioned", () => {
+    const c = candidates(ctx, "MEDPLUS DISTRIBUTORS  Nitrile Gloves 100 box  10 x 400");
+    expect(c.suppliers.map((s) => s.name)).toEqual(["MedPlus Distributors"]);
+    expect(c.items.map((i) => i.name)).toEqual(["Nitrile gloves (100)"]);
+    expect(candidates(ctx, "").items).toEqual([]);
+  });
+
+  it("a catalogue word shared by hundreds of items is capped", () => {
+    expect(candidates(ctx, "catalogue").items).toHaveLength(40);
+  });
+});
+
+describe("matching names that are nearly the same", () => {
+  const sup = [{ name: "MedPlus Distributors Pvt Ltd" }, { name: "Zenith Traders" }];
+  it("ignores legal suffixes, case and punctuation", () => {
+    expect(closest("M/s. MEDPLUS Distributors", sup)).toBe(sup[0]);
+    expect(closest("Zenith Traders Private Limited", sup)).toBe(sup[1]);
+  });
+  it("doesn't merge different products or guess when unsure", () => {
+    const items = [{ name: "Surgical mask (50)" }, { name: "Surgical mask (100)" }];
+    expect(closest("Surgical mask 200", items)).toBeUndefined();
+    expect(closest("Surgical mask", items)).toBeUndefined();
+    expect(closest("Something else", items)).toBeUndefined();
+  });
+});
+
+describe("OCR output", () => {
+  it("turns Tesseract's word table into lines and an average confidence", () => {
+    const row = (level: number, block: number, par: number, line: number, conf: number, text: string) => [level, 1, block, par, line, 1, 0, 0, 10, 10, conf, text].join("\t");
+    const tsv = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext", row(4, 1, 1, 1, -1, ""), row(5, 1, 1, 1, 90, "Total"), row(5, 1, 1, 1, 70, "7870.00"), row(5, 1, 1, 2, 80, "Thank"), row(5, 1, 1, 2, 60, "you"), row(5, 1, 1, 2, -1, "")].join("\n");
+    expect(parseTsv(tsv)).toEqual({ text: "Total 7870.00\nThank you", confidence: 75 });
+  });
+
+  it("model lists: up to three well-formed ids", () => {
+    expect(parseModels("a/b:free, c/d")).toEqual(["a/b:free", "c/d"]);
+    expect(parseModels("")).toBeNull();
+    expect(parseModels("nonsense")).toBeNull();
+    expect(parseModels("a/a,b/b,c/c,d/d")).toBeNull();
+  });
+});
+
+describe("the real OCR program", () => {
+  it("reads a printed bill image (when Tesseract is installed on this machine)", async (ctx) => {
+    setOcr();
+    try {
+      if (!(await billOcr().available())) return ctx.skip();
+      const sharp = (await import("sharp")).default;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="420"><rect width="100%" height="100%" fill="white"/><g font-family="Helvetica, Arial, sans-serif" font-size="34" fill="black"><text x="40" y="70">MEDPLUS DISTRIBUTORS  TAX INVOICE</text><text x="40" y="130">Bill No MD-881   Date 14/10/2026</text><text x="40" y="200">Nitrile gloves   10   400.00   4720.00</text><text x="40" y="260">Surgical mask    20   150.00   3150.00</text><text x="40" y="340">Grand Total 7870.00</text></g></svg>`;
+      const png = await sharp(Buffer.from(svg)).png().toBuffer();
+      const r = await billOcr().extract([{ mime: "image/png", data: png }]);
+      expect(r.source).toBe("ocr");
+      expect(r.text.toUpperCase()).toContain("MEDPLUS");
+      expect(r.text).toContain("7870.00");
+      expect(r.confidence).toBeGreaterThan(70);
+    } finally {
+      setOcr(fakeOcr);
+    }
   });
 });

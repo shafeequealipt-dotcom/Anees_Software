@@ -49,6 +49,29 @@ export const norm = (s: string) =>
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 
+const FILLER = new Set(["pvt", "ltd", "private", "limited", "llp", "co", "company", "ms", "m", "s", "and", "the"]);
+const tokens = (s: string) => new Set(norm(s).split(" ").filter((w) => w && !FILLER.has(w)));
+
+/** The one record whose name matches closely (shared words ≥ 80%, legal suffixes ignored); none if unsure or tied. */
+export function closest<T extends { name: string }>(name: string, xs: T[]): T | undefined {
+  const a = tokens(name);
+  if (a.size === 0) return undefined;
+  let best: T | undefined;
+  let top = 0;
+  let tie = false;
+  for (const x of xs) {
+    const b = tokens(x.name);
+    const inter = [...a].filter((w) => b.has(w)).length;
+    const j = inter / (a.size + b.size - inter);
+    if (j > top) {
+      best = x;
+      top = j;
+      tie = false;
+    } else if (j === top && j > 0) tie = true;
+  }
+  return top >= 0.8 && !tie ? best : undefined;
+}
+
 const paiseOf = (rupees: number) => Math.round(rupees * 100);
 
 export function billRef(draftId: number) {
@@ -87,7 +110,7 @@ export function buildPlan(read: ReadBill, ref: Reference, draftId: number, today
       gstin = null;
     }
     const suppliers = ref.parties.filter((p) => p.kind !== "customer");
-    const hit = (gstin && ref.parties.find((p) => p.gstin?.toUpperCase() === gstin)) || suppliers.find((p) => norm(p.name) === norm(read.supplier!.name)) || ref.parties.find((p) => norm(p.name) === norm(read.supplier!.name));
+    const hit = (gstin && ref.parties.find((p) => p.gstin?.toUpperCase() === gstin)) || suppliers.find((p) => norm(p.name) === norm(read.supplier!.name)) || ref.parties.find((p) => norm(p.name) === norm(read.supplier!.name)) || closest(read.supplier.name, suppliers);
     if (hit) {
       party = { id: hit.id };
       plan.supplier = { name: hit.name, gstin: hit.gstin, isNew: false };
@@ -133,7 +156,7 @@ export function buildPlan(read: ReadBill, ref: Reference, draftId: number, today
   const newRefs = new Map<string, string>();
   const lines: Record<string, unknown>[] = [];
   for (const l of read.lines) {
-    const hit = (l.matchedCode && byCode.get(l.matchedCode.toLowerCase())) || byName.get(norm(l.description));
+    const hit = (l.matchedCode && byCode.get(l.matchedCode.toLowerCase())) || byName.get(norm(l.description)) || closest(l.description, ref.items);
     let item: Record<string, unknown>;
     if (hit) {
       item = { id: hit.id };
@@ -220,7 +243,7 @@ const day = (iso: string) => {
 
 const qtyText = (q: number) => (Number.isInteger(q) ? String(q) : q.toFixed(3).replace(/0+$/, ""));
 
-export function summaryText(plan: Plan, check: Check | null, firmName: string, country: string): string {
+export function summaryText(plan: Plan, check: Check | null, firmName: string, country: string, readBy?: "text" | "picture"): string {
   const out: string[] = [];
   const b = (s: string) => `<b>${esc(s)}</b>`;
   if (plan.type === "not_a_bill") {
@@ -254,6 +277,7 @@ export function summaryText(plan: Plan, check: Check | null, firmName: string, c
   if (warn.length) out.push("", ...warn.map((w) => `❌ ${esc(w)}`));
   if (plan.notes.length) out.push("", ...plan.notes.map((n) => `⚠️ ${esc(n)}`));
   for (const d of check?.duplicates ?? []) out.push(`⚠️ Looks like ${esc(d.number)} already entered (${day(d.date)}, ${money(d.amountPaise, country)})`);
+  if (readBy) out.push("", `<i>${readBy === "text" ? "Read from the bill's text (OCR)" : "Read from the picture"}</i>`);
   out.push("", check?.ok ? "Check it, then tap how it was paid. Reply to this message to correct anything." : "Reply to this message with a correction (e.g. “total is 742”), send a clearer photo, or discard.");
   return out.join("\n");
 }

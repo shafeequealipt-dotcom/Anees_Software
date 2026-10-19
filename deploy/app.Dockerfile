@@ -16,6 +16,9 @@ RUN npm run build
 FROM node:24-bookworm-slim AS run
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 TZ=Asia/Kolkata
+# OCR for the Telegram bill bot: Tesseract reads photos, poppler reads PDFs (see src/server/telegram/ocr.ts).
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng poppler-utils \
+ && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1001 app && useradd -u 1001 -g app -m app \
  && mkdir -p /data/uploads && chown -R app:app /data
 COPY --from=build --chown=app:app /src/.next/standalone ./

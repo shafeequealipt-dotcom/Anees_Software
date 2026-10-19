@@ -10,13 +10,19 @@ import { MasterError } from "../errors";
 import { answerCallback, downloadFile, esc, MAX_FILE_BYTES, sendMessage, showMessage, TelegramError, type InlineButton, type TgMessage, type TgUpdate } from "./bot";
 import { loadTelegram, setLinkCompany, telegramEnabled, useLinkCode, type TelegramSecrets } from "./config";
 import { billRef, buildPlan, checkFrom, money, summaryButtons, summaryText, withPayment, type Check, type Plan } from "./draft";
-import { billReader, ReadError, type ReadBill } from "./read-bill";
+import { billOcr } from "./ocr";
+import { billReader, ReadError, type ReadBill, type ReadContext } from "./read-bill";
 
 /*
  * What the bot does with each Telegram update. The webhook route answers Telegram at once and runs this
  * afterwards. Only chats linked to an active Owner are served; a bill is entered only when the Owner taps
  * Enter under its summary, and a draft can move from "ready" to "entered" only once.
  */
+
+type ReadMethod = "text" | "picture";
+
+/** Below this average OCR confidence the picture is sent to the vision model instead of the text. */
+const MIN_OCR_CONFIDENCE = 55;
 
 export interface HandleOptions {
   /** How long to wait for the rest of an album before reading it. */
@@ -31,7 +37,7 @@ export async function firstDelivery(db: DB, updateId: number): Promise<boolean> 
 }
 
 const HELP = [
-  "Send me a <b>photo or PDF of a bill</b> (several photos sent together = pages of one bill).",
+  "Send me a <b>photo or PDF of a bill</b> (several photos sent together = pages of one bill). For the best reading send it as a <b>File</b> (📎 → File), because Telegram shrinks ordinary photos.",
   "I'll read it and show what I found. Nothing is entered until you tap <b>Enter</b>.",
   "To fix a reading, <b>reply to my summary</b> with the correction, e.g. “total is 742” or “supplier is MedPlus Pharma”.",
   "/company — choose which company bills go to.",
@@ -173,44 +179,79 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
   };
 
   if (!cfg.aiKey) return fail("no AI key is set up in the app (Settings → Telegram).");
-  let read: ReadBill;
-  let seen: number[];
+  const files = await db.select().from(telegramFiles).where(eq(telegramFiles.draftId, draftId)).orderBy(asc(telegramFiles.messageId));
+  const seen = files.map((f) => f.id);
   try {
-    const files = await db.select().from(telegramFiles).where(eq(telegramFiles.draftId, draftId)).orderBy(asc(telegramFiles.messageId));
     for (const f of files) {
       if (f.data) continue;
       f.data = await downloadFile(cfg.token, f.fileId);
       await db.update(telegramFiles).set({ data: f.data }).where(eq(telegramFiles.id, f.id));
     }
-    seen = files.map((f) => f.id);
-    const ref = await apiReference(db, d.firmId);
-    read = await billReader().read(cfg.aiKey, cfg.model, files.map((f) => ({ mime: f.mime, data: f.data! })), {
-      suppliers: ref.parties.filter((p) => p.kind !== "customer").map((p) => ({ name: p.name, gstin: p.gstin })),
-      items: ref.items.filter((i) => i.active).map((i) => ({ code: i.code, name: i.name, hsn: i.hsn, unit: i.unit, gstPct: i.gstBp != null ? i.gstBp / 100 : null })),
-      expenseCategories: ref.categories.filter((c) => c.kind === "expense").map((c) => c.name),
-      taxRatesPct: [...new Set(ref.taxRates.map((t) => t.gstBp / 100))].sort((a, b) => a - b),
-      notes: d.notes,
-    });
   } catch (e) {
-    if (e instanceof ReadError || e instanceof TelegramError) return fail(e.message);
+    if (e instanceof TelegramError) return fail(e.message);
     throw e;
   }
-
   const ref = await apiReference(db, d.firmId);
-  const plan = buildPlan(read, ref, draftId, todayIST());
   const accs = payAccounts(ref.accounts);
-  let check: Check | null = null;
-  if (plan.entries.length) {
-    const first = accs[0];
-    const entries = withPayment(plan.entries, plan.type === "expense" ? (first?.id ?? null) : null, first?.kind ?? null);
-    check = await dryRun(db, d.firmId, draftId, entries);
-    if (plan.type === "expense" && !first) check = { ...check, ok: false, errors: [...check.errors, "There's no cash or bank account to pay it from."] };
+  const ctx: ReadContext = {
+    suppliers: ref.parties.filter((p) => p.kind !== "customer").map((p) => ({ name: p.name, gstin: p.gstin })),
+    items: ref.items.filter((i) => i.active).map((i) => ({ code: i.code, name: i.name, hsn: i.hsn, unit: i.unit, gstPct: i.gstBp != null ? i.gstBp / 100 : null })),
+    expenseCategories: ref.categories.filter((c) => c.kind === "expense").map((c) => c.name),
+    taxRatesPct: [...new Set(ref.taxRates.map((t) => t.gstBp / 100))].sort((a, b) => a - b),
+    notes: d.notes,
+  };
+  const images = files.map((f) => ({ mime: f.mime, data: f.data! }));
+
+  // 1. The text on the bill, read on our own server (free) and sent to a free text model: very few tokens.
+  // 2. If that doesn't give a bill that adds up, the picture goes to a free vision model.
+  let ocrText: string | null = null;
+  const methods: ReadMethod[] = [];
+  if (cfg.readMode === "ocr" && cfg.textModels.length && (await billOcr().available())) {
+    try {
+      const o = await billOcr().extract(images);
+      if (o.text.replace(/\s/g, "").length >= 40) {
+        ocrText = o.text;
+        // Hard-to-read photos go straight to the vision model when there is one.
+        if (o.confidence >= MIN_OCR_CONFIDENCE || !cfg.visionModels.length) methods.push("text");
+      }
+    } catch (e) {
+      console.error("ocr failed", e instanceof Error ? e.message : e);
+    }
   }
+  if (cfg.visionModels.length) methods.push("picture");
+  if (!methods.length) return fail("no reading models are set up in the app (Settings → Telegram).");
+
+  let best: { method: ReadMethod; read: ReadBill; plan: Plan; check: Check | null; score: number } | null = null;
+  let lastError: string | null = null;
+  for (const method of methods) {
+    try {
+      const read =
+        method === "text"
+          ? await billReader().read(cfg.aiKey, cfg.textModels, { kind: "text", text: ocrText! }, ctx)
+          : await billReader().read(cfg.aiKey, cfg.visionModels, { kind: "images", files: images, hint: ocrText ?? undefined }, ctx);
+      const plan = buildPlan(read, ref, draftId, todayIST());
+      let check: Check | null = null;
+      if (plan.entries.length) {
+        const first = accs[0];
+        const entries = withPayment(plan.entries, plan.type === "expense" ? (first?.id ?? null) : null, first?.kind ?? null);
+        check = await dryRun(db, d.firmId, draftId, entries);
+        if (plan.type === "expense" && !first) check = { ...check, ok: false, errors: [...check.errors, "There's no cash or bank account to pay it from."] };
+      }
+      const score = check?.ok ? 3 : plan.entries.length ? 2 : 1;
+      if (!best || score >= best.score) best = { method, read, plan, check, score };
+      if (check?.ok) break;
+    } catch (e) {
+      if (e instanceof ReadError) lastError = e.message;
+      else throw e;
+    }
+  }
+  if (!best) return fail(lastError ?? "the AI gave no reading.");
+  const { read, plan, check } = best;
   await db
     .update(telegramDrafts)
-    .set({ status: "ready", extracted: read, entries: plan.entries, check, error: null, summaryMessageId: msgId, updatedAt: new Date() })
+    .set({ status: "ready", extracted: { ...read, readBy: best.method }, entries: plan.entries, check, error: null, summaryMessageId: msgId, updatedAt: new Date() })
     .where(eq(telegramDrafts.id, draftId));
-  await showMessage(cfg.token, d.chatId, msgId, summaryText(plan, check, firm.name, firm.country), summaryButtons(draftId, plan, check, accs));
+  await showMessage(cfg.token, d.chatId, msgId, summaryText(plan, check, firm.name, firm.country, best.method), summaryButtons(draftId, plan, check, accs));
 
   // A page of the album that arrived while this was being read: read again with it.
   const now = await db.select({ id: telegramFiles.id }).from(telegramFiles).where(eq(telegramFiles.draftId, draftId));

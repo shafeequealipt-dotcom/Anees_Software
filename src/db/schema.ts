@@ -1121,7 +1121,11 @@ export const telegramConfig = pgTable("telegram_config", {
   /** Last four characters of each secret, so the screen can show which one is set. */
   botTokenHint: varchar("bot_token_hint", { length: 8 }),
   aiKeyHint: varchar("ai_key_hint", { length: 8 }),
-  model: varchar("model", { length: 100 }).notNull().default("anthropic/claude-sonnet-5-5"),
+  /** OpenRouter model ids (up to three, comma-separated, tried in order). `model` reads the picture; `textModel` reads OCR text. */
+  model: varchar("model", { length: 200 }).notNull().default("google/gemma-4-31b-it:free,nvidia/nemotron-3.5-super-vl:free,minimax/minimax-m3.1-flash:free"),
+  textModel: varchar("text_model", { length: 200 }).notNull().default("nvidia/nemotron-3-super-120b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free"),
+  /** "ocr": read the text on our server first and use the picture only as a backup. "vision": always send the picture. */
+  readMode: varchar("read_mode", { length: 8 }).notNull().default("ocr"),
   updatedBy: integer("updated_by").references(() => users.id),
   updatedAt: updatedAt(),
 });

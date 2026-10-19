@@ -602,3 +602,11 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   can see the bill). Settings → Telegram lists recent bills sent. Telegram tables are left out of Excel backups.
 - API addition: `purchase_bill.paidFrom` (account) enters the bill fully paid from that account.
 - Tests: `tests/telegram.test.ts` (Telegram and the AI faked).
+
+- **Free reading (migration `0029_telegram_free_models.sql`)**: bills are first turned into text on the server
+  (`src/server/telegram/ocr.ts`: pdftotext for text PDFs, Tesseract + sharp cleaning for photos/scans; both installed
+  in `deploy/app.Dockerfile`), the text goes to a free OpenRouter text model, and the picture goes to a free vision
+  model only when the bill doesn't add up or OCR confidence is low (`readDraft` in `webhook.ts`). Models are up to
+  three ids per kind, tried in order via OpenRouter's `models` fallback; defaults are `:free` models, checked against
+  OpenRouter's list when saved. The AI is only told about suppliers/items sharing a word with the bill
+  (`candidates`), and the app matches names itself (`closest` in `draft.ts`). `sharp` is now a direct dependency.

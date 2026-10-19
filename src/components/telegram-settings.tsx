@@ -11,6 +11,8 @@ interface Status {
   botTokenHint: string | null;
   aiKeyHint: string | null;
   model: string;
+  textModel: string;
+  readMode: "ocr" | "vision";
 }
 
 interface LinkRow {
@@ -46,6 +48,8 @@ export function TelegramSettings({ status, companies, links, drafts, httpsOk }: 
   const [botToken, setBotToken] = useState("");
   const [aiKey, setAiKey] = useState("");
   const [model, setModel] = useState(status.model);
+  const [textModel, setTextModel] = useState(status.textModel);
+  const [readMode, setReadMode] = useState<string>(status.readMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; field?: string } | null>(null);
   const [saved, setSaved] = useState(false);
@@ -71,7 +75,7 @@ export function TelegramSettings({ status, companies, links, drafts, httpsOk }: 
   }
 
   async function save() {
-    if (await run(saveTelegramAction({ botToken, aiKey, model }))) {
+    if (await run(saveTelegramAction({ botToken, aiKey, model, textModel, readMode }))) {
       setBotToken("");
       setAiKey("");
       setSaved(true);
@@ -107,7 +111,16 @@ export function TelegramSettings({ status, companies, links, drafts, httpsOk }: 
           <Field label="OpenRouter key" hint={status.aiKeyHint ? `Set ✓ ends …${status.aiKeyHint}. Leave blank to keep it.` : "Starts with sk-or-"} error={error?.field === "aiKey" ? error.text : null}>
             <Input type="password" autoComplete="off" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={status.aiKeyHint ? "••••••••" : ""} />
           </Field>
-          <Field label="AI model" hint="A vision model on OpenRouter. The default reads Indian bills well." error={error?.field === "model" ? error.text : null}>
+          <Field label="How bills are read" hint="The first way reads the text on our own server (free) and sends only that text to the AI, so it uses far fewer tokens." error={error?.field === "readMode" ? error.text : null} className="sm:col-span-2">
+            <Select value={readMode} onChange={(e) => setReadMode(e.target.value)}>
+              <option value="ocr">Read the text first; use the picture only if the bill doesn&apos;t add up (recommended)</option>
+              <option value="vision">Always send the picture to the AI</option>
+            </Select>
+          </Field>
+          <Field label="Text models" hint="Up to three OpenRouter model ids, comma-separated; the next is tried if one is busy. Free ones end in :free." error={error?.field === "textModel" ? error.text : null}>
+            <Input value={textModel} onChange={(e) => setTextModel(e.target.value)} />
+          </Field>
+          <Field label="Picture models" hint="Models that can look at a photo, for the backup read." error={error?.field === "model" ? error.text : null}>
             <Input value={model} onChange={(e) => setModel(e.target.value)} />
           </Field>
           <div className="flex items-end gap-2">
