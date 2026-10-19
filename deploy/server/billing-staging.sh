@@ -77,7 +77,7 @@ SQL
     say "Starting the staging app (new migrations run now, on the live data)"
     dc up -d app
     wait_healthy || { say "App did not become healthy — see: sudo billing-staging logs app"; exit 1; }
-    date '+%d %b %Y %H:%M' > "$STATE/data-refreshed"
+    TZ=Asia/Kolkata date '+%d %b %Y %H:%M IST' > "$STATE/data-refreshed"
     say "Done. Staging has a copy of the live books as of $(cat "$STATE/data-refreshed")."
     ;;
 
