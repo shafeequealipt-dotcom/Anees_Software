@@ -74,6 +74,16 @@ beforeAll(async () => {
   API = await ensureApiUser(db);
 });
 
+describe("country rules follow the company, not the last request", () => {
+  it("an Indian GSTIN is accepted even when the server's shared region was left on Saudi Arabia", async () => {
+    setRegion("SA"); // what a page for a Saudi company leaves behind
+    const r = await runBatch(db, ctx(), { dryRun: true, entries: [{ kind: "party", ref: "sup-region", name: "Region Test Distributors", partyKind: "supplier", gstin: GSTIN }] });
+    expect(r.results[0]).toMatchObject({ status: "would_create" });
+    expect(r.ok).toBe(true);
+    setRegion("IN");
+  });
+});
+
 describe("turning the API on per company", () => {
   it("a key can't be made, or used, for a company with API access off", async () => {
     const off = await createCompany(db, { name: "Off Co", country: "IN", taxId: "", stateCode: "29" }, { id: U, isOwner: true, firms: [], permissions: [] });

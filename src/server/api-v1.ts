@@ -2,8 +2,9 @@ import "server-only";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/db";
-import { accounts, items, ledgerCategories, locations, moneyLedger, parties, taxRates, units, vouchers } from "@/db/schema";
+import { accounts, firms, items, ledgerCategories, locations, moneyLedger, parties, taxRates, units, vouchers } from "@/db/schema";
 import { audit } from "@/lib/audit";
+import { setRegion } from "@/lib/region";
 import { addDays } from "@/lib/dates";
 import { VOUCHER_INFO, voucherNumber } from "@/lib/voucher-types";
 import type { VoucherType } from "@/db/schema";
@@ -149,6 +150,11 @@ export async function runBatch(db: DB, ctx: ApiContext, raw: unknown): Promise<{
   const parsed = batchSchema.safeParse(raw);
   if (!parsed.success) throw new MasterError(parsed.error.issues[0].message);
   const { dryRun } = parsed.data;
+  // Tax and ID rules (GSTIN vs VAT number, ...) follow the company's own country. That setting is shared by the whole
+  // server process, so it's set here from the company, not left to whatever page was last opened (and again per entry).
+  const [firm] = await db.select({ country: firms.country }).from(firms).where(eq(firms.id, ctx.firmId));
+  if (!firm) throw new MasterError("That company no longer exists.");
+  const country = firm.country;
   let out: { ok: boolean; dryRun: boolean; results: EntryResult[] } = { ok: false, dryRun, results: [] };
 
   try {
@@ -173,6 +179,7 @@ export async function runBatch(db: DB, ctx: ApiContext, raw: unknown): Promise<{
         }
         seenRefs.add(e.ref);
         try {
+          setRegion(country);
           results.push(await runEntry(tx, ctx, e, byRef, dryRun));
         } catch (err) {
           if (err instanceof MasterError || err instanceof VoucherError) results.push({ ref: e.ref, kind: e.kind, status: "error", message: err.message });
