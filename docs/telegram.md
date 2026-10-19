@@ -70,6 +70,6 @@ also come and go, so if one is retired just change the id on the settings screen
 
 With the free models there is no per-bill cost. Free models are run by outside providers who may keep and learn
 from what they receive: the OCR text (supplier, items, amounts) in the normal case, and the picture itself when the
-backup read is needed. Don't use them for anything confidential; to avoid the picture ever leaving the server, there
-is no such option yet apart from turning off the picture models. The photo is also kept in the app's database with
+backup read is needed. Don't use them for anything confidential; there is no way yet to keep the picture on the
+server while still using the backup read. The photo is also kept in the app's database with
 the bill. You can switch to a paid model on the settings screen at any time.
