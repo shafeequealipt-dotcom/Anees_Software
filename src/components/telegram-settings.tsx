@@ -50,7 +50,9 @@ export function TelegramSettings({ status, companies, links, drafts, httpsOk }: 
   const [error, setError] = useState<{ text: string; field?: string } | null>(null);
   const [saved, setSaved] = useState(false);
   const on = companies.filter((c) => c.on);
-  const [linkFirm, setLinkFirm] = useState(on[0]?.id ?? 0);
+  const [pickedFirm, setLinkFirm] = useState(0);
+  // The picked company, or the first one that's on (the list changes as companies are switched on or off).
+  const linkFirm = on.some((c) => c.id === pickedFirm) ? pickedFirm : (on[0]?.id ?? 0);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
 
   async function run<T extends { ok: boolean }>(p: Promise<T>): Promise<T | null> {

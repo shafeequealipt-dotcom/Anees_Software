@@ -138,6 +138,7 @@ const CODE_MINUTES = 10;
 export async function makeLinkCode(db: DB, userId: number, firmId: number): Promise<{ code: string; url: string }> {
   const cfg = await telegramStatus(db);
   if (!cfg.connected || !cfg.botUsername) throw new MasterError("Connect the bot first.");
+  if (!firmId) throw new MasterError("Choose which company the bills go to.");
   if (!(await telegramEnabled(db, firmId))) throw new MasterError("Turn Telegram bills on for that company first.");
   const code = randomBytes(18).toString("base64url");
   await db.insert(telegramLinkCodes).values({ codeHash: sha(code), userId, firmId, expiresAt: new Date(Date.now() + CODE_MINUTES * 60_000) });
