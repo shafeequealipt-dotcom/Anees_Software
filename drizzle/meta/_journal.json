@@ -225,6 +225,13 @@
       "when": 1792424068237,
       "tag": "0031_telegram_vision_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792424688043,
+      "tag": "0032_telegram_paid_backup",
+      "breakpoints": true
     }
   ]
 }

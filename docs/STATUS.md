@@ -624,3 +624,7 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   switched off for bill reading (retried with thinking allowed for models that insist), errors quote the service;
   a shrunk-photo hint suggests sending a File. Fixed: a typographic dash in the `X-Title` header made every
   reading fail; the default text model id was missing `-a12b`; linking also works with `/link <code>`.
+- **Paid backup (migration 0032)**: picture models are now attempts in their own right (`readDraft`): each is tried in
+  turn until the bill adds up; default order `gemma-4-31b-it:free`, `gemma-4-26b-a4b-it:free`,
+  `google/gemini-2.5-flash-lite` (paid, ~₹0.08/bill, 17/17 rows on the real test bill). The summary names the reader
+  and says when it was paid.

@@ -205,30 +205,34 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
   // 1. The text on the bill, read on our own server (free) and sent to a free text model: very few tokens.
   // 2. If that doesn't give a bill that adds up, the picture goes to a free vision model.
   let ocrText: string | null = null;
-  const methods: ReadMethod[] = [];
+  const attempts: { method: ReadMethod; models: string[]; label: string }[] = [];
   if (cfg.readMode === "ocr" && cfg.textModels.length && (await billOcr().available())) {
     try {
       const o = await billOcr().extract(images);
       if (o.text.replace(/\s/g, "").length >= 40) {
         ocrText = o.text;
         // Hard-to-read photos go straight to the vision model when there is one.
-        if (o.confidence >= MIN_OCR_CONFIDENCE || !cfg.visionModels.length) methods.push("text");
+        if (o.confidence >= MIN_OCR_CONFIDENCE || !cfg.visionModels.length) attempts.push({ method: "text", models: cfg.textModels, label: "the bill's text (OCR)" });
       }
     } catch (e) {
       console.error("ocr failed", e instanceof Error ? e.message : e);
     }
   }
-  if (cfg.visionModels.length) methods.push("picture");
-  if (!methods.length) return fail("no reading models are set up in the app (Settings → Telegram).");
+  // Each picture model is its own attempt, in the order set: a free model that answers wrongly (or not at all)
+  // hands over to the next, and a paid one at the end is only used when the free ones couldn't read the bill.
+  for (const m of cfg.visionModels) attempts.push({ method: "picture", models: [m], label: `the picture (${m}${m.endsWith(":free") ? "" : " — paid, about ₹0.1"})` });
+  if (!attempts.length) return fail("no reading models are set up in the app (Settings → Telegram).");
 
-  let best: { method: ReadMethod; read: ReadBill; plan: Plan; check: Check | null; score: number } | null = null;
+  let best: { method: ReadMethod; label: string; read: ReadBill; plan: Plan; check: Check | null; score: number } | null = null;
   let lastError: string | null = null;
-  for (const method of methods) {
+  for (const [n, attempt] of attempts.entries()) {
+    const { method } = attempt;
+    if (n > 0) msgId = await showMessage(cfg.token, d.chatId, msgId, "📖 Reading again with another reader…");
     try {
       const read =
         method === "text"
-          ? await billReader().read(cfg.aiKey, cfg.textModels, { kind: "text", text: ocrText! }, ctx)
-          : await billReader().read(cfg.aiKey, cfg.visionModels, { kind: "images", files: images, hint: ocrText ?? undefined }, ctx);
+          ? await billReader().read(cfg.aiKey, attempt.models, { kind: "text", text: ocrText! }, ctx)
+          : await billReader().read(cfg.aiKey, attempt.models, { kind: "images", files: images, hint: ocrText ?? undefined }, ctx);
       const plan = buildPlan(read, ref, draftId, todayIST());
       let check: Check | null = null;
       if (plan.entries.length) {
@@ -238,7 +242,7 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
         if (plan.type === "expense" && !first) check = { ...check, ok: false, errors: [...check.errors, "There's no cash or bank account to pay it from."] };
       }
       const score = check?.ok ? 3 : plan.entries.length ? 2 : 1;
-      if (!best || score >= best.score) best = { method, read, plan, check, score };
+      if (!best || score >= best.score) best = { method, label: attempt.label, read, plan, check, score };
       if (check?.ok) break;
     } catch (e) {
       if (e instanceof ReadError) lastError = e.message;
@@ -253,7 +257,7 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
     .update(telegramDrafts)
     .set({ status: "ready", extracted: { ...read, readBy: best.method }, entries: plan.entries, check, error: null, summaryMessageId: msgId, updatedAt: new Date() })
     .where(eq(telegramDrafts.id, draftId));
-  await showMessage(cfg.token, d.chatId, msgId, summaryText(plan, check, firm.name, firm.country, best.method), summaryButtons(draftId, plan, check, accs));
+  await showMessage(cfg.token, d.chatId, msgId, summaryText(plan, check, firm.name, firm.country, best.label), summaryButtons(draftId, plan, check, accs));
 
   // A page of the album that arrived while this was being read: read again with it.
   const now = await db.select({ id: telegramFiles.id }).from(telegramFiles).where(eq(telegramFiles.draftId, draftId));

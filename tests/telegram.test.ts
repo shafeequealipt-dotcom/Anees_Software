@@ -53,12 +53,12 @@ setTelegramTransport(fakeTransport);
 
 let nextRead: ReadBill;
 /** When set, decides each reading from the way it's asked (text or picture); otherwise `nextRead` is returned. */
-let readImpl: ((input: ReadInput) => ReadBill) | null = null;
+let readImpl: ((input: ReadInput, models: string[]) => ReadBill) | null = null;
 const readCalls: { ctx: ReadContext; input: ReadInput; models: string[] }[] = [];
 const fakeReader: BillReader = {
   async read(_key, models, input, ctx) {
     readCalls.push({ ctx, input, models });
-    return readImpl ? readImpl(input) : nextRead;
+    return readImpl ? readImpl(input, models) : nextRead;
   },
   async checkKey(key) {
     return key.includes("bad") ? "OpenRouter didn't accept that key." : null;
@@ -531,6 +531,27 @@ describe("reading with OCR text first, the picture as a backup", () => {
     expect(shown.text).toContain("Read from the picture");
     expect(shown.text).toMatch(/matches the bill/);
     expect(shown.buttons.some((b) => b.callback_data?.startsWith("e:"))).toBe(true);
+  });
+
+  it("each picture model is tried in turn, and the paid backup only when the free ones couldn't read the bill", async () => {
+    reset();
+    const wrong = medBill({ billNo: "PAID-1", total: 1 }); // doesn't add up
+    readImpl = (input, models) => (input.kind === "images" && models[0] === "google/gemini-2.5-flash-lite" ? medBill({ billNo: "PAID-1" }) : wrong);
+    await handleUpdate(db, photo());
+    expect(kinds()).toEqual(["text", "images", "images", "images"]);
+    expect(readCalls.map((c) => c.models[0]).slice(1)).toEqual(["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "google/gemini-2.5-flash-lite"]);
+    const shown = lastShown();
+    expect(shown.text).toMatch(/Read from the picture \(google\/gemini-2\.5-flash-lite — paid/);
+    expect(shown.text).toMatch(/matches the bill/);
+    expect(shown.buttons.some((b) => b.callback_data?.startsWith("e:"))).toBe(true);
+
+    // When a free picture model reads it right, the paid one is never asked.
+    reset();
+    ocrConfidence = 30;
+    readImpl = (_input, models) => (models[0].startsWith("google/gemma-4-31b") ? medBill({ billNo: "PAID-2" }) : wrong);
+    await handleUpdate(db, photo());
+    expect(readCalls.map((c) => c.models[0])).toEqual(["google/gemma-4-31b-it:free"]);
+    expect(lastShown().text).not.toContain("— paid");
   });
 
   it("a hard-to-read photo goes straight to the picture model", async () => {

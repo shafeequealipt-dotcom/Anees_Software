@@ -69,8 +69,13 @@ the lines adding up exactly to the bill's own subtotal. Pack sizes ("100GM", "60
 units list.
 
 **What free models are like:** they are often busy (rate-limited) and a few insist on "thinking", which makes a
-dense photo take about a minute. The bot tries each model in turn. For hard photos a cheap paid vision model as the
-last backup (a fraction of a rupee per bill) is far steadier; enter its id in "Picture models" if you want that.
+dense photo take about a minute. So the picture readers are tried one at a time, in the order set under "Picture
+models", and the next is used whenever one gives no answer **or a bill that doesn't add up**. The default order is two
+free Gemma models and then **`google/gemini-2.5-flash-lite` (paid, about ₹0.08 a bill)**, which read the real test
+bill perfectly (17 of 17 rows, lines adding up to the printed subtotal) in 9 seconds. It is only asked when the free
+readers couldn't read the bill, and the summary says so ("Read from the picture (… — paid, about ₹0.1)"). On the same
+bill, Qwen 3.7 Flash (`qwen/qwen3.7-flash`, cheaper, about 24 s) also got every row right after the cross-check;
+Claude Haiku 5.5 and the paid Gemma 4 26B did not. Change the order or the models any time on the settings screen.
 
 **Tip:** send the bill as a **File** (📎 → File), not a Photo. Telegram shrinks ordinary photos to 1280 pixels,
 which makes small print harder to read; a File arrives at full size.

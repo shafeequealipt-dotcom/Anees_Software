@@ -1122,7 +1122,7 @@ export const telegramConfig = pgTable("telegram_config", {
   botTokenHint: varchar("bot_token_hint", { length: 8 }),
   aiKeyHint: varchar("ai_key_hint", { length: 8 }),
   /** OpenRouter model ids (up to three, comma-separated, tried in order). `model` reads the picture; `textModel` reads OCR text. */
-  model: varchar("model", { length: 200 }).notNull().default("google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,minimax/minimax-m3.1-flash:free"),
+  model: varchar("model", { length: 200 }).notNull().default("google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,google/gemini-2.5-flash-lite"),
   textModel: varchar("text_model", { length: 200 }).notNull().default("nvidia/nemotron-3-super-120b-a12b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free"),
   /** "ocr": read the text on our server first and use the picture only as a backup. "vision": always send the picture. */
   readMode: varchar("read_mode", { length: 8 }).notNull().default("ocr"),

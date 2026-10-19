@@ -16,7 +16,7 @@ import { billReader, parseModels, unknownModels } from "./read-bill";
  * from Telegram; and which Telegram chats are linked (via a one-time code) to which company.
  */
 
-export const DEFAULT_VISION_MODELS = "google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,minimax/minimax-m3.1-flash:free";
+export const DEFAULT_VISION_MODELS = "google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,google/gemini-2.5-flash-lite";
 export const DEFAULT_TEXT_MODELS = "nvidia/nemotron-3-super-120b-a12b:free,xingchen-agi/xing4.0-29b-a4b:free,liquid/lfm-2.5-2.6b:free";
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");

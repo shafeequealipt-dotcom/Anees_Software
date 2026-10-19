@@ -254,7 +254,7 @@ const day = (iso: string) => {
 
 const qtyText = (q: number) => (Number.isInteger(q) ? String(q) : q.toFixed(3).replace(/0+$/, ""));
 
-export function summaryText(plan: Plan, check: Check | null, firmName: string, country: string, readBy?: "text" | "picture"): string {
+export function summaryText(plan: Plan, check: Check | null, firmName: string, country: string, readBy?: string): string {
   const out: string[] = [];
   const b = (s: string) => `<b>${esc(s)}</b>`;
   if (plan.type === "not_a_bill") {
@@ -288,7 +288,7 @@ export function summaryText(plan: Plan, check: Check | null, firmName: string, c
   if (warn.length) out.push("", ...warn.map((w) => `❌ ${esc(w)}`));
   if (plan.notes.length) out.push("", ...plan.notes.map((n) => `⚠️ ${esc(n)}`));
   for (const d of check?.duplicates ?? []) out.push(`⚠️ Looks like ${esc(d.number)} already entered (${day(d.date)}, ${money(d.amountPaise, country)})`);
-  if (readBy) out.push("", `<i>${readBy === "text" ? "Read from the bill's text (OCR)" : "Read from the picture"}</i>`);
+  if (readBy) out.push("", `<i>Read from ${esc(readBy)}</i>`);
   out.push("", check?.ok ? "Check it, then tap how it was paid. Reply to this message to correct anything." : "Reply to this message with a correction (e.g. “total is 742”), send a clearer photo, or discard.");
   return out.join("\n");
 }
