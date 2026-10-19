@@ -14,6 +14,7 @@ import { CompanySwitcher } from "@/components/company-switcher";
 import { HoverMenu } from "@/components/hover-menu";
 import { LanguageToggle } from "@/components/language-toggle";
 import { cookies } from "next/headers";
+import { StagingBar } from "@/components/staging-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Nav groups={groups} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
+        <StagingBar />
         {/* Left padding below lg leaves room for the fixed Menu button (wider once it shows its label). */}
         <header className="no-print flex h-14 shrink-0 items-center gap-1.5 border-b border-line bg-panel pl-16 pr-2 shadow-sm shadow-ink/[0.03] sm:gap-3 sm:pl-32 sm:pr-4 lg:pl-4">
           <Suspense fallback={null}>

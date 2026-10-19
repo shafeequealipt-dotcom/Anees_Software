@@ -1,0 +1,23 @@
+name: Tests
+
+# Every push to develop or main, and every pull request into main, must type-check and pass the whole test suite.
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npm test
+        env:
+          VITEST_MAX_WORKERS: 2

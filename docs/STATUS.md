@@ -610,3 +610,11 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   three ids per kind, tried in order via OpenRouter's `models` fallback; defaults are `:free` models, checked against
   OpenRouter's list when saved. The AI is only told about suppliers/items sharing a word with the bill
   (`candidates`), and the app matches names itself (`closest` in `draft.ts`). `sharp` is now a direct dependency.
+
+### Staging environment and branches — added 2026-10-19
+- Git: `main` = live, `develop` = where changes are made; GitHub check runs tsc + tests (`.github/workflows/test.yml`).
+- Staging copy on the same server (`/opt/billing-staging`, project `billing-staging`, local port 8092, nginx site
+  `billing-staging.dnhcare.co.in`): `deploy/docker-compose.staging.yml`, `deploy/server/billing-staging.sh`,
+  `deploy/server/setup-staging.sh`, `deploy/push-staging.sh`. `src/components/staging-bar.tsx` shows the red bar
+  when `APP_ENV=staging`. `deploy/push.sh` (live) now refuses unless on a pushed `main` whose exact content was
+  deployed to staging. Full description: `docs/workflow.md`.

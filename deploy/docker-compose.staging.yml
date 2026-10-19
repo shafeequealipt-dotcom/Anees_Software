@@ -1,0 +1,48 @@
+# The STAGING copy of the billing app, on the same server as the live one. Used (by billing-staging.sh) as
+#   docker compose -p billing-staging -f docker-compose.yml -f docker-compose.shared-nginx.yml -f docker-compose.staging.yml
+#
+# What makes it safe to test on:
+#   - its own images, containers, database and uploads (project name billing-staging), never the live ones
+#   - no backup archiving: the live OCI bucket credentials are blanked, archive_mode is off
+#   - no outbound messages: WhatsApp, email and the cron secret are blanked (they would only come from /opt/billing-staging/.env)
+#   - APP_ENV=staging shows a red STAGING bar on every page
+# Its own APP_SECRET (in /opt/billing-staging/.env) means secrets copied from the live books (keys, tokens) can't be read.
+services:
+  app:
+    image: billing-staging-app:latest
+    environment:
+      APP_ENV: staging
+      WHATSAPP_TOKEN: ""
+      WHATSAPP_PHONE_NUMBER_ID: ""
+      WHATSAPP_TEMPLATE_NAME: ""
+      SMTP_HOST: ""
+      SMTP_USER: ""
+      SMTP_PASS: ""
+      SMTP_FROM: ""
+      CRON_SECRET: ""
+
+  db:
+    image: billing-staging-db:17
+    environment:
+      PGBACKREST_REPO1_S3_ENDPOINT: ""
+      PGBACKREST_REPO1_S3_REGION: ""
+      PGBACKREST_REPO1_S3_BUCKET: ""
+      PGBACKREST_REPO1_S3_KEY: ""
+      PGBACKREST_REPO1_S3_KEY_SECRET: ""
+      PGBACKREST_REPO1_CIPHER_PASS: ""
+    command:
+      - postgres
+      - -c
+      - archive_mode=off
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-96MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-256MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-4MB}
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-40}
+      - -c
+      - log_timezone=Asia/Kolkata
+      - -c
+      - timezone=Asia/Kolkata
