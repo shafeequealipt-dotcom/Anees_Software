@@ -155,8 +155,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const TL = taxColumnLabels(R);
   const composition = data.firm?.gstScheme !== "regular" && info.outward;
   const isStockMove = data.type === "stock_adjustment" || data.type === "stock_transfer";
-  // People who can't see purchase prices see (and enter) a transfer at selling price; the server stores it at cost.
-  const transferAtSale = data.type === "stock_transfer" && !data.see.purchase;
+  // Stock moves from the warehouse to the shops at the sale rate; purchase rates are for buying only.
+  const transferAtSale = data.type === "stock_transfer";
   const usesSalePrice = info.priceSide === "sale" || transferAtSale;
   const noTax = isStockMove || data.type === "delivery_challan" || withoutTax || composition;
   // A purchase return or write-off can also be from the Damaged goods location — the only place
@@ -230,7 +230,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
     }
     const sale = info.priceSide === "sale";
     const tax = item.taxRateId ? taxMap.get(item.taxRateId) : undefined;
-    const price = sale ? saleRateFor(item, priceParty, data.pricing) : transferAtSale ? { paise: item.salePricePaise, incl: item.saleIncl } : { paise: item.purchasePricePaise, incl: item.purchaseIncl };
+    const price = sale ? saleRateFor(item, priceParty, data.pricing) : transferAtSale ? { paise: item.salePricePaise, incl: false } : { paise: item.purchasePricePaise, incl: item.purchaseIncl };
     updateLine(key, {
       itemId: item.id,
       description: item.name,
@@ -635,7 +635,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                   <th className="min-w-64 px-2 py-2">{data.type === "expense" || data.type === "other_income" ? "Item / description" : "Item"}</th>
                   <th className="w-24 px-2 py-2 text-right">Qty</th>
                   <th className="w-28 px-2 py-2">Unit</th>
-                  <th className="w-32 px-2 py-2 text-right">{transferAtSale ? "Selling price" : isStockMove ? "Cost/unit" : "Rate"}</th>
+                  <th className="w-32 px-2 py-2 text-right">{transferAtSale ? "Sale rate" : isStockMove ? "Cost/unit" : "Rate"}</th>
                   {data.settings.lineDiscount && !isStockMove && <th className="w-20 px-2 py-2 text-right">Disc %</th>}
                   {!noTax && <th className="w-36 px-2 py-2">Tax</th>}
                   <th className="w-32 px-2 py-2 text-right">Amount</th>
@@ -706,7 +706,17 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                         )}
                       </td>
                       <td className="px-2 py-1.5">
-                        <Input data-cell="rate" value={l.rate} onChange={(e) => updateLine(l.key, { rate: e.target.value })} inputMode="decimal" className={cx("num text-right", Number.isNaN(toPaise(l.rate)) && "border-bad")} placeholder="0" />
+                        <Input
+                          data-cell="rate"
+                          value={l.rate}
+                          onChange={(e) => updateLine(l.key, { rate: e.target.value })}
+                          // A transfer of a listed item always goes at its sale rate (the server sets it), so it can't be typed over.
+                          readOnly={transferAtSale && !!l.itemId}
+                          title={transferAtSale && l.itemId ? "Transfers go at the item's sale rate" : undefined}
+                          inputMode="decimal"
+                          className={cx("num text-right", Number.isNaN(toPaise(l.rate)) && "border-bad", transferAtSale && !!l.itemId && "bg-ground text-muted")}
+                          placeholder="0"
+                        />
                         {!noTax && (
                           <label className="mt-1 flex items-center justify-end gap-1 text-xs text-faint">
                             <input type="checkbox" tabIndex={-1} checked={l.rateIncl} onChange={(e) => updateLine(l.key, { rateIncl: e.target.checked })} className="accent-brand-600" />

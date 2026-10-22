@@ -12,7 +12,6 @@ import { resolvePeriod } from "@/lib/periods";
 import { typeFromPath, VOUCHER_INFO } from "@/lib/voucher-types";
 import { listLocations } from "@/server/locations";
 import { listVouchers } from "@/server/reports";
-import { sellingOnly, withSellingTotals } from "@/server/transfer-view";
 
 type SP = { from?: string; to?: string; q?: string; status?: string; saved?: string; view?: string };
 
@@ -46,7 +45,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
   const { presets, from, to } = resolvePeriod(sp, daily ? (wideStatus ? "fy" : "today") : info.takesPayment ? "month" : "fy");
   const db = await getDb();
   // Every status at once, so each tab can show its count; the chosen tab is filtered here.
-  const loaded = await listVouchers(db, user.firmId, {
+  const list = await listVouchers(db, user.firmId, {
     types: [type],
     from,
     to,
@@ -57,8 +56,6 @@ export default async function VoucherListPage({ params, searchParams }: { params
     ...(user.allLocations ? {} : { locationIds: user.locations.map((l) => l.id), createdBy: user.id }),
   });
 
-  // Shop staff who can't see purchase prices see transfers valued at selling price.
-  const list = sellingOnly(type, can(user, "see.purchasePrice")) ? await withSellingTotals(db, user.firmId, loaded) : loaded;
   const today = todayIST();
   const isTransfer = type === "stock_transfer";
   const showBalance = info.takesPayment;

@@ -1,6 +1,5 @@
 import { getDb } from "@/db";
 import { canSeeVoucher, currentUser } from "@/lib/auth";
-import { can } from "@/lib/permissions";
 import { loadInvoiceModel } from "@/server/invoice";
 import { renderInvoicePdf } from "@/server/pdf/invoice-pdf";
 import { getVoucher } from "@/server/vouchers";
@@ -18,7 +17,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!existing || !canSeeVoucher(user, existing.voucher)) return new Response("Not found", { status: 404 });
   const q = new URL(req.url).searchParams;
   const paper = ({ a4: "A4", a5: "A5", t80: "T80", t58: "T58" } as const)[(q.get("paper") ?? "") as "a4"];
-  const model = await loadInvoiceModel(db, user.firmId, id, { paper, sellingPrice: !can(user, "see.purchasePrice") });
+  const model = await loadInvoiceModel(db, user.firmId, id, { paper });
   if (!model) return new Response("Not found", { status: 404 });
   const pdf = await renderInvoicePdf(model);
   const download = q.get("download") === "1";

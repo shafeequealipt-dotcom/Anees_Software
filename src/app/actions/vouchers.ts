@@ -19,7 +19,6 @@ import { formatDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { whatsappLink } from "@/lib/phone";
 import { cancelVoucher, deleteVoucher, getVoucher, openBills, receiveTransfer, restoreVoucher, saveVoucher, VoucherError, type ReceiveLineInput, type VoucherInput } from "@/server/vouchers";
-import { withCostRates } from "@/server/transfer-view";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; field?: string };
 
@@ -63,8 +62,6 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
         if (created && created !== todayIST()) throw new AuthError("Only the owner or accountant can edit entries from earlier days.");
       }
     }
-    // Someone who can't see purchase prices saw a transfer at selling price; it is stored at the items' cost.
-    if (input.type === "stock_transfer" && !can(user, "see.purchasePrice")) input = await withCostRates(db, user.firmId, input);
     const res = await saveVoucher(db, user.firmId, input, user.id, await clientIp());
     await notifyTransaction(db, user.firmId, user.id, res.id, input.id ? "updated" : "created");
     if (!input.id && user.firm.country === "SA") {

@@ -344,6 +344,11 @@ export interface StockRow {
   active: boolean;
 }
 
+/** Cost of one milli-unit of a transfer line's quantity (in the line's own unit); a free-text line at its own value. */
+const lineUnitCost = sql`(case when vl.item_id is null then vl.taxable_paise::numeric / nullif(vl.qty_milli, 0)
+    else (case when i.purchase_price_includes_tax then round(i.purchase_price_paise * 10000.0 / (10000 + coalesce(t.gst_bp, 0) + coalesce(t.cess_bp, 0))) else i.purchase_price_paise end)
+      * coalesce(vl.unit_factor_milli, 1000) / 1000000.0 end)`;
+
 /** Stock value uses the purchase price without tax. */
 const costPerUnit = sql`case when i.purchase_price_includes_tax
     then round(i.purchase_price_paise * 10000.0 / (10000 + coalesce(t.gst_bp, 0) + coalesce(t.cess_bp, 0)))
@@ -450,10 +455,13 @@ export async function transfersReport(db: DB, firmId: number, from: string, to: 
       db,
       sql`select v.to_location_id as location_id, l.name as location_name,
             count(distinct v.id) as transfers,
-            coalesce(round(sum(vl.taxable_paise * coalesce(vl.damaged_qty_milli, 0)::numeric / nullif(vl.qty_milli, 0))), 0) as damaged_value_paise,
-            coalesce(round(sum(vl.taxable_paise * greatest(vl.qty_milli - coalesce(vl.received_qty_milli, 0) - coalesce(vl.damaged_qty_milli, 0), 0)::numeric / nullif(vl.qty_milli, 0))), 0) as short_value_paise
+            -- Losses count at what the goods cost (transfers themselves go at the sale rate); a line with no item, at its own value.
+            coalesce(round(sum(coalesce(vl.damaged_qty_milli, 0) * ${lineUnitCost})), 0) as damaged_value_paise,
+            coalesce(round(sum(greatest(vl.qty_milli - coalesce(vl.received_qty_milli, 0) - coalesce(vl.damaged_qty_milli, 0), 0) * ${lineUnitCost})), 0) as short_value_paise
           from vouchers v
           join voucher_lines vl on vl.voucher_id = v.id
+          left join items i on i.id = vl.item_id
+          left join tax_rates t on t.id = i.tax_rate_id
           join locations l on l.id = v.to_location_id
           where v.firm_id = ${firmId} and v.type = 'stock_transfer' and v.status = 'active' and v.received_at is not null
             and (v.received_at at time zone ${region().timezone})::date between ${from} and ${to}

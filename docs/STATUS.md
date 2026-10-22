@@ -638,10 +638,11 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   a lawful GST rate the company lacks (or switches a disabled one back on) and says so; other rates are refused as
   misreads. All 8 failed bills re-run through the real pipeline entered at exactly their printed totals.
 
-### Stock transfers at selling price for shop staff — added 2026-10-22 (migration `0033_transfer_sale_price.sql`)
-- Transfers stay at cost in the books. Each transfer line also records the item's selling price when sent
-  (`voucher_lines.sale_price_paise`). People whose role lacks "Purchase prices of items" (`see.purchasePrice`) see a
-  transfer at selling price everywhere: the transfer page ("Selling price" column, totals re-added, no tax/cost),
-  the printout/PDF, the transfer list and its Excel export, and the new/edit form; whatever they enter is stored at
-  the items' cost on save (`withCostRates`). Public share links of a transfer always show selling prices.
-  Code: `src/server/transfer-view.ts`. Tests: `tests/transfer-selling-price.test.ts`.
+### Stock transfers at the sale rate — 2026-10-23 (migration `0033_transfer_sale_price.sql`)
+- Items carry a purchase rate (for buying) and a sale rate. Stock moves from the warehouse to the shops at the
+  **sale rate**: `saveVoucher` prices every item line of a `stock_transfer` from the item's sale price (whatever the
+  form sent; free-text lines keep their own rate) and records it in `voucher_lines.sale_price_paise`. The transfer
+  form shows a read-only "Sale rate" column; the transfer page says "Sale rate". Purchase rates aren't shown or used
+  on transfers. Stock value and the books are unaffected (stock is valued at purchase cost; transfers post nothing);
+  the transit report values damaged/short goods at cost. Tests: `tests/transfer-sale-rate.test.ts`.
+  (Replaces the same-day version that showed selling price only to staff without cost access.)

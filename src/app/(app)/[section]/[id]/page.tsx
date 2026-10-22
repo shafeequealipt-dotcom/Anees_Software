@@ -20,7 +20,6 @@ import { returnReasonLabel, typeFromPath, VOUCHER_INFO, voucherNumber } from "@/
 import { voucherProfit } from "@/server/profit-reports";
 import { zatcaForVoucher } from "@/server/zatca";
 import { getVoucher, paymentStatus, returnStatus } from "@/server/vouchers";
-import { sellingOnly, sellingView } from "@/server/transfer-view";
 import { ProductName } from "@/components/product-name";
 
 export async function generateMetadata({ params }: { params: Promise<{ section: string; id: string }> }) {
@@ -36,11 +35,8 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
   const user = await requireUser();
   const sp = await searchParams;
   const db = await getDb();
-  const loaded = await getVoucher(db, user.firmId, Number(id));
-  if (!loaded) notFound();
-  // Shop staff who can't see purchase prices see a stock transfer at selling price.
-  const atSellingPrice = sellingOnly(loaded.voucher.type, can(user, "see.purchasePrice"));
-  const data = atSellingPrice ? await sellingView(db, user.firmId, loaded) : loaded;
+  const data = await getVoucher(db, user.firmId, Number(id));
+  if (!data) notFound();
   const v = data.voucher;
   if (v.type !== type) redirect(`${VOUCHER_INFO[v.type].path}/${v.id}`);
   if (!canSeeVoucher(user, v)) notFound();
@@ -210,7 +206,7 @@ export default async function VoucherPage({ params, searchParams }: { params: Pr
                     <th className={th + " text-right"}>Qty</th>
                     {v.type === "stock_transfer" && v.receivedAt && <th className={th + " text-right"}>Received</th>}
                     {v.type === "stock_transfer" && v.receivedAt && <th className={th + " text-right"}>Damaged</th>}
-                    <th className={th + " text-right"}>{atSellingPrice ? "Selling price" : "Rate"}</th>
+                    <th className={th + " text-right"}>{v.type === "stock_transfer" ? "Sale rate" : "Rate"}</th>
                     {v.discountPaise > 0 && <th className={th + " text-right"}>Discount</th>}
                     {hasTax && <th className={th + " text-right"}>Tax</th>}
                     <th className={th + " text-right"}>Amount</th>

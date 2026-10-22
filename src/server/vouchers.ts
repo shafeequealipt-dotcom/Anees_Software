@@ -234,8 +234,16 @@ export async function saveVoucher(
 
     const normalizedLines = lineInputs.map((l) => {
       const t = l.taxRateId ? taxMap.get(l.taxRateId) : undefined;
+      // Stock moves from the warehouse to the shops at the SALE rate: purchase rates are for buying only, so a
+      // transfer line is always priced from the item's sale price, whatever the form sent.
+      const item = l.itemId ? itemMap.get(l.itemId) : undefined;
+      const atSale =
+        input.type === "stock_transfer" && item
+          ? { ratePaise: Math.round((item.salePricePaise * (l.unitFactorMilli || 1000)) / 1000), rateIncludesTax: false, discountBp: 0, discountPaise: 0 }
+          : {};
       return {
         ...l,
+        ...atSale,
         gstBp: t ? t.gstBp : l.gstBp,
         cessBp: t ? t.cessBp : l.cessBp,
         qtyMilli: input.type === "expense" || input.type === "other_income" ? Math.max(l.qtyMilli, 1000) : l.qtyMilli,

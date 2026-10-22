@@ -18,7 +18,6 @@ import { listCustomFields } from "./custom-fields";
 import { imageDataUrls } from "./company-images";
 import { zatcaForVoucher } from "./zatca";
 import { getVoucher } from "./vouchers";
-import { sellingView } from "./transfer-view";
 
 export type PaperKind = "A4" | "A5" | "T80" | "T58";
 
@@ -58,10 +57,9 @@ export interface InvoiceModel {
 
 const clean = (a: (string | null | undefined)[]) => a.filter((x): x is string => !!x && x.trim() !== "").map((x) => x.trim());
 
-export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number, opts: { paper?: PaperKind; /** Print a stock transfer at selling price (for people who can't see cost). */ sellingPrice?: boolean } = {}): Promise<InvoiceModel | null> {
-  const loaded = await getVoucher(db, firmId, voucherId);
-  if (!loaded) return null;
-  const data = opts.sellingPrice && loaded.voucher.type === "stock_transfer" ? await sellingView(db, firmId, loaded) : loaded;
+export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number, opts: { paper?: PaperKind } = {}): Promise<InvoiceModel | null> {
+  const data = await getVoucher(db, firmId, voucherId);
+  if (!data) return null;
   const v = data.voucher;
   const info = VOUCHER_INFO[v.type];
   const [firm] = await db.select().from(firms).where(eq(firms.id, firmId));
