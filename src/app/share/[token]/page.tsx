@@ -11,7 +11,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
   const { token } = await params;
   const db = await getDb();
   const link = await resolveShare(db, token);
-  const model = link ? await loadInvoiceModel(db, link.firmId, link.voucherId) : null;
+  const model = link ? await loadInvoiceModel(db, link.firmId, link.voucherId, { sellingPrice: true }) : null; // never cost on a public link
 
   if (!model) {
     return (

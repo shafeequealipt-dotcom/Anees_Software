@@ -155,6 +155,9 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const TL = taxColumnLabels(R);
   const composition = data.firm?.gstScheme !== "regular" && info.outward;
   const isStockMove = data.type === "stock_adjustment" || data.type === "stock_transfer";
+  // People who can't see purchase prices see (and enter) a transfer at selling price; the server stores it at cost.
+  const transferAtSale = data.type === "stock_transfer" && !data.see.purchase;
+  const usesSalePrice = info.priceSide === "sale" || transferAtSale;
   const noTax = isStockMove || data.type === "delivery_challan" || withoutTax || composition;
   // A purchase return or write-off can also be from the Damaged goods location — the only place
   // it can be picked, since it isn't assigned to any user like a normal shop.
@@ -227,7 +230,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
     }
     const sale = info.priceSide === "sale";
     const tax = item.taxRateId ? taxMap.get(item.taxRateId) : undefined;
-    const price = sale ? saleRateFor(item, priceParty, data.pricing) : { paise: item.purchasePricePaise, incl: item.purchaseIncl };
+    const price = sale ? saleRateFor(item, priceParty, data.pricing) : transferAtSale ? { paise: item.salePricePaise, incl: item.saleIncl } : { paise: item.purchasePricePaise, incl: item.purchaseIncl };
     updateLine(key, {
       itemId: item.id,
       description: item.name,
@@ -384,7 +387,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
               <ProductName code={i.code} name={i.name} />
             </span>
             <span className="shrink-0 text-xs text-muted">
-              {formatINR(info.priceSide === "sale" ? i.salePricePaise : i.purchasePricePaise)}
+              {formatINR(usesSalePrice ? i.salePricePaise : i.purchasePricePaise)}
               {i.kind === "goods" && (
                 <span className={cx("ml-2", stockAt(i, locationId) <= 0 ? "text-bad" : "text-good")}>
                   {formatQty(stockAt(i, locationId))} {i.unitCode ?? ""}
@@ -632,7 +635,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                   <th className="min-w-64 px-2 py-2">{data.type === "expense" || data.type === "other_income" ? "Item / description" : "Item"}</th>
                   <th className="w-24 px-2 py-2 text-right">Qty</th>
                   <th className="w-28 px-2 py-2">Unit</th>
-                  <th className="w-32 px-2 py-2 text-right">{isStockMove ? "Cost/unit" : "Rate"}</th>
+                  <th className="w-32 px-2 py-2 text-right">{transferAtSale ? "Selling price" : isStockMove ? "Cost/unit" : "Rate"}</th>
                   {data.settings.lineDiscount && !isStockMove && <th className="w-20 px-2 py-2 text-right">Disc %</th>}
                   {!noTax && <th className="w-36 px-2 py-2">Tax</th>}
                   <th className="w-32 px-2 py-2 text-right">Amount</th>
@@ -688,7 +691,7 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                             value={l.unit}
                             onChange={(e) => {
                               const unit = e.target.value as "base" | "alt";
-                              const baseRate = info.priceSide === "sale" ? saleRateFor(item, priceParty, data.pricing).paise : item.purchasePricePaise;
+                              const baseRate = info.priceSide === "sale" ? saleRateFor(item, priceParty, data.pricing).paise : transferAtSale ? item.salePricePaise : item.purchasePricePaise;
                               const rate = unit === "alt" ? Math.round((baseRate * item.altFactorMilli!) / 1000) : baseRate;
                               updateLine(l.key, { unit, rate: rupees(rate) });
                             }}

@@ -232,6 +232,13 @@
       "when": 1792424688043,
       "tag": "0032_telegram_paid_backup",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792691417306,
+      "tag": "0033_transfer_sale_price",
+      "breakpoints": true
     }
   ]
 }

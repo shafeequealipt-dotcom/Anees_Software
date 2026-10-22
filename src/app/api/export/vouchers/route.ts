@@ -5,6 +5,7 @@ import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { apiUser } from "@/server/api";
 import { toXlsx, xlsxResponse } from "@/server/excel";
 import { listVouchers } from "@/server/reports";
+import { sellingOnly, withSellingTotals } from "@/server/transfer-view";
 import type { VoucherType } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,8 @@ export async function GET(req: Request) {
   const type = (q.get("type") ?? "") as VoucherType;
   if (!VOUCHER_INFO[type]) return new Response("Unknown type", { status: 400 });
   const status = ["open", "paid", "overdue", "cancelled", "all"].includes(q.get("status") ?? "") ? (q.get("status") as "open") : undefined;
-  const list = await listVouchers(await getDb(), a.user.firmId, {
+  const db = await getDb();
+  const loaded = await listVouchers(db, a.user.firmId, {
     types: [type],
     from: q.get("from") || undefined,
     to: q.get("to") || undefined,
@@ -27,6 +29,8 @@ export async function GET(req: Request) {
     hidePartners: !can(a.user, "partners.manage"),
     ...(a.user.allLocations ? {} : { locationIds: a.user.locations.map((l) => l.id), createdBy: a.user.id }),
   });
+  // Transfers at selling price for people who can't see purchase prices.
+  const list = sellingOnly(type, can(a.user, "see.purchasePrice")) ? await withSellingTotals(db, a.user.firmId, loaded) : loaded;
   const info = VOUCHER_INFO[type];
   const rows = list.map((r) => ({
     date: formatDate(r.date),

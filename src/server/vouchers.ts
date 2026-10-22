@@ -495,6 +495,7 @@ export async function saveVoucher(
                 cessPaise: r.cessPaise,
                 totalPaise: r.totalPaise,
                 mrpPaise: l.mrpPaise ?? null,
+                salePricePaise: input.type === "stock_transfer" && item ? item.salePricePaise : null,
                 batchNo: l.batchNo,
                 mfgDate: l.mfgDate,
                 expiryDate: l.expiryDate,

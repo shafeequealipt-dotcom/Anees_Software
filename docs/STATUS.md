@@ -637,3 +637,11 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   the last picture reader with feedback when no reading adds up; replying to a discarded bill reopens it. The API adds
   a lawful GST rate the company lacks (or switches a disabled one back on) and says so; other rates are refused as
   misreads. All 8 failed bills re-run through the real pipeline entered at exactly their printed totals.
+
+### Stock transfers at selling price for shop staff — added 2026-10-22 (migration `0033_transfer_sale_price.sql`)
+- Transfers stay at cost in the books. Each transfer line also records the item's selling price when sent
+  (`voucher_lines.sale_price_paise`). People whose role lacks "Purchase prices of items" (`see.purchasePrice`) see a
+  transfer at selling price everywhere: the transfer page ("Selling price" column, totals re-added, no tax/cost),
+  the printout/PDF, the transfer list and its Excel export, and the new/edit form; whatever they enter is stored at
+  the items' cost on save (`withCostRates`). Public share links of a transfer always show selling prices.
+  Code: `src/server/transfer-view.ts`. Tests: `tests/transfer-selling-price.test.ts`.

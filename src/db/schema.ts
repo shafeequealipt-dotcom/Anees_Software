@@ -727,6 +727,8 @@ export const voucherLines = pgTable(
     igstPaise: paise("igst_paise").notNull().default(0),
     cessPaise: paise("cess_paise").notNull().default(0),
     totalPaise: paise("total_paise").notNull().default(0),
+    /** Stock transfers: the item's selling price when sent, shown instead of the cost to people who can't see purchase prices. */
+    salePricePaise: paise("sale_price_paise"),
     mrpPaise: paise("mrp_paise"),
     batchNo: varchar("batch_no", { length: 60 }),
     mfgDate: date("mfg_date"),

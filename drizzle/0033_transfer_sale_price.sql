@@ -1,0 +1,1 @@
+ALTER TABLE "voucher_lines" ADD COLUMN "sale_price_paise" bigint;

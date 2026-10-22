@@ -9,6 +9,7 @@ import { VOUCHER_INFO } from "@/lib/voucher-types";
 import { listLocations } from "./locations";
 import { loadPricing } from "./pricing";
 import { getVoucher, returnableQtyByItem } from "./vouchers";
+import { sellingOnly, sellingView } from "./transfer-view";
 
 export interface PartyOpt {
   id: number;
@@ -148,7 +149,9 @@ export async function loadVoucherFormData(
       ? await db.select({ id: locations.id, name: locations.name }).from(locations).where(and(eq(locations.firmId, firmId), eq(locations.kind, "damaged"), eq(locations.active, true)))
       : [];
 
-  const existing = opts.id ? await getVoucher(db, firmId, opts.id) : null;
+  const saved = opts.id ? await getVoucher(db, firmId, opts.id) : null;
+  // Editing a transfer without seeing purchase prices: its lines are shown at selling price (stored at cost on save).
+  const existing = saved && sellingOnly(saved.voucher.type, see.purchase) ? await sellingView(db, firmId, saved) : saved;
   const fromIds = [...new Set(opts.fromIds?.length ? opts.fromIds : opts.fromId ? [opts.fromId] : [])];
   const found = existing ? [] : (await Promise.all(fromIds.map((sid) => getVoucher(db, firmId, sid)))).filter((x): x is NonNullable<typeof x> => !!x);
   // Combined documents must be for the same party as the first one.

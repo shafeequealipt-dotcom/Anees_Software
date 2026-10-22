@@ -10,7 +10,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   const db = await getDb();
   const link = await resolveShare(db, (await ctx.params).token);
   if (!link) return new Response("This link has expired or is not valid.", { status: 404 });
-  const model = await loadInvoiceModel(db, link.firmId, link.voucherId);
+  const model = await loadInvoiceModel(db, link.firmId, link.voucherId, { sellingPrice: true }); // never cost on a public link
   if (!model) return new Response("Not found", { status: 404 });
   const pdf = await renderInvoicePdf(model);
   return new Response(new Uint8Array(pdf), {
