@@ -45,6 +45,20 @@ const pick = (what: string) =>
     .object({ ref: z.string().optional(), id: z.number().int().positive().optional(), name: z.string().trim().optional(), gstin: z.string().trim().optional(), code: z.string().trim().optional() })
     .refine((p) => p.ref || p.id || p.name || p.gstin || p.code, `Say which ${what} (ref, id, name${what === "item" ? " or code" : what === "party" ? " or GSTIN" : ""}).`);
 
+const billLine = z.object({
+  item: pick("item"),
+  qty: z.number().positive("Quantities must be more than zero."),
+  ratePaise: paise,
+  rateIncludesTax: z.boolean().default(false),
+  gstRatePct: z.number().min(0).max(100).optional().nullable(),
+  discountPct: z.number().min(0).max(100).default(0),
+  /**
+   * The line's amount before tax as printed. When the unit price has more decimals than a paisa (1000 × ₹0.72034
+   * = ₹720.34), qty × rate can't make it, so the rate is rounded up and the paise over are a line discount.
+   */
+  amountPaise: paise.optional().nullable(),
+});
+
 const entrySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("bank_account"), ref, name: z.string().trim().min(1).max(120), bankName: text(120), accountNo: text(40), ifsc: text(11), openingBalancePaise: z.number().int().default(0), openingDate: date }),
   z.object({ kind: z.literal("party"), ref, name: z.string().trim().min(1).max(200), partyKind: z.enum(["supplier", "customer", "both"]).default("supplier"), gstin: text(15), phone: text(30), address: text(1000), stateCode: text(2) }),
@@ -57,6 +71,8 @@ const entrySchema = z.discriminatedUnion("kind", [
     hsn: text(10),
     unit: text(30),
     gstRatePct: z.number().min(0).max(100).optional().nullable(),
+    /** One of the company's tax rates by name ("Exempt", "Nil rated"), for an item that isn't simply taxed at a %. */
+    taxRate: text(60),
     purchasePricePaise: paise.default(0),
     salePricePaise: paise.default(0),
   }),
@@ -67,24 +83,7 @@ const entrySchema = z.discriminatedUnion("kind", [
     dueDate: date.optional().nullable(),
     party: pick("party"),
     billNo: z.string().trim().min(1, "Give the supplier's bill number.").max(60),
-    lines: z
-      .array(
-        z.object({
-          item: pick("item"),
-          qty: z.number().positive("Quantities must be more than zero."),
-          ratePaise: paise,
-          rateIncludesTax: z.boolean().default(false),
-          gstRatePct: z.number().min(0).max(100).optional().nullable(),
-          discountPct: z.number().min(0).max(100).default(0),
-          /**
-           * The line's amount before tax as printed. When the unit price has more decimals than a paisa (1000 × ₹0.72034
-           * = ₹720.34), qty × rate can't make it, so the rate is rounded up and the paise over are a line discount.
-           */
-          amountPaise: paise.optional().nullable(),
-        }),
-      )
-      .min(1, "A purchase bill needs at least one line.")
-      .max(500),
+    lines: z.array(billLine).min(1, "A purchase bill needs at least one line.").max(500),
     /** The total printed on the bill. If the app's sum differs, the entry is refused rather than guessed. */
     expectedTotalPaise: paise.optional().nullable(),
     roundOff: z.boolean().default(true),
@@ -92,6 +91,22 @@ const entrySchema = z.discriminatedUnion("kind", [
     /** Paid in full at once from this cash/bank account. Without it the bill is entered unpaid. */
     paidFrom: pick("account").optional().nullable(),
     paymentMode: text(30),
+  }),
+  z.object({
+    kind: z.literal("sale_invoice"),
+    ref,
+    date,
+    /** The customer. Without one it's a walk-in sale, paid in full into `receivedIn`. */
+    party: pick("party").optional().nullable(),
+    customerName: text(200),
+    lines: z.array(billLine).min(1, "A sale needs at least one line.").max(500),
+    expectedTotalPaise: paise.optional().nullable(),
+    roundOff: z.boolean().default(true),
+    notes: text(2000),
+    /** Received in full at once into this cash/bank account. Without it a customer's sale is entered unpaid. */
+    receivedIn: pick("account").optional().nullable(),
+    paymentMode: text(30),
+    paymentRef: text(100),
   }),
   z.object({ kind: z.literal("expense"), ref, date, category: z.string().trim().min(1).max(120), amountPaise: positivePaise, account: pick("account"), payee: text(200), party: pick("party").optional().nullable(), paymentMode: text(30), paymentRef: text(100), note: text(2000) }),
   z.object({ kind: z.literal("other_income"), ref, date, category: z.string().trim().min(1).max(120), amountPaise: positivePaise, account: pick("account"), payer: text(200), paymentMode: text(30), paymentRef: text(100), note: text(2000) }),
@@ -279,7 +294,7 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
           code: e.code,
           hsn: e.hsn,
           unitId: e.unit ? await unitId(db, f, e.unit) : null,
-          taxRateId: e.gstRatePct != null ? await taxRateId(db, f, e.gstRatePct, byRef) : null,
+          taxRateId: e.gstRatePct != null ? await taxRateId(db, f, e.gstRatePct, byRef) : e.taxRate ? await taxRateNamed(db, f, e.taxRate) : null,
           purchasePricePaise: e.purchasePricePaise,
           salePricePaise: e.salePricePaise,
         },
@@ -304,41 +319,7 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
   switch (e.kind) {
     case "purchase_bill": {
       const partyId = await resolveParty(db, f, e.party, byRef);
-      const lines = [];
-      for (const l of e.lines) {
-        const it = await resolveItem(db, f, l.item, byRef);
-        const tax = l.gstRatePct != null ? await taxRateId(db, f, l.gstRatePct, byRef) : it.taxRateId;
-        const t = tax ? (await db.select().from(taxRates).where(eq(taxRates.id, tax)))[0] : undefined;
-        const qtyMilli = Math.round(l.qty * 1000);
-        let ratePaise = l.ratePaise;
-        let discountPaise = 0;
-        let discountBp = Math.round(l.discountPct * 100);
-        if (l.amountPaise != null && !l.rateIncludesTax && discountBp === 0 && qtyMilli > 0) {
-          const gross = Math.round((qtyMilli * ratePaise) / 1000);
-          if (gross !== l.amountPaise) {
-            // Only a difference a sub-paisa price explains (up to half a paisa a unit) is absorbed; anything bigger is a misread.
-            if (Math.abs(gross - l.amountPaise) > Math.max(1, (qtyMilli / 1000) * 0.5 + 1)) {
-              throw new MasterError(`Line ${lines.length + 1} (${it.name}): ${l.qty} × ${(ratePaise / 100).toFixed(2)} is ${(gross / 100).toFixed(2)}, not the ${(l.amountPaise / 100).toFixed(2)} printed.`);
-            }
-            ratePaise = Math.ceil((l.amountPaise * 1000) / qtyMilli);
-            discountPaise = Math.round((qtyMilli * ratePaise) / 1000) - l.amountPaise;
-            discountBp = 0;
-          }
-        }
-        lines.push({
-          itemId: it.id,
-          description: it.name,
-          hsn: it.hsn,
-          qtyMilli,
-          ratePaise,
-          rateIncludesTax: l.rateIncludesTax,
-          discountBp,
-          discountPaise,
-          taxRateId: t?.id ?? null,
-          gstBp: t?.gstBp ?? 0,
-          cessBp: t?.cessBp ?? 0,
-        });
-      }
+      const lines = await billLines(db, f, e.lines, byRef);
       const paidFrom = e.paidFrom ? await resolveAccount(db, f, e.paidFrom, byRef) : null;
       input = {
         type: "purchase_bill",
@@ -355,6 +336,25 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
         accountId: paidFrom,
         paymentMode: paidFrom ? (e.paymentMode ?? "Cash") : null,
         lines,
+      };
+      break;
+    }
+    case "sale_invoice": {
+      const partyId = e.party ? await resolveParty(db, f, e.party, byRef) : null;
+      const receivedIn = e.receivedIn ? await resolveAccount(db, f, e.receivedIn, byRef) : null;
+      if (!partyId && !receivedIn) throw new MasterError("A sale without a customer is paid on the spot: say which account it was received in (receivedIn).");
+      input = {
+        type: "sale_invoice",
+        date: e.date,
+        partyId,
+        partyName: partyId ? null : e.customerName,
+        roundOff: e.roundOff,
+        notes: e.notes,
+        paidPaise: receivedIn ? Number.MAX_SAFE_INTEGER : 0,
+        accountId: receivedIn,
+        paymentMode: receivedIn ? (e.paymentMode ?? "Bank transfer") : null,
+        paymentRef: e.paymentRef,
+        lines: await billLines(db, f, e.lines, byRef),
       };
       break;
     }
@@ -402,7 +402,7 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
 
   const saved = await saveVoucher(db, f, { ...input, externalRef: e.ref }, ctx.userId);
   const [v] = await db.select({ type: vouchers.type, totalPaise: vouchers.totalPaise, date: vouchers.date, partyId: vouchers.partyId, supplierInvoiceNo: vouchers.supplierInvoiceNo }).from(vouchers).where(eq(vouchers.id, saved.id));
-  if (e.kind === "purchase_bill") {
+  if (e.kind === "purchase_bill" || e.kind === "sale_invoice") {
     if (e.expectedTotalPaise != null && v.totalPaise !== e.expectedTotalPaise) {
       throw new MasterError(`The bill adds up to ${(v.totalPaise / 100).toFixed(2)} in the app but ${(e.expectedTotalPaise / 100).toFixed(2)} is printed on it. Check the quantities, rates and tax.`);
     }
@@ -413,6 +413,46 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
   if (dupes.length) result.possibleDuplicates = dupes;
   if (saved.warnings.length) result.message = saved.warnings.join(" ");
   return result;
+}
+
+/** A bill's lines as saveVoucher takes them: each item's own tax rate unless the line gives a %. */
+async function billLines(db: DB, f: number, src: z.infer<typeof billLine>[], byRef: RefMaps) {
+  const lines = [];
+  for (const l of src) {
+    const it = await resolveItem(db, f, l.item, byRef);
+    const tax = l.gstRatePct != null ? await taxRateId(db, f, l.gstRatePct, byRef) : it.taxRateId;
+    const t = tax ? (await db.select().from(taxRates).where(eq(taxRates.id, tax)))[0] : undefined;
+    const qtyMilli = Math.round(l.qty * 1000);
+    let ratePaise = l.ratePaise;
+    let discountPaise = 0;
+    let discountBp = Math.round(l.discountPct * 100);
+    if (l.amountPaise != null && !l.rateIncludesTax && discountBp === 0 && qtyMilli > 0) {
+      const gross = Math.round((qtyMilli * ratePaise) / 1000);
+      if (gross !== l.amountPaise) {
+        // Only a difference a sub-paisa price explains (up to half a paisa a unit) is absorbed; anything bigger is a misread.
+        if (Math.abs(gross - l.amountPaise) > Math.max(1, (qtyMilli / 1000) * 0.5 + 1)) {
+          throw new MasterError(`Line ${lines.length + 1} (${it.name}): ${l.qty} × ${(ratePaise / 100).toFixed(2)} is ${(gross / 100).toFixed(2)}, not the ${(l.amountPaise / 100).toFixed(2)} printed.`);
+        }
+        ratePaise = Math.ceil((l.amountPaise * 1000) / qtyMilli);
+        discountPaise = Math.round((qtyMilli * ratePaise) / 1000) - l.amountPaise;
+        discountBp = 0;
+      }
+    }
+    lines.push({
+      itemId: it.id,
+      description: it.name,
+      hsn: it.hsn,
+      qtyMilli,
+      ratePaise,
+      rateIncludesTax: l.rateIncludesTax,
+      discountBp,
+      discountPaise,
+      taxRateId: t?.id ?? null,
+      gstBp: t?.gstBp ?? 0,
+      cessBp: t?.cessBp ?? 0,
+    });
+  }
+  return lines;
 }
 
 /** Moves an existing entry to another cash/bank account (e.g. a salary recorded as cash that the bank statement shows was paid by bank). */
@@ -443,7 +483,7 @@ async function relink(db: DB, ctx: ApiContext, e: Extract<Entry, { kind: "relink
 /** Hand-made entries that look like this one: same amount within 3 days (or, for a purchase bill, the same supplier bill number). */
 async function lookAlikes(db: DB, firmId: number, id: number, type: VoucherType, onDate: string, amount: number, partyId: number | null, billNo: string | null) {
   if (amount <= 0 && !billNo) return [];
-  const family: VoucherType[] = type === "purchase_bill" ? ["purchase_bill", "expense"] : type === "payment_in" || type === "other_income" ? ["payment_in", "other_income"] : ["expense", "payment_out", "purchase_bill"];
+  const family: VoucherType[] = type === "purchase_bill" ? ["purchase_bill", "expense"] : type === "sale_invoice" ? ["sale_invoice"] : type === "payment_in" || type === "other_income" ? ["payment_in", "other_income"] : ["expense", "payment_out", "purchase_bill"];
   const rows = await db
     .select({ id: vouchers.id, type: vouchers.type, prefix: vouchers.prefix, number: vouchers.number, date: vouchers.date, totalPaise: vouchers.totalPaise, partyName: vouchers.partyName })
     .from(vouchers)
@@ -528,6 +568,13 @@ async function taxRateId(db: DB, f: number, pct: number, byRef: RefMaps): Promis
   const id = await saveTaxRate(db, f, { name: label, gstBp: bp, nature: "taxable", sort: bp });
   byRef.added.push(label);
   return id;
+}
+
+/** One of the company's tax rates by its name ("Exempt"). */
+async function taxRateNamed(db: DB, f: number, name: string): Promise<number> {
+  const [hit] = await db.select({ id: taxRates.id }).from(taxRates).where(and(eq(taxRates.firmId, f), eq(taxRates.active, true), sql`lower(${taxRates.name}) = lower(${name})`)).limit(1);
+  if (!hit) throw new MasterError(`The company has no tax rate called "${name}".`);
+  return hit.id;
 }
 
 async function unitId(db: DB, f: number, code: string): Promise<number> {

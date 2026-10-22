@@ -285,3 +285,28 @@ describe("a GST rate the company doesn't have yet", () => {
     expect(by(bad.results, "rate-13").message).toMatch(/13% isn't a GST rate/);
   });
 });
+
+describe("sale invoices", () => {
+  it("a walk-in sale is received straight into the bank, shows as a sale, and a repeat is skipped", async () => {
+    const entries = [
+      { kind: "bank_account", ref: "idfc-s", name: "IDFC Sales Test", openingBalancePaise: 0, openingDate: "2026-09-01" },
+      { kind: "party", ref: "pt-s", name: "Clinic patients (sales test)", partyKind: "customer" },
+      { kind: "item", ref: "it-s", name: "Consultation (sales test)", itemKind: "service", taxRate: "Exempt" },
+      { kind: "sale_invoice", ref: "sale-1", date: "2026-09-05", party: { ref: "pt-s" }, lines: [{ item: { ref: "it-s" }, qty: 1, ratePaise: 1_500_00 }], expectedTotalPaise: 1_500_00, receivedIn: { ref: "idfc-s" }, paymentMode: "UPI" },
+    ];
+    const r = await runBatch(db, ctx(), { dryRun: false, entries });
+    expect(r.ok).toBe(true);
+    expect(by(r.results, "sale-1").totalPaise).toBe(1_500_00);
+    const [v] = await db.select().from(vouchers).where(and(eq(vouchers.firmId, F), eq(vouchers.externalRef, "sale-1")));
+    expect(v.type).toBe("sale_invoice");
+    expect(v.paidPaise).toBe(1_500_00);
+    const bal = (await accountBalances(db, F)).find((a) => a.id === by(r.results, "idfc-s").id)!;
+    expect(bal.balancePaise).toBe(1_500_00);
+    const again = await runBatch(db, ctx(), { dryRun: false, entries });
+    expect(by(again.results, "sale-1").status).toBe("already_entered");
+  });
+  it("a sale with no customer must say where the money went", async () => {
+    const r = await runBatch(db, ctx(), { dryRun: true, entries: [{ kind: "sale_invoice", ref: "sale-x", date: "2026-09-05", lines: [{ item: { name: "x" }, qty: 1, ratePaise: 100 }] }] });
+    expect(r.ok).toBe(false);
+  });
+});
