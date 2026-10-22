@@ -310,3 +310,19 @@ describe("sale invoices", () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe("cancelling a wrong entry", () => {
+  it("takes it out of the account balance, notes the reason, and a repeat is harmless", async () => {
+    const mk = await runBatch(db, ctx(), { dryRun: false, entries: [{ kind: "bank_account", ref: "b-c", name: "Cancel Test Bank", openingBalancePaise: 0, openingDate: "2026-09-01" }, { kind: "expense", ref: "exp-c", date: "2026-09-02", category: "Rent", amountPaise: 33_000_00, account: { ref: "b-c" } }] });
+    const num = by(mk.results, "exp-c").number!;
+    const bank = by(mk.results, "b-c").id!;
+    const r = await runBatch(db, ctx(), { dryRun: false, entries: [{ kind: "cancel", ref: "c1", voucher: { number: num }, reason: "Rent was 30,000 per bank" }] });
+    expect(by(r.results, "c1").status).toBe("changed");
+    const [v] = await db.select().from(vouchers).where(and(eq(vouchers.firmId, F), eq(vouchers.externalRef, "exp-c")));
+    expect(v.status).toBe("cancelled");
+    expect(v.notes).toContain("Rent was 30,000");
+    expect((await accountBalances(db, F)).find((a) => a.id === bank)!.balancePaise).toBe(0);
+    const again = await runBatch(db, ctx(), { dryRun: false, entries: [{ kind: "cancel", ref: "c2", voucher: { number: num }, reason: "again" }] });
+    expect(by(again.results, "c2").status).toBe("already_entered");
+  });
+});

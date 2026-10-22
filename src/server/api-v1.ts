@@ -12,7 +12,7 @@ import { saveCategoryName } from "./categories";
 import { MasterError } from "./errors";
 import { syncVoucherGl } from "./gl";
 import { saveAccount, saveItem, saveParty, saveTaxRate, saveUnit } from "./masters";
-import { saveVoucher, VoucherError } from "./vouchers";
+import { cancelVoucher, saveVoucher, VoucherError } from "./vouchers";
 
 /*
  * The bookkeeping API: a program (with an API key for one company) sends a batch of entries read from
@@ -120,6 +120,14 @@ const entrySchema = z.discriminatedUnion("kind", [
     voucher: z.object({ id: z.number().int().positive().optional(), number: z.string().trim().optional() }).refine((v) => v.id || v.number, "Say which entry (id or number)."),
     account: pick("account"),
     paymentMode: text(30),
+  }),
+  z.object({
+    kind: z.literal("cancel"),
+    ref,
+    /** The existing expense, income or payment to cancel (kept in the list as cancelled, out of the books). */
+    voucher: z.object({ id: z.number().int().positive().optional(), number: z.string().trim().optional() }).refine((v) => v.id || v.number, "Say which entry (id or number)."),
+    /** Why — written into the entry's notes and the activity log. */
+    reason: z.string().trim().min(3, "Say why it is cancelled.").max(300),
   }),
 ]);
 
@@ -306,6 +314,8 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
 
     case "relink":
       return relink(db, ctx, e, byRef, dryRun);
+    case "cancel":
+      return cancelEntry(db, ctx, e, dryRun);
   }
 
   // Bills and payments: skipped when the same ref was entered before.
@@ -453,6 +463,28 @@ async function billLines(db: DB, f: number, src: z.infer<typeof billLine>[], byR
     });
   }
   return lines;
+}
+
+/** Cancels an existing expense, income or payment (a wrong amount, say) after a reason is noted on it. */
+async function cancelEntry(db: DB, ctx: ApiContext, e: Extract<Entry, { kind: "cancel" }>, dryRun: boolean): Promise<EntryResult> {
+  const f = ctx.firmId;
+  const base = { ref: e.ref, kind: e.kind };
+  const rows = await db
+    .select()
+    .from(vouchers)
+    .where(and(eq(vouchers.firmId, f), e.voucher.id ? eq(vouchers.id, e.voucher.id) : sql`lower(coalesce(${vouchers.prefix}, '') || ${vouchers.number}::text) = lower(${e.voucher.number})`));
+  if (rows.length === 0) throw new MasterError("That entry doesn't exist in this company.");
+  if (rows.length > 1) throw new MasterError(`More than one entry is numbered ${e.voucher.number}; give its id.`);
+  const v = rows[0];
+  const link = linkOf(v.type, v.id);
+  if (v.status === "cancelled") return { ...base, status: "already_entered", id: v.id, number: voucherNumber(v), link, message: "Already cancelled." };
+  if (v.status !== "active") throw new MasterError(`${voucherNumber(v)} is ${v.status}.`);
+  if (!["expense", "other_income", "payment_in", "payment_out"].includes(v.type)) throw new MasterError(`${voucherNumber(v)} isn't an expense, income or payment; cancel it in the app.`);
+  if (!dryRun) {
+    await db.update(vouchers).set({ notes: [v.notes, `Cancelled: ${e.reason}`].filter(Boolean).join(" · ") }).where(eq(vouchers.id, v.id));
+    await cancelVoucher(db, f, v.id, ctx.userId);
+  }
+  return { ...base, status: dryRun ? "would_change" : "changed", id: v.id, number: voucherNumber(v), link, message: `Cancelled: ${e.reason}` };
 }
 
 /** Moves an existing entry to another cash/bank account (e.g. a salary recorded as cash that the bank statement shows was paid by bank). */
