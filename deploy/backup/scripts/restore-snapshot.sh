@@ -34,7 +34,7 @@ for f in database.dump uploads.tar.gz; do
   actual=$(sha256sum "$WORK/$f" | cut -d' ' -f1)
   [ "$expected" = "$actual" ] || { log "checksum mismatch for $f"; exit 1; }
 done
-log "snapshot taken $(jq -r .created "$WORK/manifest.json") ($(jq -r .label "$WORK/manifest.json"))"
+log "snapshot taken $(jq -r .created "$WORK/manifest.json") ($(jq -r ".label" "$WORK/manifest.json"))"
 
 case "$MODE" in
   --into-scratch)
