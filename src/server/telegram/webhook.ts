@@ -9,7 +9,7 @@ import { apiReference, runBatch, type EntryResult } from "../api-v1";
 import { MasterError } from "../errors";
 import { answerCallback, downloadFile, esc, MAX_FILE_BYTES, sendMessage, showMessage, TelegramError, type InlineButton, type TgMessage, type TgUpdate } from "./bot";
 import { loadTelegram, setLinkCompany, telegramEnabled, useLinkCode, type TelegramSecrets } from "./config";
-import { billRef, buildPlan, checkFrom, money, summaryButtons, summaryText, withPayment, type Check, type Plan } from "./draft";
+import { billRef, buildPlan, checkFrom, money, summaryButtons, summaryText, withPayment, type Buyer, type Check, type Plan } from "./draft";
 import { billOcr } from "./ocr";
 import { billReader, ReadError, type ReadBill, type ReadContext } from "./read-bill";
 
@@ -154,10 +154,11 @@ async function onMessage(db: DB, cfg: TelegramSecrets, m: TgMessage, opts: Handl
       const [again] = await db
         .update(telegramDrafts)
         .set({ status: "reading", notes: sql`concat_ws(E'\n', ${telegramDrafts.notes}, ${text.slice(0, 1000)}::text)`, updatedAt: new Date() })
-        .where(and(eq(telegramDrafts.id, d.id), inArray(telegramDrafts.status, ["ready", "failed"])))
+        // A discarded bill can be brought back the same way: reply to its message.
+        .where(and(eq(telegramDrafts.id, d.id), inArray(telegramDrafts.status, ["ready", "failed", "discarded"])))
         .returning({ id: telegramDrafts.id });
-      if (again) await readDraft(db, cfg, d.id, "📖 Reading again with your correction…");
-      else await sendMessage(cfg.token, chatId, "That bill has already been entered or discarded.", undefined, m.message_id);
+      if (again) await readDraft(db, cfg, d.id, "📖 Reading again with your note…");
+      else await sendMessage(cfg.token, chatId, "That bill has already been entered.", undefined, m.message_id);
       return;
     }
   }
@@ -169,7 +170,11 @@ async function onMessage(db: DB, cfg: TelegramSecrets, m: TgMessage, opts: Handl
 export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, progress?: string) {
   const [d] = await db.select().from(telegramDrafts).where(eq(telegramDrafts.id, draftId));
   if (!d) return;
-  const [firm] = await db.select({ name: firms.name, country: firms.country }).from(firms).where(eq(firms.id, d.firmId));
+  const [firm] = await db
+    .select({ name: firms.name, legalName: firms.legalName, country: firms.country, address: firms.address, city: firms.city, phone: firms.phone })
+    .from(firms)
+    .where(eq(firms.id, d.firmId));
+  const buyer: Buyer = { name: firm.legalName || firm.name, address: [firm.address, firm.city].filter(Boolean).join(", ") || null, phone: firm.phone };
   let msgId = d.summaryMessageId;
   if (progress) msgId = await showMessage(cfg.token, d.chatId, msgId, progress);
 
@@ -194,6 +199,7 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
   const ref = await apiReference(db, d.firmId);
   const accs = payAccounts(ref.accounts);
   const ctx: ReadContext = {
+    buyer,
     suppliers: ref.parties.filter((p) => p.kind !== "customer").map((p) => ({ name: p.name, gstin: p.gstin })),
     items: ref.items.filter((i) => i.active).map((i) => ({ code: i.code, name: i.name, hsn: i.hsn, unit: i.unit, gstPct: i.gstBp != null ? i.gstBp / 100 : null })),
     expenseCategories: ref.categories.filter((c) => c.kind === "expense").map((c) => c.name),
@@ -223,6 +229,19 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
   for (const m of cfg.visionModels) attempts.push({ method: "picture", models: [m], label: `the picture (${m}${m.endsWith(":free") ? "" : " — paid, about ₹0.1"})` });
   if (!attempts.length) return fail("no reading models are set up in the app (Settings → Telegram).");
 
+  /** Builds the entries from a reading and dry-runs them: how good is it? */
+  const evaluate = async (read: ReadBill) => {
+    const plan = buildPlan(read, ref, draftId, todayIST(), buyer);
+    let check: Check | null = null;
+    if (plan.entries.length) {
+      const first = accs[0];
+      const entries = withPayment(plan.entries, plan.type === "expense" ? (first?.id ?? null) : null, first?.kind ?? null);
+      check = await dryRun(db, d.firmId, draftId, entries);
+      if (plan.type === "expense" && !first) check = { ...check, ok: false, errors: [...check.errors, "There's no cash or bank account to pay it from."] };
+    }
+    return { plan, check, score: check?.ok ? 3 : plan.entries.length ? 2 : 1 };
+  };
+
   let best: { method: ReadMethod; label: string; read: ReadBill; plan: Plan; check: Check | null; score: number } | null = null;
   let lastError: string | null = null;
   for (const [n, attempt] of attempts.entries()) {
@@ -233,20 +252,33 @@ export async function readDraft(db: DB, cfg: TelegramSecrets, draftId: number, p
         method === "text"
           ? await billReader().read(cfg.aiKey, attempt.models, { kind: "text", text: ocrText! }, ctx)
           : await billReader().read(cfg.aiKey, attempt.models, { kind: "images", files: images, hint: ocrText ?? undefined }, ctx);
-      const plan = buildPlan(read, ref, draftId, todayIST());
-      let check: Check | null = null;
-      if (plan.entries.length) {
-        const first = accs[0];
-        const entries = withPayment(plan.entries, plan.type === "expense" ? (first?.id ?? null) : null, first?.kind ?? null);
-        check = await dryRun(db, d.firmId, draftId, entries);
-        if (plan.type === "expense" && !first) check = { ...check, ok: false, errors: [...check.errors, "There's no cash or bank account to pay it from."] };
-      }
-      const score = check?.ok ? 3 : plan.entries.length ? 2 : 1;
-      if (!best || score >= best.score) best = { method, label: attempt.label, read, plan, check, score };
-      if (check?.ok) break;
+      const got = await evaluate(read);
+      if (!best || got.score >= best.score) best = { method, label: attempt.label, read, ...got };
+      if (got.check?.ok) break;
     } catch (e) {
       if (e instanceof ReadError) lastError = e.message;
       else throw e;
+    }
+  }
+
+  // A second look: when no reader got a bill that adds up, the strongest picture reader (the last one set) is shown
+  // what didn't add up in the best reading and asked to read the table again with that in mind. One more request.
+  const lastPicture = cfg.visionModels.at(-1);
+  if (best && !best.check?.ok && best.read.type === "purchase_bill" && lastPicture) {
+    const feedback = [
+      "That reading doesn't add up yet:",
+      ...best.plan.problems,
+      ...(best.check?.errors ?? []),
+      ...best.plan.notes,
+      "Read the product table again row by row by its serial number, checking every quantity, rate, amount and GST % (CGST + SGST added), so that the rows add up to the printed subtotal, tax and grand total. Don't drop or shift repeated product names.",
+    ].join("\n");
+    msgId = await showMessage(cfg.token, d.chatId, msgId, "📖 That didn't add up — taking a second, closer look…");
+    try {
+      const read = await billReader().read(cfg.aiKey, [lastPicture], { kind: "images", files: images, hint: ocrText ?? undefined }, { ...ctx, notes: [ctx.notes, feedback].filter(Boolean).join("\n") });
+      const got = await evaluate(read);
+      if (got.score >= best.score) best = { method: "picture", label: `the picture (${lastPicture}, second look${lastPicture.endsWith(":free") ? "" : " — paid, about ₹0.1"})`, read, ...got };
+    } catch (e) {
+      if (!(e instanceof ReadError)) throw e;
     }
   }
   if (!best) return fail(lastError ?? "the AI gave no reading.");

@@ -39,6 +39,10 @@ export const billSchema = z.object({
         /** Printed MRP / list price per unit, and the printed amount of the line: extra numbers to cross-check against. */
         mrp: num.min(0).nullish(),
         amount: num.min(0).nullish(),
+        /** The row's GST amount in rupees (often a VALUE / TAX AMT column, or CGST + SGST amounts added). */
+        taxAmount: num.min(0).nullish(),
+        /** The printed serial number of the row (S.L / Sl No), to keep each row's name with its own numbers. */
+        sl: num.int().min(0).nullish(),
       }),
     )
     .max(200)
@@ -48,6 +52,11 @@ export const billSchema = z.object({
   /** The total of the line amounts before tax ("Gross Amount", "Sub total", taxable value) and the printed total quantity, to cross-check the lines. */
   subtotal: num.min(0).nullish(),
   totalQty: num.min(0).nullish(),
+  /** The printed GST summary by rate ("GST 5% 6380.68 … 319.08"), when there is one: combined GST %, taxable value, tax. */
+  gstSummary: z
+    .array(z.object({ ratePct: num.min(0).max(100), taxable: num.min(0), tax: num.min(0).nullish() }))
+    .max(10)
+    .nullish(),
   /** Expenses: the category from the list given (or a short new one). */
   category: optText,
   /** Expenses: what it was for, in a few words. */
@@ -62,6 +71,8 @@ export interface BillFile {
 }
 
 export interface ReadContext {
+  /** The company the bills are addressed to: the buyer, never the supplier. */
+  buyer?: { name: string; address: string | null; phone: string | null } | null;
   suppliers: { name: string; gstin: string | null }[];
   items: { code: string | null; name: string; hsn: string | null; unit: string | null; gstPct: number | null }[];
   expenseCategories: string[];
@@ -110,17 +121,18 @@ Decide the type:
 - "not_a_bill": anything else, or too unclear to read; say why in "problem".
 
 For a purchase bill:
-- supplier: name, GSTIN (15 characters) if printed, phone, address.
+- supplier: the business that ISSUED the bill (its letterhead at the top, "For <name>" by the signature): name, GSTIN (15 characters) if printed, phone, address.${ctx.buyer ? ` The bill is addressed TO us, the buyer ("M/s …", "Billed to", "Details of Receiver") — never give the buyer as the supplier. We are: ${ctx.buyer.name}${ctx.buyer.address ? `, ${ctx.buyer.address}` : ""}${ctx.buyer.phone ? `, phone ${ctx.buyer.phone}` : ""} (our name may be printed differently, e.g. the owner's or clinic's name at that address).` : ""}
 - billNo and date (YYYY-MM-DD; Indian bills write dates day first).
-- One line per product row, in order, none skipped (a row count like "Total Items: 17" tells you how many). For each:
+- One line per product row, in order, none skipped and none merged (a row count like "Total Items: 17" tells you how many). Read each row straight across by its serial number (S.L 1, 2, 3…), so a row's name stays with that row's numbers. The same product name often appears on two or more consecutive rows (different batch or price): each is its own line with its own name — never drop a repeated name and shift the names below it. For each:
   - "description": the PRODUCT NAME column only, then the pack size (e.g. "100GM", "60ML", "30TAB") at the end. Short maker codes in an MFG/BRAND column (e.g. DRW, SBL, BAKS) are not part of the name.
   - "qty": the QTY column. "unit": the selling unit (PCS, BOX, STRIP, NOS…) only if one is printed, else null. A pack size is NOT a unit.
   - "rate": exactly what the RATE column shows, per unit, in rupees. "mrp": the MRP column. "discountPct": the DIS / DISC % column. "amount": the line's AMOUNT column. Copy each number from its own column; don't compute them and don't swap columns (a discount % is never the rate).
-  - "gstPct": the GST % of the row (CGST+SGST combined, or IGST). "hsn": the HSN code if printed.
+  - "gstPct": the TOTAL GST % of the row. When the bill shows CGST and SGST separately (e.g. CGST 9% and SGST 9%), add them: gstPct is 18, not 9. Indian GST rates are 0, 5, 12, 18, 28 (and 0.25, 3, 40); 2.5, 6, 9 or 14 are always halves. "taxAmount": the row's tax in rupees (a VALUE / TAX column, or its CGST + SGST amounts added). "hsn": the HSN code if printed. "sl": the row's serial number.
+  - A price printed with a leading dot (".72", ".85") is under a rupee: 0.72, 0.85. When a unit price is printed rounded but the row's amount has paise (1000 × .72 = 720.34), keep both exactly as printed.
   - Read digits carefully: the printed rows are consistent (amount = qty × rate, rate = MRP less discount), so recheck any figure that breaks that.
 - "matchedCode": the Product ID of one of the company's existing items listed below, ONLY when it is clearly the same product; else null.
 - If the supplier is one of the company's suppliers listed below, use that exact name.
-- "total": the grand total printed on the bill (after tax and round-off), in rupees. "subtotal": the total of the line amounts before tax (labelled Gross Amount / Sub total / Taxable value), if printed. "totalQty": the printed total quantity, if any.
+- "total": the grand total printed on the bill (after tax and round-off), in rupees. "subtotal": the total of the line amounts before tax (labelled Gross Amount / Sub total / Taxable value), if printed. "totalQty": the printed total quantity, if any. "gstSummary": the printed tax summary by rate, if any — one entry per GST rate with the combined rate (CGST + SGST), its taxable value and its total tax.
 - If a figure is unreadable, say so in "problem" rather than guessing.
 
 The company's suppliers that look close:
@@ -131,9 +143,9 @@ ${list(ctx.items, (i) => `- ${i.code ?? "-"} | ${i.name} | ${i.hsn ?? "-"} | ${i
 
 Expense categories: ${ctx.expenseCategories.join(", ") || "(none yet)"}
 GST rates in use: ${ctx.taxRatesPct.join(", ")}%
-${ctx.notes ? `\nThe owner looked at an earlier reading and says:\n${ctx.notes}\nFollow these corrections.\n` : ""}
+${ctx.notes ? `\nAbout an earlier reading of this bill:\n${ctx.notes}\nFollow these corrections, and re-read the rows they point at.\n` : ""}
 Reply with JSON only, no other text, in this shape:
-{"type":"purchase_bill"|"expense"|"not_a_bill","problem":string|null,"supplier":{"name":string,"gstin":string|null,"phone":string|null,"address":string|null}|null,"billNo":string|null,"date":"YYYY-MM-DD"|null,"lines":[{"description":string,"matchedCode":string|null,"hsn":string|null,"qty":number,"unit":string|null,"rate":number,"mrp":number|null,"discountPct":number|null,"amount":number|null,"gstPct":number|null}],"total":number|null,"subtotal":number|null,"totalQty":number|null,"category":string|null,"description":string|null}${text ? `\n\nThe OCR text of the bill:\n"""\n${text}\n"""` : ""}`;
+{"type":"purchase_bill"|"expense"|"not_a_bill","problem":string|null,"supplier":{"name":string,"gstin":string|null,"phone":string|null,"address":string|null}|null,"billNo":string|null,"date":"YYYY-MM-DD"|null,"lines":[{"description":string,"matchedCode":string|null,"hsn":string|null,"qty":number,"unit":string|null,"rate":number,"mrp":number|null,"discountPct":number|null,"amount":number|null,"taxAmount":number|null,"gstPct":number|null,"sl":number|null}],"total":number|null,"subtotal":number|null,"totalQty":number|null,"gstSummary":[{"ratePct":number,"taxable":number,"tax":number|null}]|null,"category":string|null,"description":string|null}${text ? `\n\nThe OCR text of the bill:\n"""\n${text}\n"""` : ""}`;
 }
 
 /** Pulls the JSON object out of a model reply (which may wrap it in a code fence). */

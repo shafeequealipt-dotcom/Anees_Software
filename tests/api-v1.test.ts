@@ -84,6 +84,28 @@ describe("country rules follow the company, not the last request", () => {
   });
 });
 
+describe("purchase lines priced finer than a paisa", () => {
+  it("enter at exactly the printed line amount; a real misread is still refused", async () => {
+    const entries = (amountPaise: number) => [
+      { kind: "item", ref: "it-bottle", name: "10ML PLASTIC BOTTLE", unit: "NOS", gstRatePct: 18 },
+      {
+        kind: "purchase_bill",
+        ref: `bill-subpaisa-${amountPaise}`,
+        date: "2026-06-27",
+        party: { ref: "sup-medi" },
+        billNo: `B2C/${amountPaise}`,
+        lines: [{ item: { ref: "it-bottle" }, qty: 1000, ratePaise: 81, gstRatePct: 18, amountPaise }],
+        expectedTotalPaise: 95000,
+      },
+    ];
+    const sup = { kind: "party", ref: "sup-medi", name: "Medi Distributors", partyKind: "supplier", gstin: GSTIN };
+    const ok = await runBatch(db, ctx(), { dryRun: true, entries: [sup, ...entries(80508)] });
+    expect(ok.ok).toBe(true); // 805.08 + 18% = 949.99 → ₹950.00
+    const bad = await runBatch(db, ctx(), { dryRun: true, entries: [sup, ...entries(70508)] });
+    expect(by(bad.results, "bill-subpaisa-70508").message).toMatch(/1000 × 0\.81 is 810\.00, not the 705\.08 printed/);
+  });
+});
+
 describe("turning the API on per company", () => {
   it("a key can't be made, or used, for a company with API access off", async () => {
     const off = await createCompany(db, { name: "Off Co", country: "IN", taxId: "", stateCode: "29" }, { id: U, isOwner: true, firms: [], permissions: [] });
@@ -223,9 +245,43 @@ describe("a batch", () => {
     expect(out.ok).toBe(false);
     expect(out.results.map((r) => r.message)).toEqual([
       expect.stringMatching(/Party "Nobody Ltd" isn't in this company/),
-      expect.stringMatching(/no 7% tax rate/),
+      expect.stringMatching(/7% isn't a GST rate/),
       expect.stringMatching(/ref appears twice/),
       expect.stringMatching(/Invalid/),
     ]);
+  });
+});
+
+describe("a GST rate the company doesn't have yet", () => {
+  it("is added (or switched back on) when a bill carries it, and said so; a rate that isn't GST is refused", async () => {
+    const { taxRates } = await import("@/db/schema");
+    const at = (pct: number) => db.select().from(taxRates).where(and(eq(taxRates.firmId, F), eq(taxRates.gstBp, Math.round(pct * 100))));
+    // The company starts without 12%, and with 28% switched off.
+    for (const r of await at(12)) await db.delete(taxRates).where(eq(taxRates.id, r.id)).catch(() => db.update(taxRates).set({ active: false }).where(eq(taxRates.id, r.id)));
+    for (const r of await at(28)) await db.update(taxRates).set({ active: false }).where(eq(taxRates.id, r.id));
+    const entries = (ref: string, pct: number) => [
+      { kind: "party", ref: "sup-r", name: "Rate Test Traders", partyKind: "supplier" },
+      { kind: "item", ref: `it-${ref}`, name: `Rate item ${ref}`, unit: "NOS" },
+      { kind: "purchase_bill", ref, date: "2026-10-20", party: { ref: "sup-r" }, billNo: ref, lines: [{ item: { ref: `it-${ref}` }, qty: 1, ratePaise: 100_00, gstRatePct: pct }] },
+    ];
+    const dry = await runBatch(db, ctx(), { dryRun: true, entries: entries("rate-12", 12) });
+    expect(dry.ok).toBe(true);
+    expect(by(dry.results, "rate-12").message).toMatch(/Will add the GST 12% rate/);
+    expect((await at(12)).filter((r) => r.active)).toHaveLength(0); // a dry run keeps nothing
+
+    const real = await runBatch(db, ctx(), { dryRun: false, entries: entries("rate-12", 12) });
+    expect(by(real.results, "rate-12")).toMatchObject({ status: "created", message: expect.stringMatching(/Added the GST 12% rate/) });
+    expect((await at(12)).filter((r) => r.active)).toHaveLength(1);
+    const [b] = await db.select().from(vouchers).where(eq(vouchers.externalRef, "rate-12"));
+    expect(b.totalPaise).toBe(112_00);
+
+    const rows28 = (await at(28)).length;
+    const on = await runBatch(db, ctx(), { dryRun: false, entries: entries("rate-28", 28) });
+    expect(on.ok).toBe(true);
+    expect((await at(28)).filter((r) => r.active).length).toBeGreaterThanOrEqual(1);
+    expect(await at(28)).toHaveLength(Math.max(rows28, 1)); // switched back on, not added a second time
+
+    const bad = await runBatch(db, ctx(), { dryRun: true, entries: entries("rate-13", 13) });
+    expect(by(bad.results, "rate-13").message).toMatch(/13% isn't a GST rate/);
   });
 });

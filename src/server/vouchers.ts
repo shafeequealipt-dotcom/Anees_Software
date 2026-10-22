@@ -90,6 +90,8 @@ export const voucherSchema = z.object({
   billDiscountBp: z.number().int().min(0).max(10000).default(0),
   billDiscountPaise: nonNeg.default(0),
   roundOff: z.boolean().default(true),
+  /** Purchase bills: the supplier's printed total, honoured by the round-off when within ₹1 (see calculateVoucher). */
+  matchTotalPaise: nonNeg.nullish(),
   amountPaise: nonNeg.default(0),
   paidPaise: nonNeg.default(0),
   accountId: int.positive().nullish(),
@@ -243,6 +245,7 @@ export async function saveVoucher(
     const calc = calculateVoucher({
       supply: supplyFor(firm.country, firm.stateCode, placeOfSupply),
       roundOff: info.hasLines && !["stock_adjustment", "stock_transfer"].includes(input.type) ? input.roundOff : false,
+      targetTotalPaise: input.type === "purchase_bill" ? (input.matchTotalPaise ?? undefined) : undefined,
       withoutTax,
       billDiscountBp: input.billDiscountBp || undefined,
       billDiscountPaise: input.billDiscountBp ? undefined : input.billDiscountPaise,

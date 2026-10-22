@@ -34,6 +34,11 @@ export interface VoucherInput {
   billDiscountPaise?: Paise;
   billDiscountBp?: BasisPoints;
   roundOff: boolean;
+  /**
+   * With roundOff: the total printed on a supplier's bill. When it is within ₹1 of the calculated total, the bill is
+   * rounded to it instead of to the nearest rupee, so the books carry exactly what the supplier charged.
+   */
+  targetTotalPaise?: Paise;
   /** Bill of supply (composition dealer, exempt sale, or unregistered business): no tax charged. */
   withoutTax?: boolean;
 }
@@ -152,7 +157,12 @@ export function calculateVoucher(input: VoucherInput): VoucherResult {
   const igstPaise = sum((r) => r.igstPaise);
   const cessPaise = sum((r) => r.cessPaise);
   const beforeRoundOffPaise = sum((r) => r.totalPaise);
-  const totalPaise = input.roundOff ? roundHalfUp(beforeRoundOffPaise / 100) * 100 : beforeRoundOffPaise;
+  const target = input.targetTotalPaise;
+  const totalPaise = !input.roundOff
+    ? beforeRoundOffPaise
+    : target != null && Math.abs(target - beforeRoundOffPaise) <= 100
+      ? target
+      : roundHalfUp(beforeRoundOffPaise / 100) * 100;
 
   const rateMap = new Map<string, RateSummary>();
   for (const r of lines) {

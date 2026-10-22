@@ -628,3 +628,12 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   turn until the bill adds up; default order `gemma-4-31b-it:free`, `gemma-4-26b-a4b-it:free`,
   `google/gemini-2.5-flash-lite` (paid, ~₹0.08/bill, 17/17 rows on the real test bill). The summary names the reader
   and says when it was paid.
+- **Bill accuracy fixes (22 Oct 2026, from the 10 bills that failed on the live bot)**: GST corrected from the bill's
+  own numbers (each row's tax, the tax summary by rate, the grand total; CGST/SGST halves such as 9% doubled to 18%);
+  each line entered at exactly its printed amount even when the unit price is finer than a paisa (rate rounded up,
+  the paise over as a line discount; API `lines[].amountPaise`); a purchase bill takes the supplier's printed total
+  when within ₹1 (`matchTotalPaise` → `targetTotalPaise` in the GST engine); a "tax" column taken for the amount is
+  recognised; our own company (from its name/address/phone) is never taken for the supplier; a second, closer look by
+  the last picture reader with feedback when no reading adds up; replying to a discarded bill reopens it. The API adds
+  a lawful GST rate the company lacks (or switches a disabled one back on) and says so; other rates are refused as
+  misreads. All 8 failed bills re-run through the real pipeline entered at exactly their printed totals.

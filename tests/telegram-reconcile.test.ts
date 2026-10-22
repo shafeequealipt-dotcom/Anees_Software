@@ -105,3 +105,91 @@ describe("reconciling a bill's own numbers", () => {
     expect(reconcile(e)).toEqual({ read: e, notes: [] });
   });
 });
+
+// ─── Bills that failed on the live bot (October 2026) ──────────────────────────
+
+type Row = [string, number, number, number, number, number, number]; // name, qty, MRP, DIS %, RATE, GST %, AMOUNT
+const rows = (rs: Row[]): Line[] => rs.map(([description, qty, mrp, discountPct, rate, gstPct, amount]) => ({ description, matchedCode: null, hsn: null, qty, unit: null, rate, gstPct, discountPct, mrp, amount }));
+const grand = (ls: Line[]) => ls.reduce((s, l) => s + (l.amount ?? l.qty * l.rate) * (1 + (l.gstPct ?? 0) / 100), 0);
+
+/** S P Homoeo Medicals A004108: 12 rows, one at 18% (the sunscreen). */
+const A004108: Row[] = [
+  ["ASTHA AID SYRUP 450ML", 3, 340, 43, 193.8, 5, 581.4],
+  ["B&T SUN SCREEN EXPERT 100GM", 3, 320, 33, 214.4, 18, 643.2],
+  ["CIMICIFUGA RACEMOSA Q SBL 100ML", 1, 540, 43, 307.8, 5, 307.8],
+  ["CME EYE DROPS SBL 10ML", 2, 122, 43, 69.54, 5, 139.08],
+  ["CME EYE DROPS SBL 10ML", 2, 122, 43, 69.54, 5, 139.08],
+  ["CONTINIL DROPS SBL 30ML", 10, 131, 43, 74.67, 5, 746.7],
+  ["ENUKIND 10GM", 1, 140, 35, 91, 5, 91],
+  ["EUPHARASIA 10% 10ML", 3, 95, 42, 55.1, 5, 165.3],
+  ["MULLIEN EAR DROPS SBL 10ML", 4, 66, 43, 37.62, 5, 150.48],
+  ["PROSTONUM 30ML", 4, 178, 43, 101.46, 5, 405.84],
+  ["R1 TO 81 EXPT8,15,30 22ML", 15, 295, 28, 212.4, 5, 3186],
+  ["R1 TO 81 EXPT8,15,30 22ML", 2, 325, 28, 234, 5, 468],
+];
+
+describe("GST rates misread on a real bill (S P Homoeo A004108: ₹7,375 in the app, ₹7,459 printed)", () => {
+  const misread = () => {
+    const ls = rows(A004108);
+    ls[1].gstPct = 5; // the AI read the sunscreen's 18% as 5%
+    return ls;
+  };
+
+  it("the grand total alone pins down the one row at the wrong rate", () => {
+    const { read, notes } = reconcile(bill(misread(), { total: 7459, subtotal: 7023.88, totalQty: 50 }));
+    expect(read.lines[1].gstPct).toBe(18);
+    expect(notes.join("\n")).toMatch(/Line 2 \(B&T SUN SCREEN EXPERT 100GM\): GST read as 5%.*total only adds up with it at 18%/);
+    expect(Math.round(grand(read.lines))).toBe(7459);
+  });
+
+  it("the row's own tax column says it directly", () => {
+    const ls = misread();
+    ls[1].taxAmount = 115.78;
+    const { read, notes } = reconcile(bill(ls, { total: 7459, subtotal: 7023.88, totalQty: 50 }));
+    expect(read.lines[1].gstPct).toBe(18);
+    expect(notes.join("\n")).toMatch(/its tax ₹115\.78 on ₹643\.20 is 18%/);
+  });
+
+  it("so does the printed tax summary by rate", () => {
+    const { read, notes } = reconcile(bill(misread(), { total: null, subtotal: 7023.88, totalQty: 50, gstSummary: [{ ratePct: 5, taxable: 6380.68, tax: 319.08 }, { ratePct: 18, taxable: 643.2, tax: 115.78 }] }));
+    expect(read.lines[1].gstPct).toBe(18);
+    expect(notes.join("\n")).toMatch(/tax summary only adds up with it at 18%/);
+  });
+});
+
+/** Veepack Packaging B2C/00982: CGST 9% + SGST 9%, unit prices printed rounded (".72" for ₹720.34 / 1000). */
+const B2C_00982: [string, number, number, number][] = [
+  ["10ML PLASTIC BOTTLES - CLEAR", 1000, 0.72, 720.34],
+  ["15ML PLASTIC BOTTLES - CLEAR", 500, 1.19, 593.22],
+  ["60ML PET BOTTLES", 360, 2.37, 854.24],
+  ["100ML PET BOTTLES 12GM", 240, 2.54, 610.17],
+  ["30ML PET BOTTLES - CLEAR", 238, 2.03, 484.07],
+  ["15ML PET BOTTLE CLEAR", 247, 2.03, 502.37],
+  ["25MM PET LOCK CAP", 1085, 0.68, 735.59],
+  ["15ML PLASTIC JAR - 1st", 288, 0.88, 254.24],
+];
+const veepack = (gst: number): Line[] => B2C_00982.map(([description, qty, rate, amount]) => ({ description, matchedCode: null, hsn: "3923", qty, unit: "Nos", rate, gstPct: gst, discountPct: 0, mrp: null, amount }));
+
+describe("CGST/SGST bills with prices finer than a paisa (Veepack B2C/00982: ₹5,181 in the app, ₹5,610 printed)", () => {
+  it("9% read from the CGST column becomes the full 18%", () => {
+    const { read, notes } = reconcile(bill(veepack(9), { total: 5610, subtotal: 4754.24, totalQty: 3958 }));
+    expect(read.lines.every((l) => l.gstPct === 18)).toBe(true);
+    expect(notes[0]).toMatch(/GST was read as 9%.*CGST.*full 18%/);
+  });
+
+  it("each line keeps its printed amount exactly, and the rate to the sub-paisa", () => {
+    const { read, notes } = reconcile(bill(veepack(18), { total: 5610, subtotal: 4754.24, totalQty: 3958 }));
+    expect(read.lines.map((l) => l.amount)).toEqual(B2C_00982.map((r) => r[3]));
+    expect(read.lines[0].rate).toBe(0.72034);
+    expect(notes).toEqual([]);
+    expect(read.lines.reduce((s, l) => s + l.amount!, 0)).toBeCloseTo(4754.24, 2);
+  });
+});
+
+describe("a VALUE (tax) column taken for the AMOUNT", () => {
+  it("is recognised as the row's tax, and the row is priced from its rate", () => {
+    // S P Homoeo A002784, row 1: 5 × ₹78.20 at 18%: VALUE 70.38 is the tax, AMOUNT 391.00 the amount.
+    const { read } = reconcile(bill([{ description: "B&T CALENDULA CREAM 100GM", matchedCode: null, hsn: null, qty: 5, unit: null, rate: 78.2, gstPct: 18, discountPct: 32, mrp: 115, amount: 70.38 }], { total: null, subtotal: null, totalQty: null }));
+    expect(read.lines[0]).toMatchObject({ qty: 5, rate: 78.2, taxAmount: 70.38, amount: null });
+  });
+});

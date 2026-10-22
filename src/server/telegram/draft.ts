@@ -86,7 +86,28 @@ export function billRef(draftId: number) {
   return `tg-${draftId}`;
 }
 
-export function buildPlan(rawRead: ReadBill, ref: Reference, draftId: number, today: string): Plan {
+/** Our own company, as bills address it: the buyer, which must never be taken for the supplier. */
+export interface Buyer {
+  name: string;
+  address: string | null;
+  phone: string | null;
+}
+
+const COMMON_ADDRESS_WORDS = new Set(["road", "main", "cross", "street", "nagar", "layout", "block", "near", "opp", "opst", "post", "dist", "district", "taluk", "india", "karnataka", "kerala", "bengaluru", "bangalore", "floor", "building", "shop", "number"]);
+const addressWords = (s: string | null) => new Set(norm(s ?? "").split(" ").filter((w) => w.length >= 4 && !/^\d+$/.test(w) && !COMMON_ADDRESS_WORDS.has(w)));
+
+/** True when the "supplier" read is really us: our name, our phone, or two distinctive words of our address. */
+export function looksLikeBuyer(s: { name: string; phone: string | null; address: string | null }, buyer: Buyer | null | undefined): boolean {
+  if (!buyer) return false;
+  const digits = (x: string | null) => (x ?? "").replace(/\D/g, "").slice(-10);
+  if (buyer.phone && digits(buyer.phone).length === 10 && digits(s.phone) === digits(buyer.phone)) return true;
+  if (norm(buyer.name).length >= 4 && norm(s.name).includes(norm(buyer.name))) return true;
+  const ours = addressWords(buyer.address);
+  const theirs = addressWords(`${s.name} ${s.address ?? ""}`);
+  return [...ours].filter((w) => theirs.has(w)).length >= 2;
+}
+
+export function buildPlan(rawRead: ReadBill, ref: Reference, draftId: number, today: string, buyer?: Buyer | null): Plan {
   const { read, notes: reconcileNotes } = reconcile(rawRead);
   const plan: Plan = {
     type: read.type,
@@ -113,7 +134,9 @@ export function buildPlan(rawRead: ReadBill, ref: Reference, draftId: number, to
 
   // The supplier: existing by GSTIN, then by name; else a new one.
   let party: Record<string, unknown> | null = null;
-  if (read.supplier?.name) {
+  if (read.supplier?.name && looksLikeBuyer(read.supplier, buyer)) {
+    plan.problems.push(`"${read.supplier.name}" is the buyer (us), not the supplier. The supplier is the business at the top of the bill.`);
+  } else if (read.supplier?.name) {
     let gstin = read.supplier.gstin ? read.supplier.gstin.replace(/\s+/g, "").toUpperCase() : null;
     if (gstin && !checkGstin(gstin).ok) {
       plan.notes.push(`The GSTIN read (${gstin}) doesn't check out, so it's left out.`);
@@ -156,7 +179,7 @@ export function buildPlan(rawRead: ReadBill, ref: Reference, draftId: number, to
   }
 
   // A purchase bill.
-  if (!party) plan.problems.push("Couldn't read the supplier's name.");
+  if (!party && !plan.problems.length) plan.problems.push("Couldn't read the supplier's name.");
   if (!read.billNo) plan.problems.push("Couldn't read the bill number.");
   if (read.lines.length === 0) plan.problems.push("Couldn't read any product lines.");
   if (plan.totalPaise == null) plan.notes.push("No grand total could be read, so the app's total can't be checked against the bill.");
@@ -191,7 +214,7 @@ export function buildPlan(rawRead: ReadBill, ref: Reference, draftId: number, to
       item = { ref: r };
       plan.lines.push({ name: l.description, code: null, isNew: true, qty: l.qty, unit: l.unit, ratePaise: paiseOf(l.rate), gstPct: l.gstPct, discountPct: l.discountPct });
     }
-    lines.push({ item, qty: l.qty, ratePaise: paiseOf(l.rate), gstRatePct: l.gstPct, discountPct: l.discountPct });
+    lines.push({ item, qty: l.qty, ratePaise: paiseOf(l.rate), gstRatePct: l.gstPct, discountPct: l.discountPct, ...(l.amount != null ? { amountPaise: paiseOf(l.amount) } : {}) });
   }
 
   if (plan.problems.length) {
@@ -230,6 +253,8 @@ export interface Check {
   /** The bill's total as the app works it out. */
   appTotalPaise: number | null;
   duplicates: { number: string; date: string; amountPaise: number }[];
+  /** Things the entry will also do, e.g. add a GST rate the company didn't have. */
+  infos?: string[];
 }
 
 export function checkFrom(results: EntryResult[], draftId: number, error?: string): Check {
@@ -239,6 +264,7 @@ export function checkFrom(results: EntryResult[], draftId: number, error?: strin
     errors: error ? [error] : results.filter((r) => r.status === "error").map((r) => r.message ?? "Something didn't fit."),
     appTotalPaise: bill?.totalPaise ?? null,
     duplicates: (bill?.possibleDuplicates ?? []).map((d) => ({ number: d.number, date: d.date, amountPaise: d.amountPaise })),
+    infos: [...new Set(results.flatMap((r) => (r.status !== "error" && r.message ? (r.message.match(/(Will add|Added) the [^.]+ rate to the company\./g) ?? []) : [])))],
   };
 }
 
@@ -287,6 +313,7 @@ export function summaryText(plan: Plan, check: Check | null, firmName: string, c
   const warn = [...plan.problems.filter((p) => plan.type !== "not_a_bill" || p !== plan.problems[0]), ...(check?.errors ?? [])];
   if (warn.length) out.push("", ...warn.map((w) => `❌ ${esc(w)}`));
   if (plan.notes.length) out.push("", ...plan.notes.map((n) => `⚠️ ${esc(n)}`));
+  for (const i of check?.infos ?? []) out.push(`➕ ${esc(i)}`);
   for (const d of check?.duplicates ?? []) out.push(`⚠️ Looks like ${esc(d.number)} already entered (${day(d.date)}, ${money(d.amountPaise, country)})`);
   if (readBy) out.push("", `<i>Read from ${esc(readBy)}</i>`);
   out.push("", check?.ok ? "Check it, then tap how it was paid. Reply to this message to correct anything." : "Reply to this message with a correction (e.g. “total is 742”), send a clearer photo, or discard.");

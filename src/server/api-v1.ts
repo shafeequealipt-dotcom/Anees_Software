@@ -11,7 +11,7 @@ import type { VoucherType } from "@/db/schema";
 import { saveCategoryName } from "./categories";
 import { MasterError } from "./errors";
 import { syncVoucherGl } from "./gl";
-import { saveAccount, saveItem, saveParty, saveUnit } from "./masters";
+import { saveAccount, saveItem, saveParty, saveTaxRate, saveUnit } from "./masters";
 import { saveVoucher, VoucherError } from "./vouchers";
 
 /*
@@ -76,6 +76,11 @@ const entrySchema = z.discriminatedUnion("kind", [
           rateIncludesTax: z.boolean().default(false),
           gstRatePct: z.number().min(0).max(100).optional().nullable(),
           discountPct: z.number().min(0).max(100).default(0),
+          /**
+           * The line's amount before tax as printed. When the unit price has more decimals than a paisa (1000 × ₹0.72034
+           * = ₹720.34), qty × rate can't make it, so the rate is rounded up and the paise over are a line discount.
+           */
+          amountPaise: paise.optional().nullable(),
         }),
       )
       .min(1, "A purchase bill needs at least one line.")
@@ -162,7 +167,7 @@ export async function runBatch(db: DB, ctx: ApiContext, raw: unknown): Promise<{
       const tx = tx0 as unknown as DB;
       const results: EntryResult[] = [];
       const seenRefs = new Set<string>();
-      const byRef = { party: new Map<string, number>(), item: new Map<string, number>(), account: new Map<string, number>() };
+      const byRef: RefMaps = { party: new Map<string, number>(), item: new Map<string, number>(), account: new Map<string, number>(), added: [] };
 
       for (const [i, rawEntry] of parsed.data.entries.entries()) {
         const p = entrySchema.safeParse(rawEntry);
@@ -180,7 +185,14 @@ export async function runBatch(db: DB, ctx: ApiContext, raw: unknown): Promise<{
         seenRefs.add(e.ref);
         try {
           setRegion(country);
-          results.push(await runEntry(tx, ctx, e, byRef, dryRun));
+          const r = await runEntry(tx, ctx, e, byRef, dryRun);
+          // Tax rates this entry needed and the company didn't have: said in its result.
+          if (byRef.added.length) {
+            const said = byRef.added.map((a) => `${dryRun ? "Will add" : "Added"} the ${a} rate to the company.`).join(" ");
+            r.message = r.message ? `${said} ${r.message}` : said;
+            byRef.added = [];
+          }
+          results.push(r);
         } catch (err) {
           if (err instanceof MasterError || err instanceof VoucherError) results.push({ ref: e.ref, kind: e.kind, status: "error", message: err.message });
           else throw err;
@@ -212,7 +224,7 @@ export async function runBatch(db: DB, ctx: ApiContext, raw: unknown): Promise<{
   return out;
 }
 
-type RefMaps = { party: Map<string, number>; item: Map<string, number>; account: Map<string, number> };
+type RefMaps = { party: Map<string, number>; item: Map<string, number>; account: Map<string, number>; /** Tax rates added for the current entry ("GST 12%"). */ added: string[] };
 
 async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRun: boolean): Promise<EntryResult> {
   const f = ctx.firmId;
@@ -267,7 +279,7 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
           code: e.code,
           hsn: e.hsn,
           unitId: e.unit ? await unitId(db, f, e.unit) : null,
-          taxRateId: e.gstRatePct != null ? await taxRateId(db, f, e.gstRatePct) : null,
+          taxRateId: e.gstRatePct != null ? await taxRateId(db, f, e.gstRatePct, byRef) : null,
           purchasePricePaise: e.purchasePricePaise,
           salePricePaise: e.salePricePaise,
         },
@@ -295,16 +307,33 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
       const lines = [];
       for (const l of e.lines) {
         const it = await resolveItem(db, f, l.item, byRef);
-        const tax = l.gstRatePct != null ? await taxRateId(db, f, l.gstRatePct) : it.taxRateId;
+        const tax = l.gstRatePct != null ? await taxRateId(db, f, l.gstRatePct, byRef) : it.taxRateId;
         const t = tax ? (await db.select().from(taxRates).where(eq(taxRates.id, tax)))[0] : undefined;
+        const qtyMilli = Math.round(l.qty * 1000);
+        let ratePaise = l.ratePaise;
+        let discountPaise = 0;
+        let discountBp = Math.round(l.discountPct * 100);
+        if (l.amountPaise != null && !l.rateIncludesTax && discountBp === 0 && qtyMilli > 0) {
+          const gross = Math.round((qtyMilli * ratePaise) / 1000);
+          if (gross !== l.amountPaise) {
+            // Only a difference a sub-paisa price explains (up to half a paisa a unit) is absorbed; anything bigger is a misread.
+            if (Math.abs(gross - l.amountPaise) > Math.max(1, (qtyMilli / 1000) * 0.5 + 1)) {
+              throw new MasterError(`Line ${lines.length + 1} (${it.name}): ${l.qty} × ${(ratePaise / 100).toFixed(2)} is ${(gross / 100).toFixed(2)}, not the ${(l.amountPaise / 100).toFixed(2)} printed.`);
+            }
+            ratePaise = Math.ceil((l.amountPaise * 1000) / qtyMilli);
+            discountPaise = Math.round((qtyMilli * ratePaise) / 1000) - l.amountPaise;
+            discountBp = 0;
+          }
+        }
         lines.push({
           itemId: it.id,
           description: it.name,
           hsn: it.hsn,
-          qtyMilli: Math.round(l.qty * 1000),
-          ratePaise: l.ratePaise,
+          qtyMilli,
+          ratePaise,
           rateIncludesTax: l.rateIncludesTax,
-          discountBp: Math.round(l.discountPct * 100),
+          discountBp,
+          discountPaise,
           taxRateId: t?.id ?? null,
           gstBp: t?.gstBp ?? 0,
           cessBp: t?.cessBp ?? 0,
@@ -318,6 +347,8 @@ async function runEntry(db: DB, ctx: ApiContext, e: Entry, byRef: RefMaps, dryRu
         partyId,
         supplierInvoiceNo: e.billNo,
         roundOff: e.roundOff,
+        // The supplier's printed total wins over plain rounding when it's within ₹1.
+        matchTotalPaise: e.roundOff ? (e.expectedTotalPaise ?? null) : null,
         notes: e.notes,
         // saveVoucher caps what's paid at the bill's total, so "everything" is any amount at least that big.
         paidPaise: paidFrom ? Number.MAX_SAFE_INTEGER : 0,
@@ -466,13 +497,37 @@ async function resolveAccount(db: DB, f: number, p: Pick, byRef: RefMaps): Promi
   return row.id;
 }
 
-/** The tax rate for "18" (%): the company's taxable rate of that size. */
-async function taxRateId(db: DB, f: number, pct: number): Promise<number | null> {
+/** Real tax rates by country: a rate a bill carries is added to the company when missing, any other number is refused. */
+const LAWFUL_RATES: Record<string, number[]> = {
+  IN: [0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 18, 28, 40],
+  SA: [0, 15],
+};
+
+/**
+ * The tax rate for "18" (%): the company's taxable rate of that size. A lawful rate the company lacks (12% when only
+ * 5% and 18% were set up, or one that was switched off) is switched back on or added, and noted in `byRef.added`.
+ */
+async function taxRateId(db: DB, f: number, pct: number, byRef: RefMaps): Promise<number | null> {
   const bp = Math.round(pct * 100);
-  const rows = await db.select().from(taxRates).where(and(eq(taxRates.firmId, f), eq(taxRates.active, true), eq(taxRates.gstBp, bp)));
-  const hit = rows.find((r) => r.nature === "taxable") ?? rows[0];
-  if (!hit) throw new MasterError(`There's no ${pct}% tax rate in this company. Add it under Settings → Tax rates first.`);
-  return hit.id;
+  const rows = await db.select().from(taxRates).where(and(eq(taxRates.firmId, f), eq(taxRates.gstBp, bp)));
+  const usable = (r: (typeof rows)[number]) => r.nature === "taxable" || bp === 0;
+  const hit = rows.find((r) => r.active && r.nature === "taxable") ?? rows.find((r) => r.active && usable(r));
+  if (hit) return hit.id;
+  const [firm] = await db.select({ country: firms.country }).from(firms).where(eq(firms.id, f));
+  const country = firm?.country ?? "IN";
+  const label = `${country === "SA" ? "VAT" : "GST"} ${pct}%`;
+  if (!(LAWFUL_RATES[country] ?? []).includes(pct)) {
+    throw new MasterError(`${pct}% isn't a ${country === "SA" ? "VAT" : "GST"} rate, so it's probably misread. Check the bill (CGST and SGST are added together: 9% + 9% is 18%).`);
+  }
+  const off = rows.find((r) => !r.active && r.nature === "taxable");
+  if (off) {
+    await db.update(taxRates).set({ active: true }).where(eq(taxRates.id, off.id));
+    byRef.added.push(label);
+    return off.id;
+  }
+  const id = await saveTaxRate(db, f, { name: label, gstBp: bp, nature: "taxable", sort: bp });
+  byRef.added.push(label);
+  return id;
 }
 
 async function unitId(db: DB, f: number, code: string): Promise<number> {

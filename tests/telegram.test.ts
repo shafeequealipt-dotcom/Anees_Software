@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@/db";
-import { accounts, auditLog, firms, items, parties, telegramConfig, telegramDrafts, telegramFiles, telegramLinkCodes, telegramLinks, users, vouchers } from "@/db/schema";
+import { accounts, auditLog, firms, items, parties, telegramConfig, telegramDrafts, telegramFiles, telegramLinkCodes, telegramLinks, users, voucherLines, vouchers } from "@/db/schema";
 import { gstinCheckDigit } from "@/lib/gst/gstin";
 import { setRegion } from "@/lib/region";
 import { createCompany } from "@/server/admin";
@@ -465,6 +465,100 @@ describe("a photo Telegram has shrunk", () => {
     } finally {
       setTelegramTransport(fakeTransport);
     }
+  });
+});
+
+describe("bills that failed on the live bot go in to the paisa", () => {
+  const line = (description: string, qty: number, rate: number, gstPct: number, amount: number, extra: Partial<ReadBill["lines"][number]> = {}): ReadBill["lines"][number] => ({ description, matchedCode: null, hsn: null, qty, unit: null, rate, gstPct, discountPct: 0, mrp: null, amount, ...extra });
+
+  it("Veepack B2C/01653: prices finer than a paisa — entered at exactly ₹1,800.00", async () => {
+    readImpl = null;
+    ocrUp = true;
+    nextRead = medBill({
+      supplier: { name: "VEEPACK PACKAGING", gstin: null, phone: "7025546032", address: "Nilambur Road, Manjeri, Kerala" },
+      billNo: "B2C/01653",
+      date: "2026-06-27",
+      lines: [line("10ML PLASTIC BOTTLES - CLEAR", 1000, 0.81, 9, 805.08, { unit: "Nos" }), line("5ML PLASTIC BOTTLES - CLEAR", 1000, 0.72, 9, 720.34, { unit: "Nos" })],
+      total: 1800,
+      subtotal: 1525.42,
+      totalQty: 2000,
+    });
+    await handleUpdate(db, photo());
+    const shown = lastShown();
+    expect(shown.text).toMatch(/Total .*1,800\.00.*matches the bill/);
+    expect(shown.text).toMatch(/GST was read as 9%/);
+    const d = await latestDraft();
+    await handleUpdate(db, tap(`e:${d.id}:0`));
+    const [bill] = (await purchaseBills()).filter((b) => b.supplierInvoiceNo === "B2C/01653");
+    expect(bill.totalPaise).toBe(180000);
+    const ls = await db.select().from(voucherLines).where(eq(voucherLines.voucherId, bill.id));
+    // 1000 × ₹0.80508 can't be a paisa rate: ₹0.81 each less ₹4.92 — exactly the ₹805.08 printed.
+    expect(ls.map((l) => [l.qtyMilli, l.ratePaise, l.lineDiscountPaise, l.taxablePaise])).toEqual([
+      [1_000_000, 81, 492, 80508],
+      [1_000_000, 73, 966, 72034],
+    ]);
+  });
+
+  it("S P Homoeo A004108: one row's GST misread — corrected from the total and entered at exactly ₹7,459.00", async () => {
+    const r = (n: string, q: number, rate: number, g: number, a: number) => line(n, q, rate, g, a);
+    nextRead = medBill({
+      supplier: { name: "S P HOMOEO MEDICALS", gstin: null, phone: null, address: "Kumarapark West, Bengaluru" },
+      billNo: "A004108",
+      date: "2026-10-17",
+      lines: [
+        r("ASTHA AID SYRUP 450ML", 3, 193.8, 5, 581.4),
+        r("B&T SUN SCREEN EXPERT 100GM", 3, 214.4, 5, 643.2), // really 18%
+        r("CIMICIFUGA RACEMOSA Q SBL 100ML", 1, 307.8, 5, 307.8),
+        r("CME EYE DROPS SBL 10ML", 2, 69.54, 5, 139.08),
+        r("CME EYE DROPS SBL 10ML", 2, 69.54, 5, 139.08),
+        r("CONTINIL DROPS SBL 30ML", 10, 74.67, 5, 746.7),
+        r("ENUKIND 10GM", 1, 91, 5, 91),
+        r("EUPHARASIA 10% 10ML", 3, 55.1, 5, 165.3),
+        r("MULLIEN EAR DROPS SBL 10ML", 4, 37.62, 5, 150.48),
+        r("PROSTONUM 30ML", 4, 101.46, 5, 405.84),
+        r("R1 TO 81 EXPT8,15,30 22ML", 15, 212.4, 5, 3186),
+        r("R1 TO 81 EXPT8,15,30 22ML", 2, 234, 5, 468),
+      ],
+      total: 7459,
+      subtotal: 7023.88,
+      totalQty: 50,
+    });
+    await handleUpdate(db, photo());
+    const shown = lastShown();
+    expect(shown.text).toMatch(/Line 2 \(B&amp;T SUN SCREEN EXPERT 100GM\): GST read as 5%/);
+    expect(shown.text).toMatch(/Total .*7,459\.00.*matches the bill/);
+    const d = await latestDraft();
+    await handleUpdate(db, tap(`e:${d.id}:0`));
+    const [bill] = (await purchaseBills()).filter((b) => b.supplierInvoiceNo === "A004108");
+    expect(bill.totalPaise).toBe(745900);
+  });
+
+  it("the buyer (us) read as the supplier is caught, and a second look reads the real supplier", async () => {
+    await db.update(firms).set({ address: "Opst Mayura Bakery, Gunjur Main Road", city: "Varthur" }).where(eq(firms.id, F));
+    const right = medBill({ billNo: "A003242" });
+    const wrong = medBill({ billNo: "A003242", supplier: { name: "M/s DR NAFIA'S HOMOEOPATHIC MEDICAL CENTRE", gstin: null, phone: "8301889358", address: "GUNJUR ROAD, VARTHUR, BENGALURU" } });
+    readImpl = (_input, models) => (models[0] === "google/gemini-2.5-flash-lite" && readCalls.at(-1)?.ctx.notes?.includes("is the buyer") ? right : wrong);
+    readCalls.length = 0;
+    await handleUpdate(db, photo());
+    // Every reader fell for it; the second look was told so and read the real supplier.
+    expect(readCalls.at(-1)!.ctx.notes).toMatch(/is the buyer \(us\), not the supplier/);
+    expect(readCalls.at(-1)!.ctx.buyer).toMatchObject({ address: "Opst Mayura Bakery, Gunjur Main Road, Varthur" });
+    const shown = lastShown();
+    expect(shown.text).toContain("MedPlus Distributors");
+    expect(shown.text).toMatch(/second look/);
+    readImpl = null;
+  });
+
+  it("a discarded bill can be brought back by replying to it", async () => {
+    nextRead = medBill({ billNo: "BACK-1", total: 1 });
+    await handleUpdate(db, photo());
+    const d = await latestDraft();
+    await handleUpdate(db, tap(`x:${d.id}`));
+    expect((await db.select().from(telegramDrafts).where(eq(telegramDrafts.id, d.id)))[0].status).toBe("discarded");
+    nextRead = medBill({ billNo: "BACK-1" });
+    await handleUpdate(db, text("try again", { reply_to_message: { message_id: d.summaryMessageId! } }));
+    expect((await db.select().from(telegramDrafts).where(eq(telegramDrafts.id, d.id)))[0].status).toBe("ready");
+    expect(lastShown().text).toMatch(/matches the bill/);
   });
 });
 
