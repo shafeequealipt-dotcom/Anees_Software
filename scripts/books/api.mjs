@@ -3,6 +3,7 @@
  * Talks to the billing app's bookkeeping API (/api/v1) for one company.
  *
  *   node scripts/books/api.mjs reference              → the company's accounts, parties, items… as JSON
+ *   node scripts/books/api.mjs bills ["type=…&from=…"] → every matching bill (all pages) as JSON
  *   node scripts/books/api.mjs check  batch.json      → dry run: checks every entry, saves nothing
  *   node scripts/books/api.mjs post   batch.json      → dry run first; only if it's clean, saves for real
  *
@@ -29,7 +30,7 @@ function die(msg) {
   console.error(msg);
   process.exit(2);
 }
-if (!["reference", "check", "post"].includes(cmd)) die("Use: api.mjs reference | check <batch.json> | post <batch.json>  [--url URL] [--key-env NAME]");
+if (!["reference", "bills", "check", "post"].includes(cmd)) die("Use: api.mjs reference | bills [query] | check <batch.json> | post <batch.json>  [--url URL] [--key-env NAME]");
 if (!key) die(`${keyEnv} isn't set in this shell. It belongs in ~/.zshrc; open a new terminal (or launch from one) and try again.`);
 
 async function call(path, body) {
@@ -64,6 +65,17 @@ function report(out) {
 
 if (cmd === "reference") {
   console.log(JSON.stringify(await call("/api/v1/reference"), null, 2));
+} else if (cmd === "bills") {
+  const q = new URLSearchParams(file ?? "");
+  q.set("limit", "1000");
+  const bills = [];
+  let page;
+  do {
+    q.set("offset", String(bills.length));
+    page = await call(`/api/v1/bills?${q}`);
+    bills.push(...page.bills);
+  } while (page.bills.length && bills.length < page.total);
+  console.log(JSON.stringify({ company: page.company, total: page.total, bills }, null, 2));
 } else {
   if (!file) die("Give the batch file, e.g. batch-2026-09.json");
   const batch = JSON.parse(readFileSync(file, "utf8"));

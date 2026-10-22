@@ -23,6 +23,26 @@ The company's accounts (cash/bank), expense and income categories, parties (name
 state), items (Product ID, name, HSN, unit, GST %, purchase price), tax rates and shops — for matching
 documents to existing records.
 
+## `GET /api/v1/bills`
+
+Read-only list of the company's bills, oldest first, for checking the books against the source documents.
+
+| parameter | default | meaning |
+|---|---|---|
+| `type` | `purchase_bill` | one or more voucher types, comma-separated (`purchase_bill,expense,debit_note,payment_out`, …) |
+| `from`, `to` | — | dates `YYYY-MM-DD`, inclusive |
+| `status` | `active` | `all` also returns cancelled and deleted ones |
+| `lines` | `1` | `0` leaves out the item lines |
+| `limit`, `offset` | `200`, `0` | page through; at most 1000 per call. `total` says how many match |
+
+Each bill: `id`, `type`, `number`, `date`, `dueDate`, `status`, `party` (`id`, `name`, `gstin`), `billNo` (the
+supplier's), `placeOfSupply`, `taxablePaise`, `cgstPaise`/`sgstPaise`/`igstPaise`/`cessPaise`, `roundOffPaise`,
+`totalPaise`, `paidPaise` (paid on the bill + settled by payments + TDS), `balancePaise` (still owed), `account`,
+`paymentMode`, `paymentRef`, `category`, `notes`, `enteredVia` (`telegram` / `api` / `app`), `enteredBy`, `ref`,
+`createdAt`, `link`, and `lines[]` (`lineNo`, `item` {`id`, `code`, `name`}, `description`, `hsn`, `qty`, `unit`,
+`ratePaise`, `rateIncludesTax`, `discountPct`, `taxablePaise`, `gstPct`, tax split, `totalPaise`, `batchNo`,
+`expiryDate`).
+
 ## `POST /api/v1/batch`
 
 ```json
@@ -64,6 +84,7 @@ the app) and, for bills and payments, `totalPaise`. Bills and payments also carr
 
 ```
 node scripts/books/api.mjs reference > reference.json
+node scripts/books/api.mjs bills "type=purchase_bill,expense&from=2025-02-19" > bills.json   # every page
 node scripts/books/api.mjs check batch.json   # dry run
 node scripts/books/api.mjs post  batch.json   # dry run, then saves only if it was clean
 ```
