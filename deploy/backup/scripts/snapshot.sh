@@ -54,11 +54,11 @@ if [ "$(jq -S . <<<"$RESTORED")" != "$(jq -S . <<<"$LIVE")" ]; then
 fi
 
 # 3. Bundle, checksum, encrypt for the owner's key (the server cannot decrypt its own backups)
-jq -n --arg created "$STARTED" --arg label "$LABEL" --arg cutoff "$CUTOFF" \
+jq -n --arg created "$STARTED" --arg lbl "$LABEL" --arg cutoff "$CUTOFF" \
   --argjson fingerprint "$RESTORED" \
   --arg db_sha "$(sha256sum "$WORK/database.dump" | cut -d' ' -f1)" \
   --arg up_sha "$(sha256sum "$WORK/uploads.tar.gz" | cut -d' ' -f1)" \
-  '{format: 1, created: $created, "label": $label, cutoff: $cutoff, fingerprint: $fingerprint,
+  '{format: 1, created: $created, "label": $lbl, cutoff: $cutoff, fingerprint: $fingerprint,
     files: {"database.dump": $db_sha, "uploads.tar.gz": $up_sha}}' >"$WORK/manifest.json"
 tar -C "$WORK" -cf "$WORK/bundle.tar" manifest.json database.dump uploads.tar.gz
 age --encrypt --recipients-file "$RECIPIENTS" --output "$LOCAL_DIR/$NAME" "$WORK/bundle.tar" || fail "Encryption failed."
