@@ -46,6 +46,8 @@ export interface InvoiceModel {
   taxLabels: { cgst: string; sgst: string; igst: string };
   split: boolean;
   totals: { k: string; v: string; bold?: boolean }[];
+  /** Stock transfers: a Total row at the foot of the item table (quantities under Qty, amounts under their columns). */
+  lineTotals: { qty: string; received: string; damaged: string; taxable: string; total: string } | null;
   words: string;
   wordsAr: string | null;
   bank: { k: string; v: string }[];
@@ -217,15 +219,18 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
     if (v.roundOffPaise) totals.push({ k: L("Round off"), v: money(v.roundOffPaise) });
     if (v.tcsPaise) totals.push({ k: `TCS (${formatPercent(v.tcsBp)})`, v: money(v.tcsPaise) });
   }
-  // A stock transfer also says how many pieces moved in all (10 of one item + 20 of another = 30).
+  // A stock transfer ends its item table with a Total row: how many pieces moved in all (10 + 20 = 30) under Qty.
+  let lineTotals: InvoiceModel["lineTotals"] = null;
   if (v.type === "stock_transfer") {
     const moved = data.lines;
     const qty = (pick: (l: (typeof moved)[number]) => number | null) => formatQty(moved.reduce((s, l) => s + (pick(l) ?? 0), 0)) + transferUnit(moved);
-    totals.push({ k: L("Total quantity"), v: qty((l) => l.qtyMilli), bold: true });
-    if (v.receivedAt) {
-      totals.push({ k: L("Total received"), v: qty((l) => l.receivedQtyMilli) });
-      if (moved.some((l) => l.damagedQtyMilli)) totals.push({ k: L("Total damaged"), v: qty((l) => l.damagedQtyMilli) });
-    }
+    lineTotals = {
+      qty: qty((l) => l.qtyMilli),
+      received: v.receivedAt ? qty((l) => l.receivedQtyMilli) : "",
+      damaged: v.receivedAt && moved.some((l) => l.damagedQtyMilli) ? qty((l) => l.damagedQtyMilli) : "",
+      taxable: money(moved.reduce((s, l) => s + l.taxablePaise, 0)),
+      total: money(moved.reduce((s, l) => s + l.totalPaise, 0)),
+    };
   }
   totals.push({ k: L("Total"), v: money(v.totalPaise), bold: true });
   if (v.tdsPaise) totals.push({ k: `TDS deducted (${formatPercent(v.tdsBp)})`, v: `-${money(v.tdsPaise)}` });
@@ -273,10 +278,11 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
     taxLabels: { cgst: TL.cgst, sgst: TL.sgst, igst: TL.igst },
     split,
     totals,
+    lineTotals,
     words: language === "ar" && R.country === "SA" ? amountInWordsArabic(v.totalPaise) : amountInWords(v.totalPaise),
     wordsAr: language === "bilingual" && R.country === "SA" ? amountInWordsArabic(v.totalPaise) : null,
     language,
-    ui: Object.fromEntries(["Amounts in", "Item", "Qty", "Rate", "Discount", "Taxable", "Tax %", "Tax", "Amount", "HSN", "Amount in words", "Total tax", "Bank details", "Authorised signatory", "Terms and conditions", "Notes", "Page", "of", "Mode", "Reference", "Against bills", "Thank you!", "ZATCA QR code", "Received", "Damaged"].map((k) => [k, L(k)])),
+    ui: Object.fromEntries(["Amounts in", "Item", "Qty", "Rate", "Discount", "Taxable", "Tax %", "Tax", "Amount", "HSN", "Amount in words", "Total tax", "Bank details", "Authorised signatory", "Terms and conditions", "Notes", "Page", "of", "Mode", "Reference", "Against bills", "Thank you!", "ZATCA QR code", "Received", "Damaged", "Total", "Total quantity"].map((k) => [k, L(k)])),
     bank,
     qr: zatca ? { src: zatca, caption: L("ZATCA QR code") } : upi ? { src: upi, caption: "Scan to pay (UPI)" } : null,
     terms: v.terms || (info.outward && info.takesPayment ? firm.invoiceTerms : null),

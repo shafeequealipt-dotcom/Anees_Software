@@ -75,9 +75,9 @@ describe("a transfer from the warehouse to a shop", () => {
     const drops = await saveItem(db, firmId, { name: "Mullien Ear Drops", purchasePricePaise: 37_62, salePricePaise: 66_00 }, 1);
     const x = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-10-22", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: syrup, description: "Astha Aid Syrup", qtyMilli: 10_000, ratePaise: 0 }, { itemId: drops, description: "Mullien Ear Drops", qtyMilli: 20_000, ratePaise: 0 }] }, 1);
     const model = (await loadInvoiceModel(db, firmId, x.id))!;
-    expect(model.totals.find((t) => t.k === "Total quantity")).toMatchObject({ v: "30", bold: true });
-    const at = (k: string) => model.totals.findIndex((t) => t.k === k);
-    expect(at("Total quantity")).toBeLessThan(at("Total")); // shown just above the money total
+    // A Total row at the foot of the item table: 30 under Qty, the amounts under their columns.
+    expect(model.lineTotals).toEqual({ qty: "30", received: "", damaged: "", taxable: "4,720.00", total: "4,720.00" });
+    expect(model.totals.some((t) => t.k === "Total quantity")).toBe(false);
   });
 
   it("doesn't change the value of stock: that stays at the purchase rate", async () => {

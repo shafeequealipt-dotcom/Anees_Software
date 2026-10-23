@@ -650,6 +650,7 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   sale rate on a transfer line; `saveVoucherAction` passes it as `itemSalePrices` and `saveVoucher` saves it to the
   item in the same transaction (audit: "Sale price of X changed from a to b (on a stock transfer)"), so the new price
   shows everywhere and later transfers use it. Everyone else sees the rate locked; a typed rate from them is ignored.
-- **Transfer printout totals (24 Oct 2026)**: the stock transfer PDF adds "Total quantity" (the sum of the lines'
-  quantities, with the unit when all lines share one) above the money total, plus "Total received" / "Total
-  damaged" once received (`loadInvoiceModel`, Arabic labels included).
+- **Transfer printout totals (24 Oct 2026)**: the stock transfer PDF ends its item table with a **Total** row — the
+  total quantity under Qty (with the unit when all lines share one), the amounts under Taxable / Amount, and total
+  received / damaged under those columns once received (`InvoiceModel.lineTotals`); thermal receipts print a "Total
+  quantity" line instead. Arabic labels included.

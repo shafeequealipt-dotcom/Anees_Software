@@ -169,6 +169,22 @@ function Sheet({ m }: { m: InvoiceModel }) {
                 <Cell s={s} w={w.total} right bold>{l.total}</Cell>
               </View>
             ))}
+            {m.lineTotals && (
+              <View style={[s.row, { borderTopWidth: 1, borderTopColor: modern ? m.accent : "#1f2937", borderBottomWidth: 1, borderBottomColor: modern ? m.accent : "#1f2937" }]} wrap={false}>
+                <Cell s={s} w={w.no} />
+                <Cell s={s} w={desc} bold>{m.ui.Total}</Cell>
+                {c.hsn && <Cell s={s} w={w.hsn} />}
+                <Cell s={s} w={w.qty} right bold>{m.lineTotals.qty}</Cell>
+                <Cell s={s} w={w.rate} />
+                {c.discount && <Cell s={s} w={w.disc} />}
+                <Cell s={s} w={w.taxable} right bold>{m.lineTotals.taxable}</Cell>
+                {c.tax && <Cell s={s} w={w.taxrate} />}
+                {c.tax && <Cell s={s} w={w.tax} />}
+                {c.transferStatus && <Cell s={s} w={w.received} right bold>{m.lineTotals.received}</Cell>}
+                {c.transferStatus && <Cell s={s} w={w.damaged} right bold>{m.lineTotals.damaged}</Cell>}
+                <Cell s={s} w={w.total} right bold>{m.lineTotals.total}</Cell>
+              </View>
+            )}
 
             <View style={s.totalsWrap} wrap={false}>
               <View style={{ flex: 1 }}>
@@ -368,7 +384,16 @@ function Receipt({ m }: { m: InvoiceModel }) {
                 </Text>
               )}
             </View>
-          ))
+          )).concat(
+            m.lineTotals
+              ? [
+                  <View key="qty-total" style={s.row}>
+                    <Text style={s.bold}>{m.ui["Total quantity"]}</Text>
+                    <Text style={s.bold}>{m.lineTotals.qty}</Text>
+                  </View>,
+                ]
+              : [],
+          )
         ) : (
           m.receipt && (
             <View>
