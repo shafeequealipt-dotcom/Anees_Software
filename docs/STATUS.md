@@ -646,3 +646,7 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   on transfers. Stock value and the books are unaffected (stock is valued at purchase cost; transfers post nothing);
   the transit report values damaged/short goods at cost. Tests: `tests/transfer-sale-rate.test.ts`.
   (Replaces the same-day version that showed selling price only to staff without cost access.)
+- **Editable sale rate on transfers (23 Oct 2026)**: people with "edit items" (`masters.edit`) can type a different
+  sale rate on a transfer line; `saveVoucherAction` passes it as `itemSalePrices` and `saveVoucher` saves it to the
+  item in the same transaction (audit: "Sale price of X changed from a to b (on a stock transfer)"), so the new price
+  shows everywhere and later transfers use it. Everyone else sees the rate locked; a typed rate from them is ignored.

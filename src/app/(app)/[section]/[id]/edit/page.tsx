@@ -15,7 +15,7 @@ export default async function EditVoucherPage({ params }: { params: Promise<{ se
   if (!type || !Number(id)) notFound();
   const user = await requireUser("vouchers.edit");
   const db = await getDb();
-  const data = await loadVoucherFormData(db, user.firmId, type, { id: Number(id) }, { balance: can(user, "see.partyBalance"), contact: can(user, "see.partyContact"), purchase: can(user, "see.purchasePrice") }, user.locations);
+  const data = await loadVoucherFormData(db, user.firmId, type, { id: Number(id) }, { balance: can(user, "see.partyBalance"), contact: can(user, "see.partyContact"), purchase: can(user, "see.purchasePrice"), salePrice: can(user, "masters.edit") }, user.locations);
   if (!data.existing) notFound();
   if (data.existing.voucher.type !== type) redirect(`${VOUCHER_INFO[data.existing.voucher.type].path}/${id}/edit`);
   if (!canSeeVoucher(user, data.existing.voucher)) notFound();

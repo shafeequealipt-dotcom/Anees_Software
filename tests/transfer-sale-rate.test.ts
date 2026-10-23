@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DB } from "@/db";
-import { firms, locations, voucherLines } from "@/db/schema";
+import { auditLog, firms, items, locations, voucherLines } from "@/db/schema";
 import { saveItem, saveParty } from "@/server/masters";
 import { stockValueAt } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
@@ -47,6 +47,27 @@ describe("a transfer from the warehouse to a shop", () => {
     const x = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-10-22", locationId: warehouseId, toLocationId: shopId, lines: [{ description: "Carton of leaflets", qtyMilli: 1_000, ratePaise: 50_00 }] }, 1);
     const [line] = await db.select().from(voucherLines).where(eq(voucherLines.voucherId, x.id));
     expect([line.ratePaise, line.salePricePaise]).toEqual([50_00, null]);
+  });
+
+  it("a sale rate edited on the transfer is saved to the item, so it shows everywhere", async () => {
+    const x = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-10-22", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: syrup, description: "Astha Aid Syrup", qtyMilli: 2_000, ratePaise: 355_00 }], itemSalePrices: [{ itemId: syrup, salePricePaise: 355_00 }] }, 1);
+    const [line] = await db.select().from(voucherLines).where(eq(voucherLines.voucherId, x.id));
+    expect([line.ratePaise, line.salePricePaise, line.totalPaise]).toEqual([355_00, 355_00, 710_00]);
+    const [item] = await db.select().from(items).where(eq(items.id, syrup));
+    expect(item.salePricePaise).toBe(355_00);
+    const log = await db.select().from(auditLog).where(eq(auditLog.entity, "item"));
+    expect(log.at(-1)!.summary).toMatch(/Sale price of Astha Aid Syrup changed from 340\.00 to 355\.00 \(on a stock transfer\)/);
+    // The next transfer, with nothing typed, goes at the new price.
+    const y = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-10-22", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: syrup, description: "Astha Aid Syrup", qtyMilli: 1_000, ratePaise: 0 }] }, 1);
+    expect((await getVoucher(db, firmId, y.id))!.lines[0].ratePaise).toBe(355_00);
+    await saveItem(db, firmId, { id: syrup, name: "Astha Aid Syrup", purchasePricePaise: 193_80, salePricePaise: 340_00 }, 1);
+  });
+
+  it("without the permission nothing is saved to the item: a typed rate is ignored", async () => {
+    const x = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-10-22", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: syrup, description: "Astha Aid Syrup", qtyMilli: 1_000, ratePaise: 999_00 }] }, 1);
+    expect((await getVoucher(db, firmId, x.id))!.lines[0].ratePaise).toBe(340_00);
+    const [item] = await db.select().from(items).where(eq(items.id, syrup));
+    expect(item.salePricePaise).toBe(340_00);
   });
 
   it("doesn't change the value of stock: that stays at the purchase rate", async () => {

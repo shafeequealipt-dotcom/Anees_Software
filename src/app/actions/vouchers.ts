@@ -62,6 +62,12 @@ export async function saveVoucherAction(input: VoucherInput): Promise<ActionResu
         if (created && created !== todayIST()) throw new AuthError("Only the owner or accountant can edit entries from earlier days.");
       }
     }
+    // A sale rate typed on a transfer by someone who may edit items becomes the item's sale price (everywhere).
+    if (input.type === "stock_transfer" && can(user, "masters.edit") && input.lines?.length) {
+      const typed = new Map<number, number>();
+      for (const l of input.lines) if (l.itemId && Number.isFinite(l.ratePaise) && l.ratePaise >= 0) typed.set(l.itemId, Math.round((l.ratePaise * 1000) / (l.unitFactorMilli || 1000)));
+      input = { ...input, itemSalePrices: [...typed].map(([itemId, salePricePaise]) => ({ itemId, salePricePaise })) };
+    }
     const res = await saveVoucher(db, user.firmId, input, user.id, await clientIp());
     await notifyTransaction(db, user.firmId, user.id, res.id, input.id ? "updated" : "created");
     if (!input.id && user.firm.country === "SA") {

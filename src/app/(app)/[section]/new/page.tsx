@@ -25,7 +25,7 @@ export default async function NewVoucherPage({ params, searchParams }: { params:
     partyId: sp.party ? Number(sp.party) || undefined : undefined,
     toLocationId: sp.to ? Number(sp.to) || undefined : undefined,
     locationId: sp.location ? Number(sp.location) || undefined : undefined,
-  }, { balance: can(user, "see.partyBalance"), contact: can(user, "see.partyContact"), purchase: can(user, "see.purchasePrice") }, user.locations);
+  }, { balance: can(user, "see.partyBalance"), contact: can(user, "see.partyContact"), purchase: can(user, "see.purchasePrice"), salePrice: can(user, "masters.edit") }, user.locations);
   const saved = sp.saved ? <div className="mb-3"><Alert tone="good">Saved {sp.saved}. Ready for the next one.</Alert></div> : null;
   if (!data.firm) return <Alert tone="warn">Set up your business first in Settings.</Alert>;
   if (type === "payment_in" || type === "payment_out") return <>{saved}<PaymentForm key={sp.saved ?? "new"} data={data} /></>;

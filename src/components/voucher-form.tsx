@@ -157,6 +157,8 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
   const isStockMove = data.type === "stock_adjustment" || data.type === "stock_transfer";
   // Stock moves from the warehouse to the shops at the sale rate; purchase rates are for buying only.
   const transferAtSale = data.type === "stock_transfer";
+  // People who may edit items can change the sale rate here; it is saved to the item and shows everywhere.
+  const rateEditable = !transferAtSale || !!data.see.salePrice;
   const usesSalePrice = info.priceSide === "sale" || transferAtSale;
   const noTax = isStockMove || data.type === "delivery_challan" || withoutTax || composition;
   // A purchase return or write-off can also be from the Damaged goods location — the only place
@@ -711,10 +713,10 @@ export function VoucherForm({ data }: { data: VoucherFormData }) {
                           value={l.rate}
                           onChange={(e) => updateLine(l.key, { rate: e.target.value })}
                           // A transfer of a listed item always goes at its sale rate (the server sets it), so it can't be typed over.
-                          readOnly={transferAtSale && !!l.itemId}
-                          title={transferAtSale && l.itemId ? "Transfers go at the item's sale rate" : undefined}
+                          readOnly={!rateEditable && !!l.itemId}
+                          title={transferAtSale && l.itemId ? (rateEditable ? "Changing this changes the item's sale price everywhere" : "Transfers go at the item's sale rate") : undefined}
                           inputMode="decimal"
-                          className={cx("num text-right", Number.isNaN(toPaise(l.rate)) && "border-bad", transferAtSale && !!l.itemId && "bg-ground text-muted")}
+                          className={cx("num text-right", Number.isNaN(toPaise(l.rate)) && "border-bad", transferAtSale && !rateEditable && !!l.itemId && "bg-ground text-muted")}
                           placeholder="0"
                         />
                         {!noTax && (

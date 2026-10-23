@@ -90,6 +90,11 @@ export const voucherSchema = z.object({
   billDiscountBp: z.number().int().min(0).max(10000).default(0),
   billDiscountPaise: nonNeg.default(0),
   roundOff: z.boolean().default(true),
+  /**
+   * Stock transfers: sale prices typed on the transfer (per BASE unit), saved to the items in the same step so the new
+   * price shows everywhere. Only filled in by the action for people who may edit items.
+   */
+  itemSalePrices: z.array(z.object({ itemId: int.positive(), salePricePaise: nonNeg })).max(500).optional(),
   /** Purchase bills: the supplier's printed total, honoured by the round-off when within ₹1 (see calculateVoucher). */
   matchTotalPaise: nonNeg.nullish(),
   amountPaise: nonNeg.default(0),
@@ -218,6 +223,15 @@ export async function saveVoucher(
     }
 
     const itemIds = [...new Set(lineInputs.map((l) => l.itemId).filter((x): x is number => !!x))];
+    if (input.type === "stock_transfer" && input.itemSalePrices?.length) {
+      for (const p of input.itemSalePrices) {
+        if (!itemIds.includes(p.itemId)) continue;
+        const [it] = await tx.select({ name: items.name, salePricePaise: items.salePricePaise }).from(items).where(and(eq(items.id, p.itemId), eq(items.firmId, firmId)));
+        if (!it || it.salePricePaise === p.salePricePaise) continue;
+        await tx.update(items).set({ salePricePaise: p.salePricePaise, updatedAt: new Date() }).where(eq(items.id, p.itemId));
+        await audit(tx as unknown as DB, { firmId, userId, action: "update", entity: "item", entityId: p.itemId, summary: `Sale price of ${it.name} changed from ${(it.salePricePaise / 100).toFixed(2)} to ${(p.salePricePaise / 100).toFixed(2)} (on a stock transfer)` });
+      }
+    }
     const itemRows = itemIds.length ? await tx.select().from(items).where(and(inArray(items.id, itemIds), eq(items.firmId, firmId))) : [];
     const itemMap = new Map(itemRows.map((i) => [i.id, i]));
     for (const id of itemIds) if (!itemMap.has(id)) throw new VoucherError("An item on this bill no longer exists.");

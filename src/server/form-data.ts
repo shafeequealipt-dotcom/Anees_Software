@@ -85,6 +85,8 @@ export interface Visibility {
   balance: boolean;
   contact: boolean;
   purchase: boolean;
+  /** May change an item's sale price (e.g. on a stock transfer). */
+  salePrice?: boolean;
 }
 
 export interface LocationOpt {
