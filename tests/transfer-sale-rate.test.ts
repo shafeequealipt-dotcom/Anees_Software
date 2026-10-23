@@ -6,6 +6,7 @@ import { saveItem, saveParty } from "@/server/masters";
 import { stockValueAt } from "@/server/reports";
 import { runFirstSetup } from "@/server/setup";
 import { getVoucher, saveVoucher } from "@/server/vouchers";
+import { loadInvoiceModel } from "@/server/invoice";
 import { testDb } from "./helpers/db";
 
 let db: DB;
@@ -68,6 +69,15 @@ describe("a transfer from the warehouse to a shop", () => {
     expect((await getVoucher(db, firmId, x.id))!.lines[0].ratePaise).toBe(340_00);
     const [item] = await db.select().from(items).where(eq(items.id, syrup));
     expect(item.salePricePaise).toBe(340_00);
+  });
+
+  it("the printed transfer report gives the total quantity moved", async () => {
+    const drops = await saveItem(db, firmId, { name: "Mullien Ear Drops", purchasePricePaise: 37_62, salePricePaise: 66_00 }, 1);
+    const x = await saveVoucher(db, firmId, { type: "stock_transfer", date: "2026-10-22", locationId: warehouseId, toLocationId: shopId, lines: [{ itemId: syrup, description: "Astha Aid Syrup", qtyMilli: 10_000, ratePaise: 0 }, { itemId: drops, description: "Mullien Ear Drops", qtyMilli: 20_000, ratePaise: 0 }] }, 1);
+    const model = (await loadInvoiceModel(db, firmId, x.id))!;
+    expect(model.totals.find((t) => t.k === "Total quantity")).toMatchObject({ v: "30", bold: true });
+    const at = (k: string) => model.totals.findIndex((t) => t.k === k);
+    expect(at("Total quantity")).toBeLessThan(at("Total")); // shown just above the money total
   });
 
   it("doesn't change the value of stock: that stays at the purchase rate", async () => {

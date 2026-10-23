@@ -57,6 +57,13 @@ export interface InvoiceModel {
 
 const clean = (a: (string | null | undefined)[]) => a.filter((x): x is string => !!x && x.trim() !== "").map((x) => x.trim());
 
+/** The unit to print after a total quantity: the lines' unit when they all share one, otherwise none. */
+function transferUnit(lines: { unitCode: string | null }[]): string {
+  const units = new Set(lines.map((l) => l.unitCode ?? ""));
+  const [only] = [...units];
+  return units.size === 1 && only ? ` ${only}` : "";
+}
+
 export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number, opts: { paper?: PaperKind } = {}): Promise<InvoiceModel | null> {
   const data = await getVoucher(db, firmId, voucherId);
   if (!data) return null;
@@ -209,6 +216,16 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
     if (v.cessPaise) totals.push({ k: TL.cess, v: money(v.cessPaise) });
     if (v.roundOffPaise) totals.push({ k: L("Round off"), v: money(v.roundOffPaise) });
     if (v.tcsPaise) totals.push({ k: `TCS (${formatPercent(v.tcsBp)})`, v: money(v.tcsPaise) });
+  }
+  // A stock transfer also says how many pieces moved in all (10 of one item + 20 of another = 30).
+  if (v.type === "stock_transfer") {
+    const moved = data.lines;
+    const qty = (pick: (l: (typeof moved)[number]) => number | null) => formatQty(moved.reduce((s, l) => s + (pick(l) ?? 0), 0)) + transferUnit(moved);
+    totals.push({ k: L("Total quantity"), v: qty((l) => l.qtyMilli), bold: true });
+    if (v.receivedAt) {
+      totals.push({ k: L("Total received"), v: qty((l) => l.receivedQtyMilli) });
+      if (moved.some((l) => l.damagedQtyMilli)) totals.push({ k: L("Total damaged"), v: qty((l) => l.damagedQtyMilli) });
+    }
   }
   totals.push({ k: L("Total"), v: money(v.totalPaise), bold: true });
   if (v.tdsPaise) totals.push({ k: `TDS deducted (${formatPercent(v.tdsBp)})`, v: `-${money(v.tdsPaise)}` });
