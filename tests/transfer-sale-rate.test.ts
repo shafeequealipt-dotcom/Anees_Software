@@ -77,7 +77,8 @@ describe("a transfer from the warehouse to a shop", () => {
     const model = (await loadInvoiceModel(db, firmId, x.id))!;
     // A Total row at the foot of the item table: 30 under Qty, the amounts under their columns.
     expect(model.lineTotals).toEqual({ qty: "30", received: "", damaged: "", taxable: "4,720.00", total: "4,720.00" });
-    expect(model.totals.some((t) => t.k === "Total quantity")).toBe(false);
+    // …and it is the only Total: none repeated under the table.
+    expect(model.totals).toEqual([]);
   });
 
   it("doesn't change the value of stock: that stays at the purchase rate", async () => {

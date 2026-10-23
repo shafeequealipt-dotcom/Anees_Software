@@ -387,9 +387,11 @@ function Receipt({ m }: { m: InvoiceModel }) {
           )).concat(
             m.lineTotals
               ? [
-                  <View key="qty-total" style={s.row}>
-                    <Text style={s.bold}>{m.ui["Total quantity"]}</Text>
-                    <Text style={s.bold}>{m.lineTotals.qty}</Text>
+                  <View key="line-total" style={s.row}>
+                    <Text style={s.bold}>
+                      {m.ui.Total} ({m.ui.Qty} {m.lineTotals.qty})
+                    </Text>
+                    <Text style={s.bold}>{m.lineTotals.total}</Text>
                   </View>,
                 ]
               : [],

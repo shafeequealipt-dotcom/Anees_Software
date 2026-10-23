@@ -652,5 +652,6 @@ Choices made that aren't obvious from the code, so they don't get re-litigated.
   shows everywhere and later transfers use it. Everyone else sees the rate locked; a typed rate from them is ignored.
 - **Transfer printout totals (24 Oct 2026)**: the stock transfer PDF ends its item table with a **Total** row — the
   total quantity under Qty (with the unit when all lines share one), the amounts under Taxable / Amount, and total
-  received / damaged under those columns once received (`InvoiceModel.lineTotals`); thermal receipts print a "Total
-  quantity" line instead. Arabic labels included.
+  received / damaged under those columns once received (`InvoiceModel.lineTotals`). It is the transfer's only Total
+  (no second Total under the table); all columns stay as they were. Thermal receipts print one "Total (Qty …)" line.
+  Arabic labels included.

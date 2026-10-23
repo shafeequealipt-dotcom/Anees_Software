@@ -232,7 +232,8 @@ export async function loadInvoiceModel(db: DB, firmId: number, voucherId: number
       total: money(moved.reduce((s, l) => s + l.totalPaise, 0)),
     };
   }
-  totals.push({ k: L("Total"), v: money(v.totalPaise), bold: true });
+  // A transfer's one Total row is the one at the foot of its item table (quantity and amount together).
+  if (!lineTotals) totals.push({ k: L("Total"), v: money(v.totalPaise), bold: true });
   if (v.tdsPaise) totals.push({ k: `TDS deducted (${formatPercent(v.tdsBp)})`, v: `-${money(v.tdsPaise)}` });
   if (info.takesPayment && v.partyId) {
     if (v.paidPaise > 0) totals.push({ k: L("Paid"), v: money(v.paidPaise) });
